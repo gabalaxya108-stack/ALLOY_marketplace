@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "node test/pipeline.test.js && node test/naturalFilter.test.js && node test/messaging.test.js && node test/adminAuth.test.js && node test/judgeTour.test.js",
     "provision:admin": "node server/scripts/provisionAdmin.js",
-    "test:security": "node server/tests/securityAudit.test.js"
+    "test:security": "node server/tests/securityAudit.test.js",
+    "test:db": "node server/scripts/testDb.js"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

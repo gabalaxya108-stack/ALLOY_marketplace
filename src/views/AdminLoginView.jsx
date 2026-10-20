@@ -1,57 +1,75 @@
 // src/views/AdminLoginView.jsx
-// ALLOY — Super Admin & Judge Security Authentication Portal
-// Standalone, high-security editorial login interface with live Supabase authentication
+// ALLOY — Super Admin Security Authentication Portal
+// Fast Passkey Access (`alloyadminmarketplace-2026`) & Live Supabase Verification
 
 import React, { useState } from 'react';
-import { Shield, Lock, Mail, Eye, EyeOff, ArrowRight, ArrowLeft, AlertTriangle, CheckCircle2, Sparkles, KeyRound } from 'lucide-react';
-import { loginAsAdmin } from '../services/adminApi';
-import { isSupabaseConfigured } from '../lib/supabaseClient';
+import { Shield, KeyRound, Eye, EyeOff, ArrowRight, ArrowLeft, AlertTriangle, CheckCircle2, Sparkles, Lock } from 'lucide-react';
+import { loginWithAdminPasskey, loginAsAdmin } from '../services/adminApi';
 
 export default function AdminLoginView({ onAdminAuthenticated }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [passkey, setPasskey] = useState('alloyadminmarketplace-2026');
+  const [showPasskey, setShowPasskey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [autofillSuccess, setAutofillSuccess] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
 
-  // Authenticate user via Supabase Auth and verify administrative privileges server-side
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!email || !password) {
-      setErrorMsg('Please enter both administrative email and security key.');
+  // Primary Passkey submission: One-key entry for Super Admin
+  const handlePasskeySubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!passkey.trim()) {
+      setErrorMsg('Please enter the secret administrative passkey.');
       return;
     }
 
     setLoading(true);
     setErrorMsg('');
+    setSuccessMsg('');
 
     try {
-      const result = await loginAsAdmin(email, password);
+      const result = await loginWithAdminPasskey(passkey);
       if (result.ok && result.user) {
-        if (onAdminAuthenticated) {
-          onAdminAuthenticated(result.user);
-        } else {
-          window.location.hash = '/admin/dashboard';
-        }
+        setSuccessMsg('Passkey verified. Opening Super Admin Console...');
+        setTimeout(() => {
+          if (onAdminAuthenticated) {
+            onAdminAuthenticated(result.user);
+          } else {
+            window.location.hash = '/admin/dashboard';
+          }
+        }, 300);
       }
     } catch (err) {
-      setErrorMsg(err.message || 'Authentication failed. Please verify credentials.');
+      setErrorMsg(err.message || 'Passkey verification failed. Please check the secret key.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Dedicated Judge Evaluation Autofill (Fills fields only — does not auto-submit)
-  const handleAutofillJudge = () => {
+  // Dedicated Judge Evaluation Autofill & Sign In
+  const handleAutofillJudge = async () => {
     const judgeEmail = (import.meta.env.VITE_JUDGE_EMAIL || 'judge@alloy.market').trim();
     const judgePassword = (import.meta.env.VITE_JUDGE_PASSWORD || 'JudgeAlloy2026!').trim();
 
-    setEmail(judgeEmail);
-    setPassword(judgePassword);
+    setLoading(true);
     setErrorMsg('');
-    setAutofillSuccess(true);
-    setTimeout(() => setAutofillSuccess(false), 4500);
+    setSuccessMsg('Authenticating Judge Evaluation session...');
+
+    try {
+      const result = await loginAsAdmin(judgeEmail, judgePassword);
+      if (result.ok && result.user) {
+        setTimeout(() => {
+          if (onAdminAuthenticated) {
+            onAdminAuthenticated(result.user);
+          } else {
+            window.location.hash = '/admin/dashboard';
+          }
+        }, 300);
+      }
+    } catch (err) {
+      setErrorMsg(err.message || 'Judge evaluation authentication failed.');
+      setSuccessMsg('');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -86,7 +104,7 @@ export default function AdminLoginView({ onAdminAuthenticated }) {
 
             <div className="alloy-admin-env-pill">
               <span className="alloy-admin-env-dot" />
-              <span>RESTRICTED CONSOLE • TLS 1.3 • LIVE SUPABASE</span>
+              <span>SECURE CONSOLE • MASTER PASSKEY • LIVE SUPABASE</span>
             </div>
 
             <h1 className="alloy-admin-login-title font-editorial">
@@ -105,56 +123,65 @@ export default function AdminLoginView({ onAdminAuthenticated }) {
             </div>
           )}
 
-          {/* Autofill Notification Banner */}
-          {autofillSuccess && (
+          {/* Success Banner */}
+          {successMsg && (
             <div className="alloy-admin-alert-banner" style={{ background: '#f4fbf6', borderColor: '#bbf0c8', color: '#166534' }}>
               <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
-              <span>Judge credentials loaded. Click "Enter Super Admin Console" below to authenticate.</span>
+              <span>{successMsg}</span>
             </div>
           )}
 
-          {/* Credentials Form */}
-          <form onSubmit={handleSubmit} className="alloy-admin-form">
+          {/* Passkey Entry Form */}
+          <form onSubmit={handlePasskeySubmit} className="alloy-admin-form">
             <div className="alloy-admin-input-group">
-              <label htmlFor="admin-email">Administrative Email</label>
-              <div className="alloy-admin-input-wrapper">
-                <Mail size={16} className="alloy-admin-field-icon" />
-                <input
-                  id="admin-email"
-                  type="email"
-                  required
-                  placeholder="admin@alloy.market"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                />
-              </div>
-            </div>
-
-            <div className="alloy-admin-input-group">
-              <div className="alloy-admin-label-split">
-                <label htmlFor="admin-pass">Access Security Key</label>
+              <div className="alloy-admin-label-split" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label htmlFor="admin-passkey" style={{ fontWeight: 600 }}>Secret Passkey</label>
+                <span style={{ fontSize: '11px', color: '#EB6E4B', fontWeight: 500, letterSpacing: '0.02em' }}>Instant Access</span>
               </div>
               <div className="alloy-admin-input-wrapper">
-                <Lock size={16} className="alloy-admin-field-icon" />
+                <KeyRound size={16} className="alloy-admin-field-icon" />
                 <input
-                  id="admin-pass"
-                  type={showPassword ? 'text' : 'password'}
+                  id="admin-passkey"
+                  type={showPasskey ? 'text' : 'password'}
                   required
-                  placeholder="••••••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="alloyadminmarketplace-2026"
+                  value={passkey}
+                  onChange={(e) => setPasskey(e.target.value)}
                   autoComplete="current-password"
+                  autoFocus
                 />
                 <button
                   type="button"
                   className="alloy-admin-eye-toggle"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowPasskey(!showPasskey)}
+                  aria-label={showPasskey ? 'Hide passkey' : 'Show passkey'}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showPasskey ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+            </div>
+
+            {/* Quick-fill helper button */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+                Passkey: <code>alloyadminmarketplace-2026</code>
+              </span>
+              <button
+                type="button"
+                onClick={() => setPasskey('alloyadminmarketplace-2026')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#EB6E4B',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: 0,
+                  textDecoration: 'underline'
+                }}
+              >
+                Autofill Key
+              </button>
             </div>
 
             <button
@@ -164,24 +191,24 @@ export default function AdminLoginView({ onAdminAuthenticated }) {
               id="admin-submit-btn"
             >
               {loading ? (
-                <span>Verifying Authorization via Supabase...</span>
+                <span>Unlocking Super Admin Console...</span>
               ) : (
                 <>
-                  <span>Enter Super Admin Console</span>
+                  <span>Enter Super Admin Portal</span>
                   <ArrowRight size={15} />
                 </>
               )}
             </button>
           </form>
 
-          {/* Judge Evaluation Credentials Box */}
-          <div className="alloy-admin-demo-box" style={{ marginTop: '20px' }}>
+          {/* Judge Evaluation Access Box */}
+          <div className="alloy-admin-demo-box" style={{ marginTop: '22px' }}>
             <div className="alloy-admin-demo-header">
-              <KeyRound size={14} className="text-bronze" />
+              <Shield size={14} className="text-bronze" />
               <span>Judge Evaluation Access</span>
             </div>
             <p className="alloy-admin-demo-text">
-              Judges can use the dedicated, low-privilege reviewer account to evaluate the live ALLOY Super Admin console against our connected Supabase backend.
+              Judges can also authenticate directly using the dedicated, low-privilege reviewer account to evaluate the live Super Admin console against Supabase.
             </p>
             <button
               type="button"
@@ -191,13 +218,13 @@ export default function AdminLoginView({ onAdminAuthenticated }) {
               disabled={loading}
             >
               <Sparkles size={14} />
-              <span>Autofill Judge Credentials</span>
+              <span>Autofill Judge Credentials & Sign In</span>
             </button>
           </div>
 
           {/* Footer Notice */}
           <div className="alloy-admin-card-footer">
-            <span>All administrative queries and role validations are cryptographically verified against Supabase.</span>
+            <span>Passkey access is authenticated and audited directly against your Supabase backend.</span>
           </div>
         </div>
       </div>

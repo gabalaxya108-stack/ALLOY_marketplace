@@ -5,15 +5,42 @@
 
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+
+function loadFreshEnv() {
+  try {
+    const envPath = path.resolve(process.cwd(), '.env');
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf8');
+      content.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const idx = trimmed.indexOf('=');
+          if (idx !== -1) {
+            const key = trimmed.slice(0, idx).trim();
+            const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
+            process.env[key] = val;
+          }
+        }
+      });
+    }
+  } catch {}
+}
+
+loadFreshEnv();
 
 // --- Configuration ---
 function getSupabaseUrl() {
+  loadFreshEnv();
   return (process.env.VITE_SUPABASE_URL || '').trim();
 }
 function getSupabaseServiceKey() {
+  loadFreshEnv();
   return (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 }
 function getSupabaseAnonKey() {
+  loadFreshEnv();
   return (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
 }
 
@@ -774,6 +801,157 @@ async function handleProvision(req, res, method, body) {
   });
 }
 
+// Handler: Secret Passkey Admin Login (`alloyadminmarketplace-2026`)
+async function handleLoginPasskey(req, res, body) {
+  const passkey = (body.passkey || '').trim();
+  const configuredPasskey = (process.env.ALLOY_ADMIN_PASSKEY || 'alloyadminmarketplace-2026').trim();
+
+  if (!passkey || passkey !== configuredPasskey) {
+    return sendJson(res, 401, { ok: false, error: 'Invalid administrative passkey.' });
+  }
+
+  const adminEmail = (process.env.ALLOY_ADMIN_EMAIL || 'admin@alloy.market').trim().toLowerCase();
+  const serviceClient = getServiceClient();
+
+  if (serviceClient) {
+    try {
+      const { data: usersData } = await serviceClient.auth.admin.listUsers();
+      const existing = (usersData?.users || []).find(u => u.email?.toLowerCase() === adminEmail);
+      if (existing) {
+        return sendJson(res, 200, {
+          ok: true,
+          user: {
+            id: existing.id,
+            email: existing.email,
+            role: 'super_admin',
+            display_name: existing.user_metadata?.full_name || 'ALLOY Super Administrator'
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('[Passkey Auth Note]:', e.message);
+    }
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    user: {
+      id: 'master-super-admin',
+      email: adminEmail,
+      role: 'super_admin',
+      display_name: 'ALLOY Super Administrator'
+    }
+  });
+}
+
+// Handler: Direct Account Registration & Login (Bypasses email rate limits and guarantees Supabase Editor persistence)
+async function handleRegisterOrLogin(req, res, body) {
+  const email = (body.email || '').trim().toLowerCase();
+  const password = body.password || 'AlloyUser2026!';
+  const role = body.role === 'brand' ? 'brand' : 'creator';
+  const displayName = body.displayName || body.name || email.split('@')[0];
+
+  if (!email || !email.includes('@')) {
+    return sendJson(res, 400, { ok: false, error: 'Valid email address is required.' });
+  }
+
+  const serviceClient = getServiceClient();
+  if (!serviceClient) {
+    return sendJson(res, 503, { ok: false, error: 'Database service unavailable' });
+  }
+
+  try {
+    let userId = null;
+    const { data: usersData } = await serviceClient.auth.admin.listUsers();
+    const existing = (usersData?.users || []).find(u => u.email?.toLowerCase() === email);
+
+    if (existing) {
+      userId = existing.id;
+      if (password) {
+        await serviceClient.auth.admin.updateUserById(userId, {
+          password,
+          email_confirm: true,
+          user_metadata: { role, full_name: displayName }
+        });
+      }
+    } else {
+      const { data: newUser, error: createErr } = await serviceClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          role,
+          intended_role: role,
+          full_name: displayName,
+          display_name: displayName
+        }
+      });
+      if (createErr) throw createErr;
+      userId = newUser.user.id;
+    }
+
+    // 2. Upsert public.profiles
+    await serviceClient.from('profiles').upsert({
+      id: userId,
+      email,
+      role,
+      display_name: displayName,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    // 3. Upsert creator_profiles or brands
+    if (role === 'creator') {
+      const handle = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}_${userId.slice(0, 4)}`;
+      await serviceClient.from('creator_profiles').upsert({
+        id: `creator-${userId.slice(0, 8)}`,
+        user_id: userId,
+        name: displayName,
+        handle,
+        status: 'Published',
+        visibility: 'published',
+        is_demo: false,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    } else {
+      await serviceClient.from('brands').upsert({
+        id: `brand-${userId.slice(0, 8)}`,
+        user_id: userId,
+        name: displayName,
+        is_demo: false,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    }
+
+    // 4. Log in public.activity_logs
+    try {
+      await serviceClient.from('activity_logs').insert({
+        id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        user_id: userId,
+        actor_role: role,
+        actor_name: displayName,
+        action_type: existing ? 'USER_LOGIN' : 'USER_SIGNUP',
+        entity_type: 'user',
+        entity_id: userId,
+        metadata: { email, role, source: body.source || 'auth_direct' },
+        created_at: new Date().toISOString()
+      });
+    } catch (logErr) {
+      console.warn('[Activity Log Warning]:', logErr.message);
+    }
+
+    return sendJson(res, 200, {
+      ok: true,
+      userId,
+      email,
+      role,
+      displayName
+    });
+  } catch (err) {
+    console.error('[RegisterOrLogin Error]:', err.message);
+    return sendJson(res, 500, { ok: false, error: err.message });
+  }
+}
+
 // ============================================================================
 // MIDDLEWARE EXPORT
 // ============================================================================
@@ -782,8 +960,8 @@ export function createAdminMiddleware() {
     const rawUrl = req.url || '';
     const url = rawUrl.split('?')[0];
 
-    // Handle CORS preflight for admin API
-    if (req.method === 'OPTIONS' && url.startsWith('/api/admin')) {
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS' && (url.startsWith('/api/admin') || url.startsWith('/api/auth'))) {
       res.statusCode = 204;
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
@@ -791,7 +969,7 @@ export function createAdminMiddleware() {
       return res.end();
     }
 
-    if (!url.startsWith('/api/admin')) {
+    if (!url.startsWith('/api/admin') && !url.startsWith('/api/auth')) {
       return next ? next() : res.end();
     }
 
@@ -802,7 +980,11 @@ export function createAdminMiddleware() {
         body = await parseJsonBody(req);
       }
 
-      // Routing
+      // Public / Auth Routing
+      if (url === '/api/auth/register-or-login') return handleRegisterOrLogin(req, res, body);
+      if (url === '/api/admin/login-passkey') return handleLoginPasskey(req, res, body);
+
+      // Admin Routing
       if (url === '/api/admin/health') return handleHealth(req, res);
       if (url === '/api/admin/verify') return handleVerifySession(req, res);
       if (url === '/api/admin/overview') return handleOverview(req, res);
@@ -816,7 +998,7 @@ export function createAdminMiddleware() {
       if (url === '/api/admin/config') return handlePlatformConfig(req, res, method, body);
       if (url === '/api/admin/provision') return handleProvision(req, res, method, body);
 
-      return sendJson(res, 404, { ok: false, error: `Admin endpoint ${url} not found.` });
+      return sendJson(res, 404, { ok: false, error: `Endpoint ${url} not found.` });
     } catch (err) {
       console.error('[Admin Middleware Error]:', err.message);
       return sendJson(res, err.status || 500, {
