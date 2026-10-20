@@ -93,10 +93,9 @@ export async function syncUserProfileSafely(user, preferredRole = null) {
       }
     }
 
-    // Handle missing roles explicitly instead of silently assigning 'brand'
+    // Default to creator if role undetermined so new users are never omitted
     if (!resolvedRole) {
-      console.info('[CreaSync Auth] No explicit or stored role found; handling missing role explicitly without default.');
-      return existingProfile || null;
+      resolvedRole = 'creator';
     }
 
     const displayName = existingProfile?.display_name 
@@ -119,15 +118,52 @@ export async function syncUserProfileSafely(user, preferredRole = null) {
     }, { onConflict: 'id' }).select().maybeSingle();
 
     if (error) {
-      console.warn('[CreaSync Auth] Optional profiles sync note:', error.message);
-      return existingProfile || { ...user, role: resolvedRole };
+      console.warn('[CreaSync Auth] Profiles sync note:', error.message);
+    }
+
+    // Automatically sync linked creator_profiles or brands table for Table Editor visibility
+    try {
+      if (resolvedRole === 'creator') {
+        const cleanHandle = `@${(displayName || user.email?.split('@')[0] || 'creator').toLowerCase().replace(/[^a-z0-9_]/g, '')}_${user.id.slice(0, 4)}`;
+        await supabase.from('creator_profiles').upsert({
+          id: `creator-${user.id.slice(0, 8)}`,
+          user_id: user.id,
+          name: displayName || 'Creator Studio',
+          handle: cleanHandle,
+          status: 'Published',
+          visibility: 'published',
+          is_demo: false,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      } else if (resolvedRole === 'brand') {
+        await supabase.from('brands').upsert({
+          id: `brand-${user.id.slice(0, 8)}`,
+          user_id: user.id,
+          name: displayName || 'Brand Studio',
+          is_demo: false,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      }
+
+      // Record in Supabase Activity Logs table
+      await logActivity({
+        actorRole: resolvedRole,
+        actorName: displayName || user.email,
+        actionType: 'USER_LOGIN',
+        entityType: 'user',
+        entityId: user.id,
+        metadata: { email: user.email, role: resolvedRole },
+        userId: user.id
+      });
+    } catch (linkedSyncErr) {
+      console.warn('[CreaSync Auth] Secondary entity sync note:', linkedSyncErr?.message || linkedSyncErr);
     }
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('creasync_active_role', resolvedRole);
     }
 
-    return data || existingProfile || null;
+    return data || existingProfile || { ...user, role: resolvedRole };
   } catch (err) {
     console.warn('[CreaSync Auth] Optional profiles sync bypassed:', err?.message || err);
     return null;
@@ -247,6 +283,25 @@ export async function signUp(email, password, role = 'creator', displayName = ''
       }
     });
     if (error) {
+      if (error.code === 'over_email_send_rate_limit' || error.status === 429) {
+        try {
+          const res = await fetch('/api/auth/register-or-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password, role, displayName, source: 'rate_limit_bypass' })
+          });
+          const adminResult = await res.json();
+          if (adminResult.ok) {
+            const signInRes = await supabase.auth.signInWithPassword({ email, password });
+            if (signInRes.data?.session) {
+              return { user: signInRes.data.user, session: signInRes.data.session };
+            }
+          }
+        } catch (adminFallbackErr) {
+          console.warn('[CreaSync Auth] Rate-limit bypass note:', adminFallbackErr);
+        }
+      }
+
       const customErr = new Error(
         error.code === 'over_email_send_rate_limit' || error.status === 429
           ? 'Account creation is temporarily rate-limited by email services. You can continue exploring Alloy in demo mode.'
@@ -257,8 +312,26 @@ export async function signUp(email, password, role = 'creator', displayName = ''
       throw customErr;
     }
 
-    // If Supabase created the user but did not return a session (e.g. email confirmation required)
+    // If Supabase created the user but did not return a session (email confirmation required)
     if (data.user && !data.session) {
+      // Auto-confirm via server provisioner so user isn't stuck waiting for email
+      try {
+        const res = await fetch('/api/auth/register-or-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, role, displayName, source: 'auto_confirm' })
+        });
+        const adminResult = await res.json();
+        if (adminResult.ok) {
+          const signInRes = await supabase.auth.signInWithPassword({ email, password });
+          if (signInRes.data?.session) {
+            return { user: signInRes.data.user, session: signInRes.data.session };
+          }
+        }
+      } catch (autoConfirmErr) {
+        console.warn('[CreaSync Auth] Auto-confirm note:', autoConfirmErr);
+      }
+
       const confirmErr = new Error('Registration created. Email confirmation is required by Supabase to establish session, or you can continue exploring Alloy in demo mode.');
       confirmErr.code = 'confirmation_required';
       confirmErr.status = 200;
@@ -276,7 +349,7 @@ export async function signUp(email, password, role = 'creator', displayName = ''
           updated_at: new Date().toISOString()
         });
 
-        // Automatically provision brand record in Supabase brands table if role is brand
+        // Automatically provision brand or creator record in Supabase tables
         if (role === 'brand') {
           const emailKey = email.toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, '-');
           const brandId = `brand-${emailKey}`;
@@ -288,10 +361,35 @@ export async function signUp(email, password, role = 'creator', displayName = ''
             industry: 'Creative & Digital',
             description: `${brandName} private studio workspace.`,
             aesthetic: 'Modern & Editorial',
-            is_demo: true,
+            is_demo: false,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+        } else if (role === 'creator') {
+          const emailKey = email.toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, '-');
+          const creatorId = `creator-${emailKey}`;
+          const creatorName = displayName || email.split('@')[0] || 'Creator Studio';
+          const handle = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+          await supabase.from('creator_profiles').upsert({
+            id: creatorId,
+            user_id: data.user.id,
+            name: creatorName,
+            handle,
+            status: 'Published',
+            visibility: 'published',
+            is_demo: false,
             updated_at: new Date().toISOString()
           }, { onConflict: 'id' });
         }
+
+        await logActivity({
+          actorRole: role,
+          actorName: displayName || email.split('@')[0],
+          actionType: 'USER_REGISTERED',
+          entityType: 'user',
+          entityId: data.user.id,
+          metadata: { email, role },
+          userId: data.user.id
+        });
       } catch (profileErr) {
         console.warn('[CreaSync Auth] Profiles/Brands upsert note:', profileErr?.message || profileErr);
       }

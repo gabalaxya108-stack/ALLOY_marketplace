@@ -34,6 +34,9 @@ export default defineConfig(({ mode }) => {
   if (env.ALLOY_ADMIN_PROVISION_SECRET) {
     process.env.ALLOY_ADMIN_PROVISION_SECRET = env.ALLOY_ADMIN_PROVISION_SECRET.trim();
   }
+  if (env.ALLOY_ADMIN_PASSKEY) {
+    process.env.ALLOY_ADMIN_PASSKEY = env.ALLOY_ADMIN_PASSKEY.trim();
+  }
 
   return {
     plugins: [

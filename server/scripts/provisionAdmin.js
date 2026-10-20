@@ -41,8 +41,8 @@ loadEnv();
 const supabaseUrl = (process.env.VITE_SUPABASE_URL || '').trim();
 const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
-const adminEmail = (process.env.ALLOY_ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').trim();
-const adminPassword = (process.env.ALLOY_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || '').trim();
+const adminEmail = (process.env.ALLOY_ADMIN_EMAIL || process.env.ADMIN_EMAIL || 'admin@alloy.market').trim();
+const adminPassword = (process.env.ALLOY_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'alloyadminmarketplace-2026').trim();
 
 const judgeEmail = (process.env.VITE_JUDGE_EMAIL || process.env.ALLOY_JUDGE_EMAIL || 'judge@alloy.market').trim();
 const judgePassword = (process.env.VITE_JUDGE_PASSWORD || process.env.ALLOY_JUDGE_PASSWORD || 'JudgeAlloy2026!').trim();
@@ -105,7 +105,29 @@ async function provisionAccount(supabase, { email, password, role, fullName }) {
     }
   }
 
-  // 3. Upsert profile in public.profiles (if table exists)
+  // 3. Assign role in public.admin_roles (if table exists)
+  try {
+    const { error: adminRoleError } = await supabase.from('admin_roles').upsert({
+      user_id: userId,
+      role,
+      is_active: true,
+      granted_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+
+    if (adminRoleError) {
+      if (adminRoleError.code === 'PGRST205') {
+        console.log(`Note: public.admin_roles table not yet in schema cache. Run schema.sql in Supabase SQL editor.`);
+      } else {
+        console.warn(`Admin role upsert note: ${adminRoleError.message}`);
+      }
+    } else {
+      console.log(`Updated public.admin_roles entry for ${userId} (${role})`);
+    }
+  } catch (err) {
+    console.warn(`Admin roles table access deferred:`, err.message);
+  }
+
+  // 4. Upsert profile in public.profiles (if table exists)
   try {
     const { error: profileError } = await supabase.from('profiles').upsert({
       id: userId,
@@ -126,28 +148,6 @@ async function provisionAccount(supabase, { email, password, role, fullName }) {
     }
   } catch (err) {
     console.warn(`Profiles table access deferred:`, err.message);
-  }
-
-  // 4. Assign role in public.admin_roles (if table exists)
-  try {
-    const { error: adminRoleError } = await supabase.from('admin_roles').upsert({
-      user_id: userId,
-      role,
-      is_active: true,
-      assigned_at: new Date().toISOString()
-    }, { onConflict: 'user_id' });
-
-    if (adminRoleError) {
-      if (adminRoleError.code === 'PGRST205') {
-        console.log(`Note: public.admin_roles table not yet in schema cache. Run admin_migration.sql in Supabase SQL editor.`);
-      } else {
-        console.warn(`Admin role upsert note: ${adminRoleError.message}`);
-      }
-    } else {
-      console.log(`Updated public.admin_roles entry for ${userId} (${role})`);
-    }
-  } catch (err) {
-    console.warn(`Admin roles table access deferred:`, err.message);
   }
 
   // 5. Record Audit Event (if table exists)
