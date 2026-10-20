@@ -10,7 +10,8 @@ import {
   Clock, DollarSign, Calendar, HelpCircle, Layers, Film, Zap, 
   RotateCcw, Check, ExternalLink, ChevronRight, AlertCircle, FileText,
   Trash2, Filter, Upload, CheckCircle, Share2, Edit3, Compass,
-  ChevronDown, Copy, Shield, ShieldAlert, X, Building, Globe, CheckSquare
+  ChevronDown, Copy, Shield, ShieldAlert, X, Building, Globe, CheckSquare,
+  CreditCard
 } from 'lucide-react';
 
 import { extractCampaignDNA } from '../intelligence/campaignDNA';
@@ -25,6 +26,7 @@ import DeliverableReviewModal from '../components/DeliverableReviewModal';
 import InviteModal from '../components/InviteModal';
 import CreatorComparisonModal from '../components/CreatorComparisonModal';
 import MessagesLoginWall from '../components/MessagesLoginWall';
+import CampaignFundingModal from '../components/CampaignFundingModal';
 import { deduplicateMessages } from '../services/marketplaceBackend';
 
 export default function BrandWorkspaceView({
@@ -110,6 +112,15 @@ export default function BrandWorkspaceView({
   // --- Campaign Modal States ---
   const [isCampaignDetailOpen, setIsCampaignDetailOpen] = useState(false);
   const [detailCampaign, setDetailCampaign] = useState(null);
+
+  // --- Campaign Funding Modal State (Razorpay Test Mode) ---
+  const [fundingCampaign, setFundingCampaign] = useState(null);
+  const [isFundingModalOpen, setIsFundingModalOpen] = useState(false);
+
+  const handleOpenFundCampaign = (camp) => {
+    setFundingCampaign(camp);
+    setIsFundingModalOpen(true);
+  };
 
   const [isCreateEditModalOpen, setIsCreateEditModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState(null); // null if creating
@@ -1169,6 +1180,11 @@ export default function BrandWorkspaceView({
                         <span className={`visibility-pill ${camp.visibility}`}>
                           {camp.visibility === 'published' ? 'Published' : camp.visibility}
                         </span>
+                        {camp.fundedAmountRupees > 0 && (
+                          <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '100px', background: 'rgba(16, 185, 129, 0.9)', color: '#FFFFFF', fontWeight: 700 }}>
+                            ₹{Number(camp.fundedAmountRupees).toLocaleString('en-IN')} Funded
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -1203,6 +1219,17 @@ export default function BrandWorkspaceView({
                       <span className="camp-card-updated">Updated {camp.updatedAt || camp.createdAt}</span>
                       
                       <div className="camp-card-actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-xs"
+                          onClick={() => handleOpenFundCampaign(camp)}
+                          title="Fund Campaign with Razorpay (Test Mode)"
+                          style={{ color: '#EB6E4B', borderColor: 'rgba(235, 110, 75, 0.35)', background: 'rgba(235, 110, 75, 0.06)', fontWeight: 600 }}
+                          id={`fund-camp-btn-${camp.id}`}
+                        >
+                          <CreditCard size={12} />
+                          <span>Fund</span>
+                        </button>
                         {onRunFilteringPipeline && (
                           <button
                             type="button"
@@ -2186,9 +2213,36 @@ export default function BrandWorkspaceView({
                     {Array.isArray(detailCampaign.platforms) ? detailCampaign.platforms.join(', ') : detailCampaign.platforms}
                   </span>
                 </div>
+                {detailCampaign.fundedAmountRupees > 0 && (
+                  <div className="spec-box" style={{ borderColor: 'rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.08)' }}>
+                    <span className="spec-lbl" style={{ color: '#059669', fontWeight: 700 }}>Total Funded (Test Mode)</span>
+                    <span className="spec-val" style={{ color: '#059669', fontWeight: 700 }}>
+                      ₹{Number(detailCampaign.fundedAmountRupees).toLocaleString('en-IN')} INR
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="detail-actions-footer">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setIsCampaignDetailOpen(false);
+                    handleOpenFundCampaign(detailCampaign);
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #EB6E4B 0%, #D45A37 100%)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 12px rgba(235, 110, 75, 0.25)'
+                  }}
+                  id="fund-campaign-detail-action-btn"
+                >
+                  <CreditCard size={14} />
+                  <span>Fund Campaign (Test Mode)</span>
+                </button>
                 {onRunFilteringPipeline && (
                   <button
                     type="button"
@@ -2588,6 +2642,27 @@ export default function BrandWorkspaceView({
         onRequestRevision={onRequestRevision}
         onApproveDeliverables={onApproveDeliverables}
         initialRevisionMode={isReviewModalRevisionMode}
+      />
+
+      {/* Razorpay Standard Checkout Campaign Funding Modal */}
+      <CampaignFundingModal
+        isOpen={isFundingModalOpen}
+        onClose={() => {
+          setIsFundingModalOpen(false);
+          setFundingCampaign(null);
+        }}
+        campaign={fundingCampaign}
+        currentUser={currentUser}
+        onFundingSuccess={(payment) => {
+          if (onUpdateCampaign && fundingCampaign) {
+            const currentTotal = Number(fundingCampaign.fundedAmountRupees || 0);
+            const added = Number(payment.amount_rupees || (payment.amount / 100) || 0);
+            onUpdateCampaign(fundingCampaign.id, {
+              fundedAmountRupees: currentTotal + added,
+              isFunded: true
+            });
+          }
+        }}
       />
     </div>
   );
