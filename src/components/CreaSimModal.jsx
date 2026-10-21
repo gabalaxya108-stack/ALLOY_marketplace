@@ -176,7 +176,7 @@ export default function CreaSimModal({
         </div>
 
         {/* Main Concept Detail View */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: '28px', alignItems: 'start' }}>
+        <div className="creasim-concept-grid" style={{ display: 'grid', gap: '28px', alignItems: 'start' }}>
           {/* Left Column: Visual Preview & Storyboard */}
           <div>
             <div style={{ 

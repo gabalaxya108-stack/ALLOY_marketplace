@@ -72,6 +72,15 @@ const PORTFOLIO_CARDS = [
 export default function OrbitalCards({ onOpenVideo, onExploreWork }) {
   const [orbitTime, setOrbitTime] = useState(0);
   const isPausedRef = useRef(false);
+  const [viewportWidth, setViewportWidth] = useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth : 1024;
+  });
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     let animId;
@@ -92,11 +101,24 @@ export default function OrbitalCards({ onOpenVideo, onExploreWork }) {
     return () => cancelAnimationFrame(animId);
   }, []);
 
+  // Responsive orbital scaling for phone screens (under 480px, 768px, desktop)
+  const scaleFactor = viewportWidth < 440 ? 0.44 : (viewportWidth < 768 ? 0.62 : 1);
+  const cardBaseScale = viewportWidth < 440 ? 0.74 : (viewportWidth < 768 ? 0.86 : 1);
+
   return (
     <div className="orbital-cards-container" aria-hidden="false">
       
       {/* 1. Luminous Thin Elliptical Orbital Filament Lines */}
-      <svg className="orbital-lines-svg" viewBox="0 0 640 560" fill="none" aria-hidden="true">
+      <svg 
+        className="orbital-lines-svg" 
+        viewBox="0 0 640 560" 
+        fill="none" 
+        aria-hidden="true"
+        style={{
+          transform: `scale(${scaleFactor})`,
+          transformOrigin: 'center center'
+        }}
+      >
         <ellipse
           cx="320"
           cy="265"
@@ -121,14 +143,14 @@ export default function OrbitalCards({ onOpenVideo, onExploreWork }) {
       {/* 2. Traveling Champagne-Colored Metallic Spheres on Orbits */}
       {[0, 1, 2].map((idx) => {
         const angle = orbitTime * 0.22 + (idx * Math.PI * 2) / 3;
-        const x = Math.cos(angle) * (240 + idx * 10);
-        const y = Math.sin(angle) * (120 - idx * 5) + (idx === 1 ? -15 : 10);
+        const x = Math.cos(angle) * ((240 + idx * 10) * scaleFactor);
+        const y = Math.sin(angle) * ((120 - idx * 5) * scaleFactor) + ((idx === 1 ? -15 : 10) * scaleFactor);
         return (
           <div
             key={`bead-${idx}`}
             className="orbital-metallic-sphere"
             style={{
-              transform: `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`,
+              transform: `translate3d(-50%, -50%, 0) translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`,
               zIndex: Math.sin(angle) > 0 ? 18 : 2
             }}
           />
@@ -138,10 +160,10 @@ export default function OrbitalCards({ onOpenVideo, onExploreWork }) {
       {/* 3. The 4 Portfolio Cards */}
       {PORTFOLIO_CARDS.map((card) => {
         const angle = card.initialAngle + orbitTime * card.speed;
-        const x = Math.cos(angle) * card.radiusX;
-        const y = Math.sin(angle) * card.radiusY + card.tiltY;
+        const x = Math.cos(angle) * (card.radiusX * scaleFactor);
+        const y = Math.sin(angle) * (card.radiusY * scaleFactor) + (card.tiltY * scaleFactor);
         const depth = Math.sin(angle); // -1 (back) to +1 (front)
-        const scale = 0.94 + ((depth + 1) / 2) * 0.14; // 0.94 to 1.08
+        const scale = (0.94 + ((depth + 1) / 2) * 0.14) * cardBaseScale; // Dynamic scaled
         const zIndex = depth > 0 ? 25 : 4;
         const opacity = depth > 0 ? 1 : 0.88;
 
@@ -158,12 +180,14 @@ export default function OrbitalCards({ onOpenVideo, onExploreWork }) {
             key={card.id}
             className="orbital-portfolio-card"
             style={{
-              transform: `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${scale.toFixed(2)})`,
+              transform: `translate3d(-50%, -50%, 0) translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(${scale.toFixed(2)})`,
               zIndex,
               opacity,
             }}
             onMouseEnter={() => { isPausedRef.current = true; }}
             onMouseLeave={() => { isPausedRef.current = false; }}
+            onTouchStart={() => { isPausedRef.current = true; }}
+            onTouchEnd={() => { setTimeout(() => { isPausedRef.current = false; }, 1200); }}
             onClick={handleCardClick}
             title={`${card.title} by ${card.creator}`}
           >

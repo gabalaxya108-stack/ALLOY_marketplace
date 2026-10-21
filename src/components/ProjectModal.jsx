@@ -270,11 +270,11 @@ export default function ProjectModal({
         )}
 
         {/* 2. Comprehensive Details Body */}
-        <div style={{ padding: '32px 36px 36px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div className="project-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           {/* Header Row: Title, Creator Attribution, and Actions */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-            <div style={{ flex: 1, minWidth: '280px' }}>
+            <div className="project-modal-header-col" style={{ flex: 1, minWidth: '220px' }}>
               <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent-primary, #EB6E4B)', fontWeight: 700 }}>
                 Case Study & Portfolio Showcase
               </span>

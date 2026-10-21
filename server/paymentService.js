@@ -21,7 +21,10 @@ export function _setSupabaseClient(client) {
   customSupabaseClient = client;
 }
 
-function loadFreshEnv() {
+let envLoaded = false;
+function loadFreshEnv(force = false) {
+  if (envLoaded && !force) return;
+  envLoaded = true;
   try {
     const envPath = path.resolve(process.cwd(), '.env');
     if (fs.existsSync(envPath)) {
@@ -42,6 +45,9 @@ function loadFreshEnv() {
     }
   } catch {}
 }
+
+// Load environment variables on service startup
+loadFreshEnv();
 
 /**
  * Obtain a server-side Supabase client for database operations.

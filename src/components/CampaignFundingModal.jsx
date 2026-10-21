@@ -349,7 +349,7 @@ export default function CampaignFundingModal({
               </label>
 
               {/* Preset Chips */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '12px' }}>
+              <div className="funding-preset-grid" style={{ display: 'grid', gap: '8px', marginBottom: '12px' }}>
                 {presetOptions.map((preset) => {
                   const isActive = selectedPreset === preset && Number(amountRupees) === preset;
                   return (
