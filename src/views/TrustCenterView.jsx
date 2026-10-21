@@ -1959,7 +1959,7 @@ export default function TrustCenterView({
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '6px' }}>
                   Review Decision *
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                   <button
                     type="button"
                     onClick={() => setReviewActionForm({ ...reviewActionForm, decision: 'APPROVE' })}

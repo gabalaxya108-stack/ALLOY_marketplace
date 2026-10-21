@@ -2096,3 +2096,105 @@
   color: var(--admin-text-tertiary);
   line-height: 1.45;
 }
+
+/* ==========================================================================
+   SUPER ADMIN MOBILE OPTIMIZATION (PHONES & TABLETS: <= 900px)
+   ========================================================================== */
+@media (max-width: 900px) {
+  .alloy-admin-dashboard-container {
+    flex-direction: column !important;
+  }
+
+  .alloy-admin-sidebar {
+    width: 100% !important;
+    height: auto !important;
+    position: relative !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--admin-border-light) !important;
+    box-shadow: none !important;
+  }
+
+  .alloy-admin-sidebar-header {
+    padding: 16px 14px 12px !important;
+  }
+
+  .alloy-admin-sidebar-nav {
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    padding: 8px 12px !important;
+    gap: 6px !important;
+    white-space: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .alloy-admin-sidebar-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .alloy-admin-nav-item {
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+  }
+
+  .alloy-admin-sidebar-footer {
+    display: none !important;
+  }
+
+  .alloy-admin-main-content {
+    padding: 16px 12px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .alloy-admin-topbar {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+    padding: 14px 12px !important;
+  }
+
+  .alloy-admin-hero-banner {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    padding: 20px 16px !important;
+    gap: 14px !important;
+  }
+
+  .alloy-admin-kpi-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .alloy-admin-tabs-nav {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap !important;
+    padding-bottom: 4px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .alloy-admin-login-page {
+    padding: 24px 12px !important;
+  }
+
+  .alloy-admin-login-container {
+    max-width: 100% !important;
+  }
+
+  .alloy-admin-login-card {
+    padding: 26px 18px !important;
+    border-radius: 16px !important;
+  }
+
+  .alloy-admin-crest-title {
+    font-size: 24px !important;
+  }
+
+  .alloy-admin-crest-desc {
+    font-size: 12px !important;
+  }
+}
+

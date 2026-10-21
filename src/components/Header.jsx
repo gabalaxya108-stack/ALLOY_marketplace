@@ -315,85 +315,123 @@ export default function Header({
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="mobile-menu-drawer">
-          <ul className="mobile-nav-links">
-            <li onClick={() => handleLinkClick(() => onNavigate('discover'))}>
-              <span>Creators</span>
-            </li>
-            <li onClick={() => handleLinkClick(() => scrollToSection('for-brands'))}>
-              <span>For Brands</span>
-            </li>
-            <li onClick={() => handleLinkClick(() => scrollToSection('how-it-works'))}>
-              <span>How It Works</span>
-            </li>
-            <li onClick={() => handleLinkClick(() => onNavigate('trust-center'))}>
-              <span style={{ fontWeight: 600, color: '#7C3AED' }}>Trust Centre</span>
-            </li>
-            <li onClick={() => handleLinkClick(() => onNavigate('messages'))}>
-              <span>Messages</span>
-            </li>
-          </ul>
-
-          <div className="mobile-drawer-footer">
-            {onOpenJudgeTour && (
+        <>
+          <div 
+            className="mobile-drawer-overlay"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="mobile-menu-drawer" role="dialog" aria-modal="true" aria-label="Mobile Navigation">
+            <div className="mobile-drawer-header">
+              <a 
+                href="#home" 
+                className="logo-link alloy-logo-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleLinkClick(() => onNavigate('home'));
+                }}
+              >
+                <img 
+                  src="/assets/alloy-wordmark.webp" 
+                  alt="Alloy" 
+                  className="alloy-nav-wordmark-img" 
+                  style={{ height: '24px' }}
+                />
+              </a>
               <button
                 type="button"
-                className="header-tour-btn w-full"
-                onClick={() => handleLinkClick(onOpenJudgeTour)}
-                style={{ justifyContent: 'center', padding: '10px 16px', marginBottom: '10px' }}
-                id="mobile-judge-tour-btn"
+                className="mobile-drawer-close-btn"
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close navigation menu"
               >
-                <Sparkles size={14} className="text-bronze" />
-                <span>Start Judge Demo Tour</span>
+                <X size={20} />
               </button>
-            )}
-            {currentUser ? (
-              <>
+            </div>
+
+            <ul className="mobile-nav-links">
+              <li onClick={() => handleLinkClick(() => onNavigate('discover'))}>
+                <span>Creators</span>
+                <ChevronRight size={16} className="mobile-nav-chevron" />
+              </li>
+              <li onClick={() => handleLinkClick(() => scrollToSection('for-brands'))}>
+                <span>For Brands</span>
+                <ChevronRight size={16} className="mobile-nav-chevron" />
+              </li>
+              <li onClick={() => handleLinkClick(() => scrollToSection('how-it-works'))}>
+                <span>How It Works</span>
+                <ChevronRight size={16} className="mobile-nav-chevron" />
+              </li>
+              <li onClick={() => handleLinkClick(() => onNavigate('trust-center'))}>
+                <span style={{ fontWeight: 600, color: '#214C35' }}>Trust Centre</span>
+                <ChevronRight size={16} className="mobile-nav-chevron" />
+              </li>
+              <li onClick={() => handleLinkClick(() => onNavigate('messages'))}>
+                <span>Messages</span>
+                <ChevronRight size={16} className="mobile-nav-chevron" />
+              </li>
+            </ul>
+
+            <div className="mobile-drawer-footer">
+              {onOpenJudgeTour && (
                 <button
                   type="button"
-                  className="btn btn-primary w-full"
-                  onClick={() => handleLinkClick(handleGoToWorkspace)}
+                  className="header-tour-btn w-full"
+                  onClick={() => handleLinkClick(onOpenJudgeTour)}
+                  style={{ justifyContent: 'center', padding: '12px 16px', marginBottom: '10px' }}
+                  id="mobile-judge-tour-btn"
                 >
-                  <span>{activeRole === 'creator' ? 'Creator Studio' : activeRole === 'brand' ? 'Brand Studio' : 'Workspace'}</span>
-                  <ArrowRight size={14} />
+                  <Sparkles size={14} className="text-bronze" />
+                  <span>Start Judge Demo Tour</span>
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary w-full"
-                  onClick={() => handleLinkClick(onLogout)}
-                  style={{ color: '#b91c1c' }}
-                >
-                  <LogOut size={14} />
-                  <span>Log Out</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-secondary w-full"
-                  onClick={() => handleLinkClick(() => { window.location.hash = '/admin/login'; })}
-                >
-                  <span>Super Admin</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary w-full"
-                  onClick={() => handleLinkClick(onOpenLogin)}
-                >
-                  <span>Log in</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary w-full"
-                  onClick={() => handleLinkClick(onOpenRoleSelect)}
-                >
-                  <span>Get Started</span>
-                </button>
-              </>
-            )}
+              )}
+              {currentUser ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-primary w-full"
+                    onClick={() => handleLinkClick(handleGoToWorkspace)}
+                  >
+                    <span>{activeRole === 'creator' ? 'Creator Studio' : activeRole === 'brand' ? 'Brand Studio' : 'Workspace'}</span>
+                    <ArrowRight size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary w-full"
+                    onClick={() => handleLinkClick(onLogout)}
+                    style={{ color: '#b91c1c' }}
+                  >
+                    <LogOut size={14} />
+                    <span>Log Out</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-secondary w-full"
+                    onClick={() => handleLinkClick(() => { window.location.hash = '/admin/login'; })}
+                  >
+                    <span>Super Admin</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary w-full"
+                    onClick={() => handleLinkClick(onOpenLogin)}
+                  >
+                    <span>Log in</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary w-full"
+                    onClick={() => handleLinkClick(onOpenRoleSelect)}
+                  >
+                    <span>Get Started</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </header>
   );
