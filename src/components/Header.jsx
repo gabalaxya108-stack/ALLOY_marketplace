@@ -136,25 +136,6 @@ export default function Header({
             >
               How It Works
             </li>
-            <li 
-              className={`nav-item ${currentView === 'trust-center' ? 'active' : ''}`}
-              onClick={() => handleLinkClick(() => onNavigate('trust-center'))}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && handleLinkClick(() => onNavigate('trust-center'))}
-              style={{ fontWeight: 600, color: currentView === 'trust-center' ? '#7C3AED' : undefined }}
-            >
-              Trust Centre
-            </li>
-            <li 
-              className={`nav-item ${currentView === 'messages' ? 'active' : ''}`}
-              onClick={() => handleLinkClick(() => onNavigate('messages'))}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && handleLinkClick(() => onNavigate('messages'))}
-            >
-              Messages
-            </li>
           </ul>
         </nav>
 
@@ -359,14 +340,6 @@ export default function Header({
               </li>
               <li onClick={() => handleLinkClick(() => scrollToSection('how-it-works'))}>
                 <span>How It Works</span>
-                <ChevronRight size={16} className="mobile-nav-chevron" />
-              </li>
-              <li onClick={() => handleLinkClick(() => onNavigate('trust-center'))}>
-                <span style={{ fontWeight: 600, color: '#214C35' }}>Trust Centre</span>
-                <ChevronRight size={16} className="mobile-nav-chevron" />
-              </li>
-              <li onClick={() => handleLinkClick(() => onNavigate('messages'))}>
-                <span>Messages</span>
                 <ChevronRight size={16} className="mobile-nav-chevron" />
               </li>
             </ul>
