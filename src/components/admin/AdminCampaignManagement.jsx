@@ -12,16 +12,21 @@ import {
   Eye,
   X,
   FileCheck,
-  ShieldAlert
+  ShieldAlert,
+  Edit3,
+  Save
 } from 'lucide-react';
 
 export default function AdminCampaignManagement({
   campaigns = [],
-  onUpdateCampaignStatus
+  onUpdateCampaignStatus,
+  onEditCampaign
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedCampaign, setSelectedCampaign] = useState(null);
+  const [editingCampaign, setEditingCampaign] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const filteredCampaigns = campaigns.filter((c) => {
     const matchesSearch =
@@ -32,6 +37,17 @@ export default function AdminCampaignManagement({
     const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const handleSaveCampaignEdits = (e) => {
+    e.preventDefault();
+    if (!editingCampaign) return;
+    onEditCampaign?.(editingCampaign);
+    setSaveSuccess(true);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setEditingCampaign(null);
+    }, 600);
+  };
 
   return (
     <div className="alloy-admin-section">
@@ -137,6 +153,15 @@ export default function AdminCampaignManagement({
                         <button
                           type="button"
                           className="alloy-admin-btn-table"
+                          onClick={() => setEditingCampaign({ ...camp })}
+                          title="Edit Campaign Details"
+                        >
+                          <Edit3 size={14} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="alloy-admin-btn-table"
                           onClick={() => setSelectedCampaign(camp)}
                         >
                           <Eye size={14} />
@@ -223,12 +248,173 @@ export default function AdminCampaignManagement({
                 <button
                   type="button"
                   className="alloy-admin-btn-secondary"
+                  onClick={() => {
+                    const toEdit = { ...selectedCampaign };
+                    setSelectedCampaign(null);
+                    setEditingCampaign(toEdit);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Edit3 size={15} />
+                  <span>Edit Campaign</span>
+                </button>
+                <button
+                  type="button"
+                  className="alloy-admin-btn-secondary"
                   onClick={() => setSelectedCampaign(null)}
                 >
                   Close Audit View
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Campaign Modal */}
+      {editingCampaign && (
+        <div className="alloy-modal-backdrop" onClick={() => setEditingCampaign(null)}>
+          <div className="alloy-admin-modal-card wide" onClick={(e) => e.stopPropagation()}>
+            <div className="alloy-admin-modal-header">
+              <div className="alloy-admin-modal-title-group">
+                <Edit3 size={20} className="text-amber-400" />
+                <h3>Edit Campaign Brief: {editingCampaign.title}</h3>
+              </div>
+              <button
+                type="button"
+                className="alloy-modal-close"
+                onClick={() => setEditingCampaign(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCampaignEdits} className="alloy-admin-form">
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Campaign Title *</label>
+                  <input
+                    type="text"
+                    required
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCampaign.title || ''}
+                    onChange={(e) => setEditingCampaign({ ...editingCampaign, title: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Brand Name</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCampaign.brandName || editingCampaign.brand_name || ''}
+                    onChange={(e) => setEditingCampaign({ ...editingCampaign, brandName: e.target.value, brand_name: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Campaign Objective</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCampaign.objective || 'Product Launch'}
+                    onChange={(e) => setEditingCampaign({ ...editingCampaign, objective: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Industry</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCampaign.industry || ''}
+                    onChange={(e) => setEditingCampaign({ ...editingCampaign, industry: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Budget Allocation</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCampaign.budget || '$5,000 – $10,000'}
+                    onChange={(e) => setEditingCampaign({ ...editingCampaign, budget: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Timeline / Deadline</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCampaign.timeline || editingCampaign.deadline || ''}
+                    onChange={(e) => setEditingCampaign({ ...editingCampaign, timeline: e.target.value, deadline: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Campaign Status</label>
+                  <select
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCampaign.status || 'Active'}
+                    onChange={(e) => setEditingCampaign({ ...editingCampaign, status: e.target.value })}
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Draft">Draft Mode</option>
+                    <option value="In Review">In Review</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Archived">Archived</option>
+                    <option value="flagged">Flagged</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="alloy-admin-input-group">
+                <label>Deliverables (comma separated)</label>
+                <input
+                  type="text"
+                  className="alloy-admin-textarea"
+                  style={{ height: '42px', resize: 'none' }}
+                  value={Array.isArray(editingCampaign.deliverables) ? editingCampaign.deliverables.join(', ') : (editingCampaign.deliverables || '')}
+                  onChange={(e) => setEditingCampaign({ ...editingCampaign, deliverables: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                />
+              </div>
+
+              <div className="alloy-admin-input-group">
+                <label>Campaign Creative Brief & Directive</label>
+                <textarea
+                  rows={3}
+                  className="alloy-admin-textarea"
+                  value={editingCampaign.description || ''}
+                  onChange={(e) => setEditingCampaign({ ...editingCampaign, description: e.target.value })}
+                />
+              </div>
+
+              <div className="alloy-admin-modal-actions" style={{ marginTop: '16px' }}>
+                <button
+                  type="submit"
+                  className="alloy-admin-btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <Save size={16} />
+                  <span>{saveSuccess ? 'Saved to DB & Website!' : 'Save Campaign Changes'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="alloy-admin-btn-secondary"
+                  onClick={() => setEditingCampaign(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

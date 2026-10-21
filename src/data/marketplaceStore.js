@@ -802,6 +802,8 @@ export function createCampaignRecord(campaignData, brand) {
   return {
     id: campaignData.id || `camp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     ownerBrandId: brandId,
+    brandId: brandId,
+    owner_brand_id: brandId,
     brandName,
     brandAvatar,
     brandWebsite,
@@ -884,7 +886,11 @@ export function getBrandScopedData(state, brandId, isDemoMode = false) {
 
   // Strict Brand Isolation:
   // In real brand mode, ONLY campaigns owned by this specific brandId
-  const campaigns = (state.campaigns || []).filter(c => c.ownerBrandId === currentBrand.id);
+  const campaigns = (state.campaigns || []).filter(c => 
+    c.ownerBrandId === currentBrand.id ||
+    c.brandId === currentBrand.id ||
+    c.owner_brand_id === currentBrand.id
+  );
 
   // Active campaign must strictly belong to this brand
   const activeCampaign = (state.activeCampaignId && campaigns.find(c => c.id === state.activeCampaignId)) || campaigns[0] || null;
@@ -1292,6 +1298,28 @@ export function recordCampaignFunding(campaignId, paymentData) {
 
   const updatedState = { ...state, campaigns };
   saveMarketplaceState(updatedState);
+
+  // Real-time synchronization to Supabase Table Editor (payments & campaign funding)
+  if (typeof window !== 'undefined') {
+    import('../services/dbSync.js').then(({ syncFundingToDb, syncCampaignToDb }) => {
+      syncFundingToDb({
+        campaignId,
+        amountPaise: paymentData.amount,
+        amountRupees: Number(paymentData.amount_rupees || (paymentData.amount / 100) || 0),
+        currency: 'INR',
+        paymentId: paymentData.payment_id || paymentData.paymentId,
+        orderId: paymentData.order_id || paymentData.orderId,
+        funderName: paymentData.funder_name || 'Brand Partner',
+        verified: true
+      }).catch(() => {});
+
+      const updatedCamp = campaigns.find(c => c.id === campaignId);
+      if (updatedCamp) {
+        syncCampaignToDb(updatedCamp).catch(() => {});
+      }
+    }).catch(() => {});
+  }
+
   return updatedState;
 }
 

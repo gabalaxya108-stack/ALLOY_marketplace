@@ -33,7 +33,7 @@ loadFreshEnv();
 // --- Configuration ---
 function getSupabaseUrl() {
   loadFreshEnv();
-  return (process.env.VITE_SUPABASE_URL || '').trim();
+  return (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
 }
 function getSupabaseServiceKey() {
   loadFreshEnv();
@@ -41,7 +41,7 @@ function getSupabaseServiceKey() {
 }
 function getSupabaseAnonKey() {
   loadFreshEnv();
-  return (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+  return (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
 }
 
 function isAdminConfigured() {
