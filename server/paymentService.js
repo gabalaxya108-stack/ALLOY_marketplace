@@ -33,7 +33,7 @@ function loadFreshEnv() {
           if (idx !== -1) {
             const key = trimmed.slice(0, idx).trim();
             const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
-            if (process.env[key] === undefined) {
+            if (!process.env[key] || process.env[key].trim() === '') {
               process.env[key] = val;
             }
           }
@@ -122,17 +122,19 @@ export const KNOWN_CAMPAIGNS = new Map([
 ]);
 
 export function getRazorpayKeyId() {
-  return (process.env.RAZORPAY_KEY_ID || '').trim();
+  loadFreshEnv();
+  return (process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || '').trim();
 }
 
 export function getRazorpayKeySecret() {
-  return (process.env.RAZORPAY_KEY_SECRET || '').trim();
+  loadFreshEnv();
+  return (process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET || '').trim();
 }
 
 export function isRazorpayConfigured() {
   const keyId = getRazorpayKeyId();
   const keySecret = getRazorpayKeySecret();
-  return Boolean(keyId && keySecret && keyId.startsWith('rzp_test_'));
+  return Boolean(keyId && keySecret && (keyId.startsWith('rzp_test_') || keyId.startsWith('rzp_live_') || keyId.startsWith('rzp_')));
 }
 
 export function getPaymentConfig() {
