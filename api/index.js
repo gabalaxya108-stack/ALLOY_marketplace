@@ -4,9 +4,11 @@
 
 import { createGroqMiddleware } from '../server/groqMiddleware.js';
 import { createAdminMiddleware } from '../server/adminMiddleware.js';
+import { createPaymentMiddleware } from '../server/paymentMiddleware.js';
 
 const groqMiddleware = createGroqMiddleware();
 const adminMiddleware = createAdminMiddleware();
+const paymentMiddleware = createPaymentMiddleware();
 
 export default function handler(req, res) {
   // Normalize req.url for Vercel serverless environment
@@ -28,9 +30,11 @@ export default function handler(req, res) {
   // Chain middlewares
   groqMiddleware(req, res, () => {
     adminMiddleware(req, res, () => {
-      res.statusCode = 404;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ ok: false, error: 'API route not found' }));
+      paymentMiddleware(req, res, () => {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: false, error: 'API route not found' }));
+      });
     });
   });
 }

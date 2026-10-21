@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createGroqMiddleware } from './groqMiddleware.js';
 import { createAdminMiddleware } from './adminMiddleware.js';
+import { createPaymentMiddleware } from './paymentMiddleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +17,7 @@ const distDir = path.resolve(__dirname, '../dist');
 const PORT = process.env.PORT || 3001;
 const groqMiddleware = createGroqMiddleware();
 const adminMiddleware = createAdminMiddleware();
+const paymentMiddleware = createPaymentMiddleware();
 
 // Simple static file server helper for production bundles in dist/
 function serveStatic(req, res, next) {
@@ -59,13 +61,15 @@ function serveStatic(req, res, next) {
 }
 
 const server = http.createServer((req, res) => {
-  // Chain middlewares: groqMiddleware -> adminMiddleware -> serveStatic -> 404
+  // Chain middlewares: groqMiddleware -> adminMiddleware -> paymentMiddleware -> serveStatic -> 404
   groqMiddleware(req, res, () => {
     adminMiddleware(req, res, () => {
-      serveStatic(req, res, () => {
-        res.statusCode = 404;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ ok: false, error: 'Endpoint not found' }));
+      paymentMiddleware(req, res, () => {
+        serveStatic(req, res, () => {
+          res.statusCode = 404;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: 'Endpoint not found' }));
+        });
       });
     });
   });

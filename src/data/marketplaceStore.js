@@ -1258,5 +1258,42 @@ export function reviewVerificationClaimRecord({ claimId, decision, notes = '', r
   return { claim: updatedClaim, auditEntry: newAuditEntry };
 }
 
+/**
+ * Record a verified Razorpay Test Mode funding transaction for a campaign
+ */
+export function recordCampaignFunding(campaignId, paymentData) {
+  if (typeof window === 'undefined' || !campaignId || !paymentData) return null;
+  const state = getInitialMarketplaceState();
+  const campaigns = (state.campaigns || []).map(camp => {
+    if (camp.id === campaignId) {
+      const currentFunded = Number(camp.fundedAmountRupees || 0);
+      const additionRupees = Number(paymentData.amount_rupees || (paymentData.amount / 100) || 0);
+      const newTotalRupees = currentFunded + additionRupees;
+      const verifiedPayments = Array.isArray(camp.verifiedPayments) ? [...camp.verifiedPayments] : [];
+      verifiedPayments.push({
+        paymentId: paymentData.payment_id || paymentData.paymentId,
+        orderId: paymentData.order_id || paymentData.orderId,
+        amountRupees: additionRupees,
+        amountPaise: paymentData.amount,
+        verifiedAt: paymentData.verified_at || paymentData.verifiedAt || new Date().toISOString()
+      });
+      return {
+        ...camp,
+        fundedAmountRupees: newTotalRupees,
+        fundedAmountPaise: (camp.fundedAmountPaise || 0) + (paymentData.amount || 0),
+        isFunded: true,
+        fundingStatus: 'funded_test_mode',
+        verifiedPayments,
+        updatedAt: 'Just now'
+      };
+    }
+    return camp;
+  });
+
+  const updatedState = { ...state, campaigns };
+  saveMarketplaceState(updatedState);
+  return updatedState;
+}
+
 
 
