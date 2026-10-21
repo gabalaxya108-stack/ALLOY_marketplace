@@ -123,12 +123,14 @@ export const KNOWN_CAMPAIGNS = new Map([
 
 export function getRazorpayKeyId() {
   loadFreshEnv();
-  return (process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || '').trim();
+  const raw = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || '';
+  return raw.replace(/["'\r\n\s]/g, '').trim();
 }
 
 export function getRazorpayKeySecret() {
   loadFreshEnv();
-  return (process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET || '').trim();
+  const raw = process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET || '';
+  return raw.replace(/["'\r\n\s]/g, '').trim();
 }
 
 export function isRazorpayConfigured() {
