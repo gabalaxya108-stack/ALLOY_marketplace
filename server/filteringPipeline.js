@@ -5,6 +5,13 @@
 import { CREATORS } from '../src/data/creatorsData.js';
 import { calculateCreaMatch } from '../src/intelligence/matchingEngine.js';
 import { explainMatch } from '../src/intelligence/matchExplainer.js';
+import {
+  evaluateCreatorEligibility,
+  ELIGIBILITY_STATUS,
+  ELIGIBILITY_OUTCOMES,
+  isSkillCompatible,
+  hasExplicitVerticalEvidence
+} from '../src/intelligence/eligibilityEngine.js';
 
 /**
  * Human-readable failed requirement dictionary
@@ -15,7 +22,8 @@ export const READABLE_EXCLUSION_TITLES = {
   MISSING_MANDATORY_SKILLS: 'Required mandatory skills missing',
   SPECIALIZATION_MISMATCH: 'Specialization mismatch',
   TOOL_CHAIN_INCOMPATIBLE: 'Required AI tools/models not in verified toolchain',
-  FORMAT_UNSUPPORTED: 'Deliverable format unsupported'
+  FORMAT_UNSUPPORTED: 'Deliverable format unsupported',
+  BUDGET_EXCEEDED: 'Rate exceeds campaign budget'
 };
 
 export function formatExclusionLabel(code) {
@@ -52,26 +60,32 @@ function normalizeTokenArray(arr) {
 export function normalizeCampaignBrief(campaign = {}) {
   const brief = campaign || {};
   const rawRequirements = brief.requirements || {};
+  const hasMandatoryConfig = Boolean(brief.requirements && 'mandatory' in brief.requirements);
+  const rawMandatory = rawRequirements.mandatory || {};
 
   // Extract explicit mandatory constraints
-  const rawMandatorySpec = normalizeTokenArray(rawRequirements.mandatory?.specialization || rawRequirements.specialization || brief.desiredCreatorSpecialties || brief.specialty);
+  const rawMandatorySpec = normalizeTokenArray(
+    rawMandatory.specialization ?? (hasMandatoryConfig ? [] : (rawRequirements.specialization || brief.desiredCreatorSpecialties || brief.specialty))
+  );
   const isFormatTerm = term => term.includes('9:16') || term.includes('vertical') || term.includes('horizontal') || term.includes('format') || term.includes('deliverable') || term.includes('still');
   const specialization = rawMandatorySpec.filter(s => !isFormatTerm(s));
   const formatFromSpec = rawMandatorySpec.filter(s => isFormatTerm(s));
 
-  const rawFormats = normalizeTokenArray(rawRequirements.mandatory?.formats || rawRequirements.mandatory?.contentFormats || rawRequirements.formats || brief.contentFormats || brief.deliverables);
+  const rawFormats = normalizeTokenArray(
+    rawMandatory.formats ?? rawMandatory.contentFormats ?? (hasMandatoryConfig ? [] : (rawRequirements.formats || brief.contentFormats || brief.deliverables))
+  );
   const formats = Array.from(new Set([...rawFormats, ...formatFromSpec]));
 
   const mandatory = {
-    skills: normalizeTokenArray(rawRequirements.mandatory?.skills || rawRequirements.skills || brief.requiredSkills),
+    skills: normalizeTokenArray(rawMandatory.skills ?? (hasMandatoryConfig ? [] : (rawRequirements.skills || brief.requiredSkills))),
     specialization,
-    tools: normalizeTokenArray(rawRequirements.mandatory?.tools || rawRequirements.tools || brief.requiredTools),
+    tools: normalizeTokenArray(rawMandatory.tools ?? (hasMandatoryConfig ? [] : (rawRequirements.tools || brief.requiredTools))),
     formats,
-    styles: normalizeTokenArray(rawRequirements.mandatory?.styles || rawRequirements.mandatory?.creativeStyle || rawRequirements.styles || brief.creativeStyle),
-    commercialLicensing: Boolean(rawRequirements.mandatory?.commercialLicensing ?? rawRequirements.commercialLicensing ?? brief.requiresCommercialLicense),
-    minProjects: typeof (rawRequirements.mandatory?.minProjects ?? rawRequirements.minProjects) === 'number'
-      ? (rawRequirements.mandatory?.minProjects ?? rawRequirements.minProjects)
-      : (brief.requiresVerifiedPortfolio ? 1 : 0)
+    styles: normalizeTokenArray(rawMandatory.styles ?? rawMandatory.creativeStyle ?? (hasMandatoryConfig ? [] : (rawRequirements.styles || brief.creativeStyle))),
+    commercialLicensing: Boolean(rawMandatory.commercialLicensing ?? (hasMandatoryConfig ? false : (rawRequirements.commercialLicensing ?? brief.requiresCommercialLicense))),
+    minProjects: typeof (rawMandatory.minProjects ?? (hasMandatoryConfig ? 0 : rawRequirements.minProjects)) === 'number'
+      ? (rawMandatory.minProjects ?? (hasMandatoryConfig ? 0 : rawRequirements.minProjects))
+      : (hasMandatoryConfig ? 0 : (brief.requiresVerifiedPortfolio ? 1 : 0))
   };
 
   // If explicit mandatory was empty, extract keywords intelligently from brief fields as preferences unless explicitly flagged
@@ -132,41 +146,6 @@ function stageBriefNormalization(normalizedBrief, candidatePool) {
     extractedMandatory: normalizedBrief.mandatory,
     extractedPreferred: normalizedBrief.preferred
   };
-}
-
-/**
- * Known capability clusters where equivalent industry terminology represents the same
- * underlying AI production capability in an AI creator marketplace.
- */
-const SKILL_EQUIVALENCE_CLUSTERS = [
-  // Video production cluster: 'ai video', 'video production', and related generative terms
-  // represent genuine equivalent video production capabilities.
-  new Set([
-    'video production',
-    'ai video',
-    'ai video production',
-    'video generation',
-    'ai video generation',
-    'generative video',
-    'video creation'
-  ])
-];
-
-function isSkillCompatible(reqSkill, creatorSkill) {
-  if (!reqSkill || !creatorSkill) return false;
-  const normReq = normalizeToken(reqSkill);
-  const normSkill = normalizeToken(creatorSkill);
-  // 1. Direct substring match (e.g. "storytelling" matches "visual storytelling")
-  if (normSkill.includes(normReq) || normReq.includes(normSkill)) {
-    return true;
-  }
-  // 2. Equivalent alias cluster match (e.g. 'ai video' satisfies 'video production')
-  for (const cluster of SKILL_EQUIVALENCE_CLUSTERS) {
-    if (cluster.has(normReq) && cluster.has(normSkill)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**
@@ -273,21 +252,35 @@ function stageSpecializationFilter(mandatorySpecialization, candidatePool) {
   let unknownCount = 0;
 
   for (const creator of candidatePool) {
-    const specialty = normalizeToken(creator.specialty);
-    const creativeIdentity = normalizeToken(creator.creativeIdentity);
-    const categoryTags = normalizeTokenArray(creator.categoryTags);
+    const specialtyRaw = creator?.specialty;
+    const specialty = normalizeToken(specialtyRaw);
+    const creativeIdentity = normalizeToken(creator?.creativeIdentity);
+    const categoryTags = normalizeTokenArray(creator?.categoryTags);
+    const capabilities = normalizeTokenArray(creator?.capabilities);
+
+    const hasSpecialty = specialty && specialty !== 'unspecified' && specialty !== 'unknown';
+    const hasSpecEvidence = Boolean(
+      hasSpecialty ||
+      creativeIdentity ||
+      categoryTags.length > 0 ||
+      capabilities.length > 0
+    );
+
+    if (!hasSpecEvidence) {
+      unknownCount++;
+      continue;
+    }
 
     const hasSpecMatch = mandatorySpecialization.some(spec => {
-      return specialty.includes(spec) ||
-             spec.includes(specialty) ||
-             creativeIdentity.includes(spec) ||
-             categoryTags.some(t => t.includes(spec) || spec.includes(t));
+      return (hasSpecialty && (specialty.includes(spec) || spec.includes(specialty))) ||
+             (creativeIdentity && (creativeIdentity.includes(spec) || spec.includes(creativeIdentity))) ||
+             categoryTags.some(t => t.includes(spec) || spec.includes(t)) ||
+             capabilities.some(c => c.includes(spec) || spec.includes(c));
     });
 
     if (hasSpecMatch) {
       passedCandidates.push(creator);
     } else {
-      if (!creator.specialty) unknownCount++;
       rejections.push({
         creatorId: creator.id,
         creatorName: creator.name,
@@ -295,7 +288,7 @@ function stageSpecializationFilter(mandatorySpecialization, candidatePool) {
         code: 'SPECIALIZATION_MISMATCH',
         reason: `Creator specialty (${creator.specialty || 'Unspecified'}) does not match required specialization (${mandatorySpecialization.join(' or ')}).`,
         missingFields: mandatorySpecialization,
-        availableData: { specialty: creator.specialty, tags: creator.categoryTags },
+        availableData: { specialty: creator.specialty, tags: creator.categoryTags, capabilities: creator.capabilities },
         requiredFields: mandatorySpecialization
       });
     }
@@ -416,33 +409,48 @@ function stageFormatFilter(mandatoryFormats, candidatePool) {
   let unknownCount = 0;
 
   for (const creator of candidatePool) {
-    const creatorTags = normalizeTokenArray(creator.categoryTags);
-    const creatorCaps = normalizeTokenArray(creator.capabilities);
-    const creatorSpecialty = normalizeToken(creator.specialty);
-    const projectFormats = (creator.projects || []).map(p => normalizeToken(p.format || p.aspect || p.category));
+    const creatorTags = normalizeTokenArray(creator?.categoryTags);
+    const creatorCaps = normalizeTokenArray(creator?.capabilities);
+    const creatorSpecialty = normalizeToken(creator?.specialty);
+    const projectFormats = (creator?.projects || []).map(p => normalizeToken(p.format || p.aspect || p.category));
+
+    const hasSpecialty = creatorSpecialty && creatorSpecialty !== 'unspecified' && creatorSpecialty !== 'unknown';
+    const hasFormatEvidence = Boolean(
+      hasSpecialty ||
+      creatorTags.length > 0 ||
+      creatorCaps.length > 0 ||
+      projectFormats.length > 0
+    );
+
+    if (!hasFormatEvidence) {
+      unknownCount++;
+      continue;
+    }
 
     // Check capability for video, stills, 3D, motion
     const missingFormats = [];
 
-    for (const reqFormat of mandatoryFormats) {
+    for (const rawReq of mandatoryFormats) {
+      const reqFormat = normalizeToken(rawReq);
       let isSupported = false;
 
-      if (reqFormat.includes('video') || reqFormat.includes('motion') || reqFormat.includes('loop') || reqFormat.includes('reel')) {
-        isSupported = creatorTags.some(t => t.includes('video') || t.includes('motion')) ||
-                      creatorSpecialty.includes('video') || creatorSpecialty.includes('motion') ||
-                      projectFormats.some(f => f.includes('video') || f.includes('motion'));
+      if (reqFormat.includes('video') || reqFormat.includes('motion') || reqFormat.includes('loop') || reqFormat.includes('reel') || reqFormat.includes('film') || reqFormat.includes('cinema')) {
+        isSupported = creatorTags.some(t => t.includes('video') || t.includes('motion') || t.includes('film') || t.includes('cinema')) ||
+                      (hasSpecialty && (creatorSpecialty.includes('video') || creatorSpecialty.includes('motion') || creatorSpecialty.includes('film') || creatorSpecialty.includes('cinema'))) ||
+                      creatorCaps.some(c => c.includes('video') || c.includes('motion') || c.includes('film') || c.includes('cinema')) ||
+                      projectFormats.some(f => f.includes('video') || f.includes('motion') || f.includes('film') || f.includes('cinema'));
       } else if (reqFormat.includes('still') || reqFormat.includes('photo') || reqFormat.includes('key art')) {
         isSupported = creatorTags.some(t => t.includes('photo') || t.includes('product')) ||
-                      creatorSpecialty.includes('photo') || creatorSpecialty.includes('product') ||
+                      (hasSpecialty && (creatorSpecialty.includes('photo') || creatorSpecialty.includes('product'))) ||
+                      creatorCaps.some(c => c.includes('photo') || c.includes('still')) ||
                       projectFormats.some(f => f.includes('photo') || f.includes('still') || f.includes('portrait') || f.includes('landscape'));
       } else if (reqFormat.includes('3d') || reqFormat.includes('spatial') || reqFormat.includes('cgi') || reqFormat.includes('render')) {
         isSupported = creatorTags.some(t => t.includes('3d')) ||
-                      creatorSpecialty.includes('3d') ||
+                      (hasSpecialty && creatorSpecialty.includes('3d')) ||
                       creatorCaps.some(c => c.includes('3d')) ||
                       projectFormats.some(f => f.includes('3d') || f.includes('render'));
       } else if (reqFormat.includes('9:16') || reqFormat.includes('vertical') || reqFormat.includes('portrait')) {
-        isSupported = projectFormats.some(f => f.includes('portrait') || f.includes('vertical') || f.includes('9:16')) ||
-                      creatorTags.some(t => t.includes('social') || t.includes('video'));
+        isSupported = hasExplicitVerticalEvidence(creator);
       } else {
         // Generic format match in tags, capabilities, or projects
         isSupported = creatorTags.some(t => t.includes(reqFormat)) ||
@@ -451,7 +459,7 @@ function stageFormatFilter(mandatoryFormats, candidatePool) {
       }
 
       if (!isSupported) {
-        missingFormats.push(reqFormat);
+        missingFormats.push(rawReq);
       }
     }
 
@@ -465,7 +473,7 @@ function stageFormatFilter(mandatoryFormats, candidatePool) {
         code: 'FORMAT_UNSUPPORTED',
         reason: `Deliverable format requirement not satisfied: ${missingFormats.join(', ')}. Creator specializes in ${creator.specialty || 'other formats'}.`,
         missingFields: missingFormats,
-        availableData: { specialty: creator.specialty, tags: creator.categoryTags },
+        availableData: { specialty: creator.specialty, tags: creator.categoryTags, capabilities: creator.capabilities },
         requiredFields: mandatoryFormats
       });
     }
@@ -719,10 +727,161 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
   stages.push(s6);
   s6.rejections.forEach(r => globalExclusions.push(r));
 
-  const eligibleCandidates = s6.passedCandidates;
+  // Prepare unified campaign model integrating normalized mandatory & preferred requirements
+  const safeCampaign = campaign || {};
+  const unifiedCampaign = {
+    ...safeCampaign,
+    id: normalizedBrief.campaignId || safeCampaign.id,
+    title: normalizedBrief.title || safeCampaign.title,
+    budget: safeCampaign.budget || normalizedBrief.budget,
+    timeline: safeCampaign.timeline || normalizedBrief.timeline,
+    requirements: {
+      mandatory: {
+        ...(safeCampaign.requirements?.mandatory || {}),
+        skills: normalizedBrief.mandatory.skills,
+        specialization: normalizedBrief.mandatory.specialization,
+        tools: normalizedBrief.mandatory.tools,
+        formats: normalizedBrief.mandatory.formats,
+        styles: normalizedBrief.mandatory.styles,
+        commercialLicensing: normalizedBrief.mandatory.commercialLicensing,
+        minProjects: normalizedBrief.mandatory.minProjects
+      },
+      preferred: {
+        ...(safeCampaign.requirements?.preferred || {}),
+        ...normalizedBrief.preferred
+      }
+    }
+  };
+
+  // Evaluate every candidate in the candidate pool using the deterministic eligibility engine
+  const eligibilityMap = new Map();
+  for (const creator of candidatePool) {
+    const evalRes = evaluateCreatorEligibility(unifiedCampaign, creator);
+    eligibilityMap.set(creator.id, evalRes);
+  }
+
+  // Phase 1 Fix: Ensure every evaluated creator receives EXACTLY ONE outcome with zero candidate loss:
+  // 1. ELIGIBLE -> ranked results
+  // 2. INELIGIBLE -> Exclusion Ledger
+  // 3. REQUIRES_REVIEW -> Needs Review
+
+  // Track any candidate in candidatePool that has INELIGIBLE status so they enter the Exclusion Ledger
+  for (const c of candidatePool) {
+    const evalRes = eligibilityMap.get(c.id);
+    if (evalRes && evalRes.eligibility === ELIGIBILITY_STATUS.INELIGIBLE) {
+      if (!globalExclusions.some(e => e.creatorId === c.id)) {
+        const failedReq = evalRes.requirements?.find(r => r.status === ELIGIBILITY_OUTCOMES.FAIL);
+        const code = failedReq?.code ||
+                     (failedReq?.requirement === 'budget' ? 'BUDGET_EXCEEDED' :
+                      failedReq?.requirement === 'capabilities' ? 'SKILL_MISMATCH' :
+                      failedReq?.requirement === 'specialization' ? 'SPECIALIZATION_MISMATCH' :
+                      failedReq?.requirement === 'tools' ? 'TOOL_UNSUPPORTED' :
+                      failedReq?.requirement === 'formats' ? 'FORMAT_UNSUPPORTED' :
+                      failedReq?.requirement === 'commercialLicensing' ? 'COMMERCIAL_LICENSE_MISSING' :
+                      failedReq?.requirement === 'styles' ? 'STYLE_MISMATCH' :
+                      failedReq?.requirement === 'industries' ? 'INDUSTRY_MISMATCH' :
+                      failedReq?.requirement === 'availability' ? 'AVAILABILITY_MISMATCH' :
+                      failedReq?.requirement === 'minProjects' ? 'INSUFFICIENT_PROJECTS' :
+                      'REQUIREMENT_NOT_SATISFIED');
+        globalExclusions.push({
+          creatorId: c.id,
+          creatorName: c.name,
+          stage: 'stage_06_licensing_verification',
+          code,
+          reason: failedReq?.reason || evalRes.reasons?.[0] || 'Mandatory campaign requirement not satisfied',
+          missingFields: [failedReq?.requirement || 'requirement'],
+          availableData: failedReq?.evidence || {},
+          requiredFields: failedReq?.evidence?.expected || null
+        });
+      }
+    }
+  }
+
+  // Update excludedCreatorIds with all confirmed exclusions (stage rejections + engine ineligibles)
+  const excludedCreatorIds = new Set(globalExclusions.map(e => e.creatorId));
+
+  // Disjoint partitioning:
+  // Group 1: Review candidates (UNKNOWN evidence without confirmed failures or stage rejections)
+  const reviewCandidates = candidatePool.filter(c => {
+    if (excludedCreatorIds.has(c.id)) return false;
+    const evalRes = eligibilityMap.get(c.id);
+    return evalRes && evalRes.eligibility === ELIGIBILITY_STATUS.REQUIRES_REVIEW;
+  });
+
+  const reviewCreatorIds = new Set(reviewCandidates.map(c => c.id));
+
+  // Group 2: Eligible candidates (all mandatory requirements pass with confirmed evidence)
+  const eligibleCandidates = candidatePool.filter(c => {
+    if (excludedCreatorIds.has(c.id)) return false;
+    const evalRes = eligibilityMap.get(c.id);
+    return evalRes && evalRes.eligibility === ELIGIBILITY_STATUS.ELIGIBLE;
+  });
+
+  const eligibleCreatorIds = new Set(eligibleCandidates.map(c => c.id));
+
+  // Group 3: Clean exclusions (truly ineligible candidates; review & eligible candidates are strictly omitted)
+  const seenExclusionIds = new Set();
+  const cleanExclusions = [];
+  for (const exc of globalExclusions) {
+    if (reviewCreatorIds.has(exc.creatorId)) continue;
+    if (eligibleCreatorIds.has(exc.creatorId)) continue;
+    if (seenExclusionIds.has(exc.creatorId)) continue;
+    seenExclusionIds.add(exc.creatorId);
+    cleanExclusions.push(exc);
+  }
+
+  // Zero-loss invariant guarantee: Ensure every candidate from candidatePool is assigned exactly one outcome
+  for (const c of candidatePool) {
+    if (!eligibleCreatorIds.has(c.id) && !reviewCreatorIds.has(c.id) && !seenExclusionIds.has(c.id)) {
+      const evalRes = eligibilityMap.get(c.id);
+      seenExclusionIds.add(c.id);
+      cleanExclusions.push({
+        creatorId: c.id,
+        creatorName: c.name,
+        stage: 'stage_06_licensing_verification',
+        code: 'REQUIREMENT_NOT_SATISFIED',
+        reason: evalRes?.reasons?.[0] || 'Mandatory campaign requirement not satisfied',
+        missingFields: ['requirement'],
+        availableData: {},
+        requiredFields: null
+      });
+    }
+  }
+
+  const requiresReview = reviewCandidates.map(c => {
+    const evalRes = eligibilityMap.get(c.id);
+    const unknownReqs = (evalRes?.requirements || []).filter(r => r.status === ELIGIBILITY_OUTCOMES.UNKNOWN);
+    return {
+      creatorId: c.id,
+      creatorName: c.name,
+      creator: {
+        id: c.id,
+        name: c.name,
+        handle: c.handle,
+        avatar: c.avatar,
+        specialty: c.specialty,
+        creativeIdentity: c.creativeIdentity,
+        bio: c.bio,
+        location: c.location,
+        availability: c.availability,
+        statusBadge: c.statusBadge,
+        styles: c.styles,
+        industries: c.industries,
+        capabilities: c.capabilities,
+        tools: c.tools,
+        heroWork: c.heroWork,
+        projects: (c.projects || []).slice(0, 3)
+      },
+      eligibility: ELIGIBILITY_STATUS.REQUIRES_REVIEW,
+      reasons: evalRes?.reasons || [],
+      unknownRequirements: unknownReqs,
+      requirements: evalRes?.requirements || [],
+      summary: evalRes?.summary || { totalEvaluated: 0, passed: 0, failed: 0, unknown: unknownReqs.length }
+    };
+  });
 
   // 7. Stage C & D: Creative Fit Ranking & Explanations on Eligible Candidates
-  const s7 = stageCreativeFitRanking(campaign, eligibleCandidates);
+  const s7 = stageCreativeFitRanking(safeCampaign, eligibleCandidates);
   stages.push(s7);
 
   const durationMs = Date.now() - startTime;
@@ -739,7 +898,9 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
     summary: {
       totalCandidates,
       passedEligibilityCount: eligibleCandidates.length,
-      excludedCount: globalExclusions.length,
+      excludedCount: cleanExclusions.length,
+      requiresReviewCount: requiresReview.length,
+      reviewCount: requiresReview.length,
       isSuccess: true,
       hasEligibleCreators: eligibleCandidates.length > 0
     },
@@ -783,7 +944,9 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
     })),
     eligibleCreatorIds: eligibleCandidates.map(c => c.id),
     rankedCreators: s7.rankedResults,
-    exclusions: globalExclusions,
+    requiresReview,
+    requiresReviewCreators: requiresReview,
+    exclusions: cleanExclusions,
     warnings: globalWarnings
   };
 }

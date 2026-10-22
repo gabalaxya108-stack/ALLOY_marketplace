@@ -4,7 +4,11 @@
 export function getSmartClarification(briefAnalysis) {
   if (!briefAnalysis) return null;
 
-  const { isSufficient, missingFields = [], rawText = '', industry } = briefAnalysis;
+  const { isSufficient, missingFields = [], rawText = '', industry, isFlexible } = briefAnalysis;
+
+  if (isFlexible) {
+    return null; // Brief is intentionally open/flexible; do not force clarification questions
+  }
 
   if (isSufficient && missingFields.length === 0) {
     return null; // Brief is clear, no follow-up needed

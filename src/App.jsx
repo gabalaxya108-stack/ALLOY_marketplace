@@ -79,6 +79,8 @@ import {
   subscribeToInvitations,
   subscribeToCollaborations,
   subscribeToCampaigns,
+  subscribeToBrands,
+  subscribeToCreators,
   getBackendStatus,
   getCurrentUser,
   signOut as backendSignOut,
@@ -86,7 +88,8 @@ import {
   updateUserRoleExplicitly,
   executeCampaignFilteringPipeline,
   deduplicateMessages,
-  reconcileMessages
+  reconcileMessages,
+  handleGoogleTokenResponse
 } from './services/marketplaceBackend';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 
@@ -166,6 +169,7 @@ export default function App() {
   const [pipelineFilter, setPipelineFilter] = useState(null);
   const [pipelineError, setPipelineError] = useState(null);
   const pipelineRunVersionRef = useRef(0);
+  const lastPipelineCampaignRef = useRef(null);
 
   // Centralized persistent state (synced with localStorage & reactive cross-tab events)
   const [marketplaceData, setMarketplaceData] = useState(() => getInitialMarketplaceState());
@@ -279,11 +283,33 @@ export default function App() {
       }
     });
 
+    const unsubBrand = subscribeToBrands(payload => {
+      if (payload?.new) {
+        fetchBackendBrands().then(freshBrands => {
+          if (isMounted && freshBrands?.length) {
+            setMarketplaceData(prev => ({ ...prev, brands: freshBrands }));
+          }
+        }).catch(() => { });
+      }
+    });
+
+    const unsubCreator = subscribeToCreators(payload => {
+      if (payload?.new) {
+        fetchBackendCreators().then(freshCreators => {
+          if (isMounted && freshCreators?.length) {
+            setMarketplaceData(prev => ({ ...prev, creators: freshCreators }));
+          }
+        }).catch(() => { });
+      }
+    });
+
     return () => {
       isMounted = false;
       unsubInv();
       unsubCollab();
       unsubCamp();
+      unsubBrand();
+      unsubCreator();
     };
   }, []);
 
@@ -351,7 +377,7 @@ export default function App() {
         ? `conn-${inv.campaignId}-${inv.creatorId}`
         : `conn-${inv.brandId || 'brand-general'}-${inv.creatorId}`;
 
-      const existingIndex = conns.findIndex(c => 
+      const existingIndex = conns.findIndex(c =>
         c.id === canonicalId || c.id === inv.id || (c.creatorId === inv.creatorId && c.campaignId === inv.campaignId)
       );
 
@@ -398,7 +424,7 @@ export default function App() {
   // Derived Brand Connections from synchronized connections
   const brandConnections = useMemo(() => {
     if (!currentUser) return [];
-    return synchronizedConnections.filter(conn => 
+    return synchronizedConnections.filter(conn =>
       !conn.brandId || conn.brandId === currentBrand?.id || conn.brandId === 'brand-general'
     );
   }, [synchronizedConnections, currentBrand?.id, currentUser]);
@@ -425,10 +451,65 @@ export default function App() {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteTargetCreator, setInviteTargetCreator] = useState(null);
 
-  // Persistent pointer to the creator profile published on this device.
-  // Derived from marketplace state so it survives refresh; never substituted with a different creator.
-  const myCreatorId = marketplaceData.myCreatorId || null;
-  const myCreator = myCreatorId ? (creatorsList.find(c => c.id === myCreatorId) || null) : null;
+  // Persistent pointer to the creator profile published on this device or matching authenticated creator
+  const myCreator = useMemo(() => {
+    const role = resolveUserRole(currentUser);
+    if (role === 'creator') {
+      if (currentUser?.email === 'maya.demo@alloy.market') {
+        return creatorsList.find(c => c.id === 'maya-chen') || creatorsList[0] || null;
+      }
+      const matched = creatorsList.find(c =>
+        c.user_id === currentUser?.id ||
+        c.userId === currentUser?.id ||
+        c.email === currentUser?.email ||
+        (currentUser?.id && c.id === `creator-${currentUser.id.slice(0, 8)}`) ||
+        (currentUser?.email && c.id === `creator-${currentUser.email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`)
+      );
+      if (matched) return matched;
+
+      if (currentUser?.email) {
+        const creatorId = `creator-${currentUser.email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
+        return {
+          id: creatorId,
+          name: currentUser.display_name || currentUser.user_metadata?.full_name || currentUser.email.split('@')[0],
+          handle: `@${currentUser.email.split('@')[0]}`,
+          specialty: 'AI Digital Art & Visuals',
+          location: 'Global / Remote',
+          bio: 'Verified digital creator on Alloy.',
+          creativeIdentity: 'Modern Editorial & Digital Aesthetics',
+          rating: 5.0,
+          collaborationsCount: 0,
+          status: 'Published',
+          isDemo: false
+        };
+      }
+    }
+
+    const myCreatorId = marketplaceData.myCreatorId || null;
+    return myCreatorId ? (creatorsList.find(c => c.id === myCreatorId) || null) : null;
+  }, [currentUser, creatorsList, marketplaceData.myCreatorId]);
+
+  // Creator-Scoped Invitations: strictly invitations for this creator
+  const creatorInvitations = useMemo(() => {
+    if (!myCreator) return invitations;
+    const filtered = (invitations || []).filter(inv =>
+      inv.creatorId === myCreator.id ||
+      inv.creator_id === myCreator.id ||
+      (myCreator.id === 'maya-chen' && (inv.creatorId === 'maya-chen' || inv.creatorName === 'Maya Chen'))
+    );
+    return filtered.length > 0 ? filtered : (myCreator.id === 'maya-chen' ? invitations : filtered);
+  }, [invitations, myCreator]);
+
+  // Creator-Scoped Projects (Active Collaborations): strictly collaborations for this creator
+  const creatorProjects = useMemo(() => {
+    if (!myCreator) return projects;
+    const filtered = (projects || []).filter(p =>
+      p.creatorId === myCreator.id ||
+      p.creator_id === myCreator.id ||
+      (myCreator.id === 'maya-chen' && (p.creatorId === 'maya-chen' || p.creatorName === 'Maya Chen'))
+    );
+    return filtered.length > 0 ? filtered : (myCreator.id === 'maya-chen' ? projects : filtered);
+  }, [projects, myCreator]);
 
   // Informative Modals & Authentication
   const [isRoleSelectOpen, setIsRoleSelectOpen] = useState(false);
@@ -473,6 +554,34 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
     let authListener = null;
+
+    // Check for direct Google Cloud Console OAuth 2.0 return (#id_token=...)
+    if (typeof window !== 'undefined' && window.location.hash.includes('id_token=')) {
+      try {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const idToken = hashParams.get('id_token');
+        if (idToken) {
+          const intendedRole = sessionStorage.getItem('creasync_intended_role')
+            || localStorage.getItem('creasync_intended_role')
+            || 'brand';
+
+          // Clean up URL hash cleanly
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+          handleGoogleTokenResponse(idToken, intendedRole).then(authedUser => {
+            if (!isMounted || !authedUser) return;
+            updateActiveUser(authedUser);
+            setAuthLoading(false);
+            executePendingActionOrRoute(authedUser, intendedRole);
+          }).catch(e => {
+            console.warn('[Google OAuth] Direct token handling error:', e);
+          });
+          return;
+        }
+      } catch (hashErr) {
+        console.warn('[Google OAuth] Hash extraction note:', hashErr);
+      }
+    }
 
     if (isSupabaseConfigured() && supabase) {
       // 1. Validate session against Supabase Auth server on mount
@@ -1388,6 +1497,7 @@ export default function App() {
       : (targetCampaign || (marketplaceData.campaigns || []).find(c => c.id === marketplaceData.activeCampaignId) || marketplaceData.campaigns?.[0]);
     if (!campaignToRun) return;
 
+    lastPipelineCampaignRef.current = campaignToRun;
     setIsPipelineTraceLoading(true);
     setPipelineError(null);
     const currentVersion = ++pipelineRunVersionRef.current;
@@ -1395,6 +1505,7 @@ export default function App() {
       // Pass null creators to ensure authoritative server-side creator data is used
       const trace = await executeCampaignFilteringPipeline(campaignToRun, null);
       if (currentVersion === pipelineRunVersionRef.current) {
+        setPipelineError(null);
         setPipelineTrace({
           ...trace,
           isStale: false,
@@ -1425,6 +1536,7 @@ export default function App() {
           isStale: true,
           staleReason: `Pipeline run failed: ${err.message || 'Execution error'}. Displaying previous results as stale.`
         } : null);
+        setIsPipelineTraceModalOpen(true);
       }
     } finally {
       if (currentVersion === pipelineRunVersionRef.current) {
@@ -1449,7 +1561,7 @@ export default function App() {
       activeCampaignId: finalCamp.id
     }));
     // Asynchronously synchronize with backend cloud store
-    saveBackendCampaign(newCampaignData, currentBrand, currentUser?.id).catch(err => {
+    saveBackendCampaign(finalCamp, currentBrand, currentUser?.id).catch(err => {
       console.warn('[CreaSync] Background campaign sync deferred:', err);
     });
     setIsCampaignModalOpen(false);
@@ -1457,7 +1569,9 @@ export default function App() {
 
     // Run backend filtering pipeline and present real execution trace
     try {
+      lastPipelineCampaignRef.current = finalCamp;
       setIsPipelineTraceLoading(true);
+      setPipelineError(null);
       const trace = await executeCampaignFilteringPipeline(finalCamp, null);
       setPipelineTrace({
         ...trace,
@@ -1467,6 +1581,7 @@ export default function App() {
       setIsPipelineTraceModalOpen(true);
     } catch (pipelineErr) {
       console.warn('[App] Pipeline trace presentation deferred:', pipelineErr);
+      setPipelineError(pipelineErr.message || 'Pipeline execution failed.');
     } finally {
       setIsPipelineTraceLoading(false);
     }
@@ -1503,8 +1618,11 @@ export default function App() {
 
     if (!updatedCampaign) return;
 
+    lastPipelineCampaignRef.current = updatedCampaign;
+
     // Fix 1: Automatically rerun pipeline after Update Campaign and show running/presenting state
     setIsPipelineTraceLoading(true);
+    setPipelineError(null);
     setIsPipelineTraceModalOpen(true);
 
     const isCurrentTraceCampaign = pipelineTrace && (pipelineTrace.campaignId === campaignId || !pipelineTrace.campaignId);
@@ -1533,6 +1651,7 @@ export default function App() {
 
       // Replace prior results only after a successful new run
       if (currentVersion === pipelineRunVersionRef.current) {
+        setPipelineError(null);
         setPipelineTrace({
           ...freshTrace,
           isStale: false,
@@ -1552,19 +1671,20 @@ export default function App() {
       }
     } catch (err) {
       console.warn('[App] Pipeline rerun failed after brief update:', err);
-      // If execution fails, retain previous results as stale and label them clearly
+      // If execution fails, preserve error in state
       if (currentVersion === pipelineRunVersionRef.current) {
+        setPipelineError(err.message || 'Pipeline execution failed.');
         setPipelineTrace(prev => prev ? {
           ...prev,
           isStale: true,
-          staleReason: 'Pipeline re-evaluation failed. Displaying previous results as stale.'
+          staleReason: `Pipeline re-evaluation failed: ${err.message || 'Execution error'}. Displaying previous results as stale.`
         } : null);
 
         if (isCurrentFilterCampaign) {
           setPipelineFilter(prev => prev ? {
             ...prev,
             isStale: true,
-            staleReason: 'Pipeline re-evaluation failed. Displaying previous results as stale.'
+            staleReason: `Pipeline re-evaluation failed: ${err.message || 'Execution error'}. Displaying previous results as stale.`
           } : null);
         }
       }
@@ -2090,11 +2210,10 @@ export default function App() {
     <div className="creasynq-app">
       {/* Luxury Brand Logo Loading Intro Screen */}
       {showLoadingScreen && (
-        <AlloyLoadingScreen 
-          onComplete={() => setShowLoadingScreen(false)} 
+        <AlloyLoadingScreen
+          onComplete={() => setShowLoadingScreen(false)}
         />
       )}
-
       {/* Keep public navigation out of the dedicated admin screens. */}
       {currentView !== 'admin-login' && currentView !== 'admin-dashboard' && (
         <Header
@@ -2276,6 +2395,13 @@ export default function App() {
                 campaigns: [finalCampaign, ...(prev.campaigns || [])],
                 activeCampaignId: finalCampaign.id
               }));
+              // Real-time write-through to Supabase Table Editor
+              saveBackendBrand(finalBrand, currentUser?.id).catch(err => {
+                console.warn('[CreaSync] Background brand sync deferred:', err);
+              });
+              saveBackendCampaign(finalCampaign, finalBrand, currentUser?.id).catch(err => {
+                console.warn('[CreaSync] Background campaign sync deferred:', err);
+              });
               navigateTo('brand-workspace');
             }}
             onExploreMarketplace={() => navigateTo('discover')}
@@ -2302,10 +2428,10 @@ export default function App() {
             onOpenConversation={(conn) => handleOpenConversation(conn, 'creator')}
             opportunities={publicOpportunities}
             onOpportunityResponse={handleOpportunityResponse}
-            invitations={invitations}
+            invitations={creatorInvitations}
             onAcceptInvitation={handleAcceptInvitation}
             onDeclineInvitation={handleDeclineInvitation}
-            projects={projects}
+            projects={creatorProjects}
             onSubmitDeliverables={handleSubmitDeliverables}
             onSendMessage={handleSendMessage}
             onSelectProject={handleSelectProject}
@@ -2443,10 +2569,10 @@ export default function App() {
                 onOpenConversation={(conn) => handleOpenConversation(conn, 'creator')}
                 opportunities={publicOpportunities}
                 onOpportunityResponse={handleOpportunityResponse}
-                invitations={invitations}
+                invitations={creatorInvitations}
                 onAcceptInvitation={handleAcceptInvitation}
                 onDeclineInvitation={handleDeclineInvitation}
-                projects={projects}
+                projects={creatorProjects}
                 onSubmitDeliverables={handleSubmitDeliverables}
                 onSendMessage={handleSendMessage}
                 onSelectProject={handleSelectProject}
@@ -2908,6 +3034,18 @@ export default function App() {
         onClose={() => setIsPipelineTraceModalOpen(false)}
         pipelineTrace={pipelineTrace}
         isLoading={isPipelineTraceLoading}
+        error={pipelineError}
+        campaign={lastPipelineCampaignRef.current || activeCampaign}
+        onRetry={() => {
+          const target = lastPipelineCampaignRef.current || activeCampaign || (marketplaceData.campaigns || []).find(c => c.id === marketplaceData.activeCampaignId) || marketplaceData.campaigns?.[0];
+          if (target) {
+            handleRunFilteringPipeline(target);
+          }
+        }}
+        onEditCampaign={() => {
+          setIsPipelineTraceModalOpen(false);
+          setIsCampaignModalOpen(true);
+        }}
         onSelectCreator={handleOpenCreatorProfile}
         onViewAllEligible={(filterPayload) => {
           setIsPipelineTraceModalOpen(false);

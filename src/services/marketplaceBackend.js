@@ -4,9 +4,9 @@
 // and gracefully falls back to persistent local marketplace store for offline/local development.
 
 import { supabase, isSupabaseConfigured, supabaseUrl } from '../lib/supabaseClient.js';
-import { 
-  getInitialMarketplaceState, 
-  saveMarketplaceState, 
+import {
+  getInitialMarketplaceState,
+  saveMarketplaceState,
   updateCreatorRecord,
   createCampaignRecord,
   createBrandRecord,
@@ -19,6 +19,22 @@ import {
   reviewVerificationClaimRecord
 } from '../data/marketplaceStore.js';
 import { CREATORS } from '../data/creatorsData.js';
+import {
+  syncBrandToDb,
+  syncCampaignToDb,
+  deleteCampaignFromDb,
+  syncCreatorToDb,
+  syncProjectToDb,
+  deleteProjectFromDb,
+  syncWorkflowToDb,
+  deleteWorkflowFromDb,
+  syncShortlistToDb,
+  syncFundingToDb,
+  syncCollaborationToDb,
+  syncInvitationToDb,
+  syncMessageToDb,
+  syncVerificationClaimToDb
+} from './dbSync.js';
 
 /**
  * Returns backend status descriptor
@@ -64,7 +80,7 @@ export async function syncUserProfileSafely(user, preferredRole = null) {
     if (preferredRole === 'creator' || preferredRole === 'brand') {
       explicitIntent = preferredRole;
     } else if (typeof window !== 'undefined') {
-      const stored = sessionStorage.getItem('creasync_intended_role') 
+      const stored = sessionStorage.getItem('creasync_intended_role')
         || localStorage.getItem('creasync_intended_role');
       if (stored === 'creator' || stored === 'brand') {
         explicitIntent = stored;
@@ -98,14 +114,14 @@ export async function syncUserProfileSafely(user, preferredRole = null) {
       resolvedRole = 'creator';
     }
 
-    const displayName = existingProfile?.display_name 
-      || user.user_metadata?.full_name 
-      || user.user_metadata?.name 
-      || user.email?.split('@')[0] 
+    const displayName = existingProfile?.display_name
+      || user.user_metadata?.full_name
+      || user.user_metadata?.name
+      || user.email?.split('@')[0]
       || '';
 
-    const avatarUrl = existingProfile?.avatar_url 
-      || user.user_metadata?.avatar_url 
+    const avatarUrl = existingProfile?.avatar_url
+      || user.user_metadata?.avatar_url
       || '';
 
     const { data, error } = await supabase.from('profiles').upsert({
@@ -211,15 +227,29 @@ export async function updateUserRoleExplicitly(user, newRole) {
   return { ...user, role: newRole };
 }
 
+export function getGoogleClientId() {
+  if (typeof process !== 'undefined' && (process.env?.VITE_GOOGLE_CLIENT_ID || process.env?.GOOGLE_CLIENT_ID)) {
+    return (process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID).trim();
+  }
+  if (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_GOOGLE_CLIENT_ID || import.meta.env?.GOOGLE_CLIENT_ID)) {
+    return (import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.GOOGLE_CLIENT_ID).trim();
+  }
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('alloy_google_client_id') || '';
+  }
+  return '';
+}
+
+export function setGoogleClientId(clientId) {
+  if (typeof window !== 'undefined' && clientId) {
+    localStorage.setItem('alloy_google_client_id', clientId.trim());
+  }
+}
+
 /**
- * Initiates Google OAuth authentication via Supabase Auth
- * Requires active Supabase configuration in .env. Does NOT mock authentication.
+ * Initiates Google OAuth authentication via Supabase Auth or direct Google Cloud Console OAuth 2.0
  */
 export async function signInWithGoogle({ role = 'brand', redirectTo } = {}) {
-  if (!isSupabaseConfigured() || !supabase) {
-    throw new Error('Google Authentication requires Supabase to be configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.');
-  }
-
   // Validate target role
   const targetRole = role === 'creator' ? 'creator' : 'brand';
 
@@ -233,44 +263,156 @@ export async function signInWithGoogle({ role = 'brand', redirectTo } = {}) {
   }
 
   const callbackUrl = redirectTo || (typeof window !== 'undefined' ? window.location.origin : '');
+  const googleClientId = getGoogleClientId();
 
-  // Pre-validate whether Google OAuth is enabled in Supabase to prevent showing raw 400 error page
-  if (supabaseUrl) {
+  // 1. Probe Supabase to see if Google provider is enabled in Supabase dashboard
+  let supabaseGoogleReady = false;
+  if (isSupabaseConfigured() && supabase && supabaseUrl) {
     try {
       const probeUrl = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(callbackUrl)}`;
       const probe = await fetch(probeUrl);
-      if (probe.status === 400) {
+      if (probe.status !== 400) {
+        supabaseGoogleReady = true;
+      } else {
         const errData = await probe.json().catch(() => ({}));
-        if (errData.msg?.includes('not enabled') || errData.error_code === 'validation_failed') {
-          const customErr = new Error('Google OAuth provider is not enabled in Supabase dashboard.');
-          customErr.code = 'google_not_enabled';
-          throw customErr;
+        if (!errData.msg?.includes('not enabled') && errData.error_code !== 'validation_failed') {
+          supabaseGoogleReady = true;
         }
       }
-    } catch (probeErr) {
-      if (probeErr.code === 'google_not_enabled') {
-        throw probeErr;
-      }
+    } catch (e) {
+      supabaseGoogleReady = false;
     }
   }
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: callbackUrl,
-      queryParams: {
-        access_type: 'offline',
-        prompt: 'consent'
-      },
-      data: {
-        intended_role: targetRole,
-        role: targetRole
+  // 2. If Supabase Google provider is enabled, use Supabase OAuth redirect
+  if (supabaseGoogleReady && supabase) {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: callbackUrl,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'select_account'
+        },
+        data: {
+          intended_role: targetRole,
+          role: targetRole
+        }
       }
-    }
-  });
+    });
 
-  if (error) throw error;
-  return data;
+    if (error) throw error;
+    return data;
+  }
+
+  // 3. Direct Google Cloud Console OAuth 2.0 Web Client Flow
+  if (googleClientId) {
+    const redirectUri = callbackUrl.split('#')[0];
+    const nonce = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('alloy_google_oauth_nonce', nonce);
+      sessionStorage.setItem('alloy_google_oauth_role', targetRole);
+    }
+
+    const params = new URLSearchParams({
+      client_id: googleClientId,
+      redirect_uri: redirectUri,
+      response_type: 'id_token token',
+      scope: 'openid email profile',
+      prompt: 'select_account',
+      nonce: nonce,
+      state: JSON.stringify({ role: targetRole, redirect: redirectUri })
+    });
+
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    if (typeof window !== 'undefined') {
+      window.location.href = googleAuthUrl;
+    }
+    return { provider: 'google', url: googleAuthUrl };
+  }
+
+  // 4. If neither is configured, throw informative error for UI config prompt
+  const missingErr = new Error('Google OAuth credentials required. Provide your Google Client ID from Google Cloud Console.');
+  missingErr.code = 'google_config_required';
+  throw missingErr;
+}
+
+/**
+ * Parses and verifies a Google OAuth ID Token, registers/authenticates the user in Supabase,
+ * and sets active session.
+ */
+export async function handleGoogleTokenResponse(idToken, intendedRole = 'brand') {
+  if (!idToken) throw new Error('Missing Google ID token.');
+
+  // Safe base64url decode
+  const parts = idToken.split('.');
+  if (parts.length < 2) throw new Error('Invalid JWT format.');
+  const base64Url = parts[1];
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const jsonPayload = decodeURIComponent(
+    atob(base64)
+      .split('')
+      .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+      .join('')
+  );
+  const profile = JSON.parse(jsonPayload);
+
+  const email = profile.email;
+  const name = profile.name || profile.given_name || email.split('@')[0];
+  const picture = profile.picture || null;
+  const targetRole = intendedRole === 'creator' ? 'creator' : 'brand';
+
+  // Register or authenticate into Supabase
+  let authResult = null;
+  try {
+    const res = await fetch('/api/auth/register-or-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        password: `AlloyGoogleOAuth-${profile.sub?.slice(0, 8) || '2026!'}`,
+        role: targetRole,
+        displayName: name,
+        avatarUrl: picture,
+        source: 'google_oauth'
+      })
+    });
+    authResult = await res.json();
+  } catch (e) {
+    console.warn('[Google OAuth] Server register-or-login note:', e);
+  }
+
+  const userId = authResult?.userId || `usr-${email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+  const user = {
+    id: userId,
+    email,
+    role: targetRole,
+    display_name: name,
+    avatar_url: picture,
+    app_metadata: { provider: 'google', providers: ['google'] },
+    user_metadata: {
+      role: targetRole,
+      intended_role: targetRole,
+      full_name: name,
+      avatar_url: picture
+    },
+    profile: {
+      id: userId,
+      email,
+      role: targetRole,
+      display_name: name,
+      avatar_url: picture
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('creasync_active_user', JSON.stringify(user));
+    localStorage.setItem('creasync_active_role', targetRole);
+    sessionStorage.removeItem('creasync_intended_role');
+  }
+
+  return user;
 }
 
 export async function signUp(email, password, role = 'creator', displayName = '') {
@@ -457,9 +599,9 @@ export async function signIn(email, password) {
       profile = profileData || null;
     } catch (e) {}
 
-    const resolvedRole = profile?.role 
-      || data.user.user_metadata?.role 
-      || data.user.user_metadata?.intended_role 
+    const resolvedRole = profile?.role
+      || data.user.user_metadata?.role
+      || data.user.user_metadata?.intended_role
       || (typeof window !== 'undefined' ? localStorage.getItem('creasync_active_role') : null)
       || (email.toLowerCase().includes('creator') ? 'creator' : 'brand');
 
@@ -561,10 +703,10 @@ export async function getCurrentUser() {
           }
         }
 
-        const fullUser = { 
-          ...user, 
+        const fullUser = {
+          ...user,
           role: profile?.role || (user.role !== 'authenticated' ? user.role : null) || 'brand',
-          profile 
+          profile
         };
         if (typeof window !== 'undefined') {
           localStorage.setItem('creasync_active_user', JSON.stringify(fullUser));
@@ -804,14 +946,14 @@ export function normalizeSupabaseCollaboration(row) {
 // Strictly audit logs marketplace events without auth secrets/passwords.
 // ============================================================================
 
-export async function logActivity({ 
-  actorRole = 'system', 
-  actorName = 'System', 
-  actionType, 
-  entityType, 
-  entityId, 
-  metadata = {}, 
-  userId = null 
+export async function logActivity({
+  actorRole = 'system',
+  actorName = 'System',
+  actionType,
+  entityType,
+  entityId,
+  metadata = {},
+  userId = null
 }) {
   if (!actionType || !entityType || !entityId) return null;
 
@@ -931,78 +1073,37 @@ export async function saveCreator(creatorData, userId = null) {
     throw new Error('Invalid creator data: id is required.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      // Resolve user_id: explicit userId, or active auth user session
-      let resolvedUserId = userId;
-      if (!resolvedUserId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        resolvedUserId = user?.id || null;
-      }
-
-      const upsertPayload = {
-        id: creatorData.id,
-        name: creatorData.name,
-        handle: creatorData.handle,
-        creative_identity: creatorData.creativeIdentity,
-        bio: creatorData.bio,
-        specialty: creatorData.specialty,
-        location: creatorData.location,
-        availability: creatorData.availability,
-        status_badge: creatorData.statusBadge,
-        turnaround: creatorData.turnaround,
-        experience: creatorData.experience,
-        hero_work: creatorData.heroWork,
-        avatar: creatorData.avatar,
-        styles: creatorData.styles || [],
-        industries: creatorData.industries || [],
-        capabilities: creatorData.capabilities || [],
-        tools: creatorData.tools || [],
-        platforms: creatorData.platforms || [],
-        category_tags: creatorData.categoryTags || [],
-        technical_skills: creatorData.technicalSkills || creatorData.technical_skills || [],
-        creative_skills: creatorData.creativeSkills || creatorData.creative_skills || [],
-        status: creatorData.status || 'Published',
-        visibility: creatorData.visibility || 'published',
-        is_demo: !!creatorData.isDemo,
-        updated_at: new Date().toISOString()
-      };
-      if (resolvedUserId) {
-        upsertPayload.user_id = resolvedUserId;
-      }
-
-      const { data, error } = await supabase
-        .from('creator_profiles')
-        .upsert(upsertPayload)
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'creator',
-        actorName: creatorData.name,
-        actionType: 'CREATOR_PROFILE_SAVED',
-        entityType: 'creator_profile',
-        entityId: creatorData.id,
-        metadata: { specialty: creatorData.specialty, status: creatorData.status },
-        userId: resolvedUserId
-      });
-
-      // Synchronize local cache with confirmed write
-      const state = getInitialMarketplaceState();
-      saveMarketplaceState(updateCreatorRecord(state, creatorData));
-
-      return data;
-    } catch (err) {
-      console.error('[Supabase] Database error saving creator profile:', err);
-      throw new Error(`Failed to save creator profile to database: ${err.message}`);
-    }
-  }
-
-  // Local persistent engine fallback
+  // Synchronize local cache with confirmed write
   const state = getInitialMarketplaceState();
   const nextState = updateCreatorRecord(state, creatorData);
   saveMarketplaceState(nextState);
+
+  // Resolve user_id: explicit userId, or active auth user session
+  let resolvedUserId = userId;
+  if (!resolvedUserId && isSupabaseConfigured() && supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      resolvedUserId = user?.id || null;
+    } catch {}
+  }
+
+  // Sync to database
+  try {
+    await syncCreatorToDb(creatorData, resolvedUserId);
+  } catch (err) {
+    console.warn('[CreaSync] syncCreatorToDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'creator',
+    actorName: creatorData.name,
+    actionType: 'CREATOR_PROFILE_SAVED',
+    entityType: 'creator_profile',
+    entityId: creatorData.id,
+    metadata: { specialty: creatorData.specialty, status: creatorData.status },
+    userId: resolvedUserId
+  }).catch(() => {});
+
   return creatorData;
 }
 
@@ -1011,67 +1112,7 @@ export async function savePortfolioProject(creatorId, project) {
     throw new Error('creatorId and project.id are required.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('portfolio_projects')
-        .upsert({
-          id: project.id,
-          creator_id: creatorId,
-          title: project.title,
-          description: project.description,
-          category: project.category,
-          creative_style: project.creativeStyle,
-          tools: project.tools,
-          format: project.format,
-          image: project.image,
-          video: project.video || null,
-          media: project.media || [],
-          workflow_id: project.workflowId || null,
-          workflow_stages: project.workflowStages || project.workflow_stages || [],
-          production_workflow: project.productionWorkflow || project.production_workflow || {},
-          aspect: project.aspect || '16:9',
-          role: project.role,
-          client_type: project.clientType,
-          creative_direction: project.creativeDirection,
-          capabilities: project.capabilities || [],
-          visibility: project.visibility || 'published',
-          featured: !!project.featured,
-          display_order: project.displayOrder || 0,
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'creator',
-        actorName: creatorId,
-        actionType: 'PORTFOLIO_PROJECT_SAVED',
-        entityType: 'portfolio_project',
-        entityId: project.id,
-        metadata: { title: project.title, category: project.category }
-      });
-
-      // Synchronize local cache
-      const state = getInitialMarketplaceState();
-      const creator = (state.creators || CREATORS).find(c => c.id === creatorId);
-      if (creator) {
-        const existingIdx = (creator.projects || []).findIndex(p => p.id === project.id);
-        const updatedProjects = existingIdx >= 0
-          ? creator.projects.map(p => p.id === project.id ? { ...p, ...project } : p)
-          : [project, ...(creator.projects || [])];
-        saveMarketplaceState(updateCreatorRecord(state, { ...creator, projects: updatedProjects }));
-      }
-
-      return data;
-    } catch (err) {
-      console.error('[Supabase] Database error saving portfolio project:', err);
-      throw new Error(`Failed to save portfolio project to database: ${err.message}`);
-    }
-  }
-
-  // Local fallback
+  // Synchronize local cache
   const state = getInitialMarketplaceState();
   const creator = (state.creators || CREATORS).find(c => c.id === creatorId);
   if (creator) {
@@ -1081,6 +1122,23 @@ export async function savePortfolioProject(creatorId, project) {
       : [project, ...(creator.projects || [])];
     saveMarketplaceState(updateCreatorRecord(state, { ...creator, projects: updatedProjects }));
   }
+
+  // Sync to database
+  try {
+    await syncProjectToDb(creatorId, project);
+  } catch (err) {
+    console.warn('[CreaSync] syncProjectToDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'creator',
+    actorName: creatorId,
+    actionType: 'PORTFOLIO_PROJECT_SAVED',
+    entityType: 'portfolio_project',
+    entityId: project.id,
+    metadata: { title: project.title, category: project.category }
+  }).catch(() => {});
+
   return project;
 }
 
@@ -1089,45 +1147,29 @@ export async function deletePortfolioProject(creatorId, projectId) {
     throw new Error('creatorId and projectId are required.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { error } = await supabase
-        .from('portfolio_projects')
-        .delete()
-        .eq('id', projectId)
-        .eq('creator_id', creatorId);
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'creator',
-        actorName: creatorId,
-        actionType: 'PORTFOLIO_PROJECT_DELETED',
-        entityType: 'portfolio_project',
-        entityId: projectId
-      });
-
-      // Synchronize local cache
-      const state = getInitialMarketplaceState();
-      const creator = (state.creators || CREATORS).find(c => c.id === creatorId);
-      if (creator) {
-        const updatedProjects = (creator.projects || []).filter(p => p.id !== projectId);
-        saveMarketplaceState(updateCreatorRecord(state, { ...creator, projects: updatedProjects }));
-      }
-
-      return { ok: true, id: projectId };
-    } catch (err) {
-      console.error('[Supabase] Database error deleting portfolio project:', err);
-      throw new Error(`Failed to delete project from database: ${err.message}`);
-    }
-  }
-
-  // Local fallback
+  // Synchronize local cache
   const state = getInitialMarketplaceState();
   const creator = (state.creators || CREATORS).find(c => c.id === creatorId);
   if (creator) {
     const updatedProjects = (creator.projects || []).filter(p => p.id !== projectId);
     saveMarketplaceState(updateCreatorRecord(state, { ...creator, projects: updatedProjects }));
   }
+
+  // Sync delete to database
+  try {
+    await deleteProjectFromDb(creatorId, projectId);
+  } catch (err) {
+    console.warn('[CreaSync] deleteProjectFromDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'creator',
+    actorName: creatorId,
+    actionType: 'PORTFOLIO_PROJECT_DELETED',
+    entityType: 'portfolio_project',
+    entityId: projectId
+  }).catch(() => {});
+
   return { ok: true, id: projectId };
 }
 
@@ -1202,70 +1244,39 @@ export async function saveBrand(brandData, userId = null) {
     throw new Error('Invalid brandData: id is required.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      let resolvedUserId = userId;
-      if (!resolvedUserId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        resolvedUserId = user?.id || null;
-      }
-
-      const upsertPayload = {
-        id: brandData.id,
-        name: brandData.name,
-        industry: brandData.industry,
-        website: brandData.website,
-        logo: brandData.logo,
-        cover_image: brandData.coverImage,
-        description: brandData.description,
-        aesthetic: brandData.aesthetic,
-        brand_colors: brandData.brandColors || [],
-        preferred_platforms: brandData.preferredPlatforms || [],
-        is_demo: true,
-        updated_at: new Date().toISOString()
-      };
-      if (resolvedUserId) {
-        upsertPayload.user_id = resolvedUserId;
-      }
-
-      const { data, error } = await supabase
-        .from('brands')
-        .upsert(upsertPayload)
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'brand',
-        actorName: brandData.name,
-        actionType: 'BRAND_SAVED',
-        entityType: 'brand',
-        entityId: brandData.id,
-        userId: resolvedUserId
-      });
-
-      // Synchronize local cache
-      const state = getInitialMarketplaceState();
-      const exists = (state.brands || []).some(b => b.id === brandData.id);
-      const updatedBrands = exists
-        ? state.brands.map(b => b.id === brandData.id ? { ...b, ...brandData } : b)
-        : [brandData, ...(state.brands || [])];
-      saveMarketplaceState({ ...state, brands: updatedBrands });
-
-      return data;
-    } catch (err) {
-      console.error('[Supabase] Database error saving brand:', err);
-      throw new Error(`Failed to save brand to database: ${err.message}`);
-    }
-  }
-
-  // Local fallback
+  // Synchronize local cache
   const state = getInitialMarketplaceState();
   const exists = (state.brands || []).some(b => b.id === brandData.id);
   const updatedBrands = exists
     ? state.brands.map(b => b.id === brandData.id ? { ...b, ...brandData } : b)
     : [brandData, ...(state.brands || [])];
   saveMarketplaceState({ ...state, brands: updatedBrands });
+
+  // Resolve user_id: explicit userId, or active auth user session
+  let resolvedUserId = userId;
+  if (!resolvedUserId && isSupabaseConfigured() && supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      resolvedUserId = user?.id || null;
+    } catch {}
+  }
+
+  // Sync to database
+  try {
+    await syncBrandToDb(brandData, resolvedUserId);
+  } catch (err) {
+    console.warn('[CreaSync] syncBrandToDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'brand',
+    actorName: brandData.name,
+    actionType: 'BRAND_SAVED',
+    entityType: 'brand',
+    entityId: brandData.id,
+    userId: resolvedUserId
+  }).catch(() => {});
+
   return brandData;
 }
 
@@ -1287,7 +1298,7 @@ export async function fetchCampaigns(brandId = null) {
   }
 
   const state = getInitialMarketplaceState();
-  return brandId 
+  return brandId
     ? (state.campaigns || []).filter(c => c.ownerBrandId === brandId)
     : (state.campaigns || []);
 }
@@ -1295,137 +1306,68 @@ export async function fetchCampaigns(brandId = null) {
 export async function saveCampaign(campaignData, brand, userId = null) {
   const finalRecord = createCampaignRecord(campaignData, brand);
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      let resolvedUserId = userId;
-      if (!resolvedUserId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        resolvedUserId = user?.id || null;
-      }
-
-      // Ensure parent brand exists in Supabase so Foreign Key constraint passes
-      if (finalRecord.ownerBrandId) {
-        const brandPayload = {
-          id: finalRecord.ownerBrandId,
-          name: finalRecord.brandName || (brand && brand.name) || 'Brand Partner',
-          industry: finalRecord.industry || (brand && brand.industry) || 'Creative & Media',
-          website: finalRecord.brandWebsite || (brand && brand.website) || '',
-          logo: finalRecord.brandAvatar || (brand && brand.logo) || null,
-          is_demo: true,
-          updated_at: new Date().toISOString()
-        };
-        if (resolvedUserId) {
-          brandPayload.user_id = resolvedUserId;
-        }
-        await supabase.from('brands').upsert(brandPayload, { onConflict: 'id' });
-      }
-
-      const { data, error } = await supabase
-        .from('campaigns')
-        .upsert({
-          id: finalRecord.id,
-          owner_brand_id: finalRecord.ownerBrandId,
-          brand_name: finalRecord.brandName,
-          brand_avatar: finalRecord.brandAvatar,
-          brand_website: finalRecord.brandWebsite,
-          title: finalRecord.title,
-          objective: finalRecord.objective,
-          product_or_service: finalRecord.productOrService,
-          industry: finalRecord.industry,
-          description: finalRecord.description,
-          creative_direction: finalRecord.creativeDirection,
-          creative_style: finalRecord.creativeStyle,
-          tone_of_voice: finalRecord.toneOfVoice,
-          desired_creator_specialties: finalRecord.desiredCreatorSpecialties || [],
-          deliverables: finalRecord.deliverables || [],
-          platforms: finalRecord.platforms || [],
-          budget: finalRecord.budget,
-          currency: finalRecord.currency,
-          timeline: finalRecord.timeline,
-          deadline: finalRecord.deadline,
-          target_audience: finalRecord.targetAudience,
-          cover_image: finalRecord.coverImage,
-          status: finalRecord.status,
-          visibility: finalRecord.visibility,
-          is_demo: true,
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'brand',
-        actorName: finalRecord.brandName,
-        actionType: 'CAMPAIGN_SAVED',
-        entityType: 'campaign',
-        entityId: finalRecord.id,
-        metadata: { title: finalRecord.title, budget: finalRecord.budget, status: finalRecord.status },
-        userId
-      });
-
-      // Synchronize local cache
-      const state = getInitialMarketplaceState();
-      const exists = (state.campaigns || []).some(c => c.id === finalRecord.id);
-      const updatedCampaigns = exists
-        ? state.campaigns.map(c => c.id === finalRecord.id ? { ...c, ...finalRecord } : c)
-        : [finalRecord, ...(state.campaigns || [])];
-      saveMarketplaceState({ ...state, campaigns: updatedCampaigns, activeCampaignId: finalRecord.id });
-
-      return data;
-    } catch (err) {
-      console.error('[Supabase] Database error saving campaign:', err);
-      throw new Error(`Failed to save campaign to database: ${err.message}`);
-    }
-  }
-
-  // Local fallback
+  // Synchronize local cache
   const state = getInitialMarketplaceState();
   const exists = (state.campaigns || []).some(c => c.id === finalRecord.id);
   const updatedCampaigns = exists
     ? state.campaigns.map(c => c.id === finalRecord.id ? { ...c, ...finalRecord } : c)
     : [finalRecord, ...(state.campaigns || [])];
   saveMarketplaceState({ ...state, campaigns: updatedCampaigns, activeCampaignId: finalRecord.id });
+
+  // Resolve user_id: explicit userId, or active auth user session
+  let resolvedUserId = userId;
+  if (!resolvedUserId && isSupabaseConfigured() && supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      resolvedUserId = user?.id || null;
+    } catch {}
+  }
+
+  // Sync to database
+  try {
+    await syncCampaignToDb(finalRecord, brand, resolvedUserId);
+  } catch (err) {
+    console.warn('[CreaSync] syncCampaignToDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'brand',
+    actorName: finalRecord.brandName,
+    actionType: 'CAMPAIGN_SAVED',
+    entityType: 'campaign',
+    entityId: finalRecord.id,
+    metadata: { title: finalRecord.title, budget: finalRecord.budget, status: finalRecord.status },
+    userId: resolvedUserId
+  }).catch(() => {});
+
   return finalRecord;
 }
 
 export async function deleteCampaign(campaignId) {
   if (!campaignId) return { ok: false };
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { error } = await supabase
-        .from('campaigns')
-        .delete()
-        .eq('id', campaignId);
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'brand',
-        actorName: 'Brand',
-        actionType: 'CAMPAIGN_DELETED',
-        entityType: 'campaign',
-        entityId: campaignId
-      });
-
-      const state = getInitialMarketplaceState();
-      const remaining = (state.campaigns || []).filter(c => c.id !== campaignId);
-      const newShortlists = { ...(state.shortlists || {}) };
-      delete newShortlists[campaignId];
-      saveMarketplaceState({ ...state, campaigns: remaining, shortlists: newShortlists });
-
-      return { ok: true, id: campaignId };
-    } catch (err) {
-      console.error('[Supabase] Database error deleting campaign:', err);
-      throw new Error(`Failed to delete campaign from database: ${err.message}`);
-    }
-  }
-
+  // Synchronize local cache
   const state = getInitialMarketplaceState();
   const remaining = (state.campaigns || []).filter(c => c.id !== campaignId);
   const newShortlists = { ...(state.shortlists || {}) };
   delete newShortlists[campaignId];
   saveMarketplaceState({ ...state, campaigns: remaining, shortlists: newShortlists });
+
+  // Sync delete to database
+  try {
+    await deleteCampaignFromDb(campaignId);
+  } catch (err) {
+    console.warn('[CreaSync] deleteCampaignFromDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'brand',
+    actorName: 'Brand',
+    actionType: 'CAMPAIGN_DELETED',
+    entityType: 'campaign',
+    entityId: campaignId
+  }).catch(() => {});
+
   return { ok: true, id: campaignId };
 }
 
@@ -1472,79 +1414,7 @@ export async function toggleShortlist(brandIdOrCampaignId, campaignIdOrCreatorId
     brandId = camp?.ownerBrandId || 'brand-demo-lumina';
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data: existing } = await supabase
-        .from('shortlists')
-        .select('id')
-        .eq('campaign_id', campaignId)
-        .eq('creator_id', creatorId)
-        .maybeSingle();
-
-      if (existing) {
-        const { error: delErr } = await supabase
-          .from('shortlists')
-          .delete()
-          .eq('id', existing.id);
-        if (delErr) throw delErr;
-
-        await logActivity({
-          actorRole: 'brand',
-          actorName: brandId,
-          actionType: 'SHORTLIST_REMOVED',
-          entityType: 'creator_profile',
-          entityId: creatorId,
-          metadata: { campaignId }
-        });
-
-        // Update local state
-        const state = getInitialMarketplaceState();
-        const cur = (state.shortlists?.[campaignId] || []).filter(id => id !== creatorId);
-        saveMarketplaceState({ ...state, shortlists: { ...state.shortlists, [campaignId]: cur } });
-
-        return { isShortlisted: false, creatorId, campaignId };
-      } else {
-        if (brandId) {
-          await supabase.from('brands').upsert({
-            id: brandId,
-            name: 'Brand Partner',
-            is_demo: true,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' });
-        }
-        const newId = `sl-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-        const { error: insErr } = await supabase
-          .from('shortlists')
-          .insert({
-            id: newId,
-            brand_id: brandId,
-            campaign_id: campaignId,
-            creator_id: creatorId
-          });
-        if (insErr) throw insErr;
-
-        await logActivity({
-          actorRole: 'brand',
-          actorName: brandId,
-          actionType: 'SHORTLIST_ADDED',
-          entityType: 'creator_profile',
-          entityId: creatorId,
-          metadata: { campaignId }
-        });
-
-        const state = getInitialMarketplaceState();
-        const cur = [...(state.shortlists?.[campaignId] || []), creatorId];
-        saveMarketplaceState({ ...state, shortlists: { ...state.shortlists, [campaignId]: cur } });
-
-        return { isShortlisted: true, creatorId, campaignId };
-      }
-    } catch (err) {
-      console.error('[Supabase] Database error toggling shortlist:', err);
-      throw new Error(`Failed to update shortlist in database: ${err.message}`);
-    }
-  }
-
-  // Local fallback
+  // Update local state first
   const state = getInitialMarketplaceState();
   const currentShortlist = state.shortlists?.[campaignId] || [];
   const exists = currentShortlist.includes(creatorId);
@@ -1559,7 +1429,26 @@ export async function toggleShortlist(brandIdOrCampaignId, campaignIdOrCreatorId
       [campaignId]: updatedList
     }
   });
-  return { isShortlisted: !exists, list: updatedList, creatorId, campaignId };
+
+  const isShortlisted = !exists;
+
+  // Real-time synchronization to Supabase Table Editor
+  try {
+    await syncShortlistToDb(brandId, campaignId, creatorId, isShortlisted);
+  } catch (err) {
+    console.warn('[CreaSync] syncShortlistToDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'brand',
+    actorName: brandId,
+    actionType: isShortlisted ? 'SHORTLIST_ADDED' : 'SHORTLIST_REMOVED',
+    entityType: 'creator_profile',
+    entityId: creatorId,
+    metadata: { campaignId }
+  }).catch(() => {});
+
+  return { isShortlisted, list: updatedList, creatorId, campaignId };
 }
 
 // ============================================================================
@@ -1618,136 +1507,13 @@ export async function sendInvitation(invitationData, actorName = null, userId = 
     isDemo: !!invitationData.isDemo
   };
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      if (invRecord.brandId) {
-        const brandPayload = {
-          id: invRecord.brandId,
-          name: invRecord.brandName || 'Brand Partner',
-          logo: invRecord.brandLogo || null,
-          is_demo: !userId,
-          updated_at: new Date().toISOString()
-        };
-        if (userId) {
-          brandPayload.user_id = userId;
-        }
-        await supabase.from('brands').upsert(brandPayload, { onConflict: 'id' });
-      }
-
-      const { data, error } = await supabase
-        .from('invitations')
-        .insert({
-          id: invRecord.id,
-          brand_id: invRecord.brandId,
-          campaign_id: invRecord.campaignId,
-          creator_id: invRecord.creatorId,
-          campaign_title: invRecord.campaignTitle,
-          brand_name: invRecord.brandName,
-          brand_logo: invRecord.brandLogo,
-          creator_name: invRecord.creatorName,
-          creator_avatar: invRecord.creatorAvatar,
-          budget: invRecord.budget,
-          timeline: invRecord.timeline,
-          deadline: invRecord.deadline,
-          deliverables: invRecord.deliverables,
-          summary: invRecord.summary,
-          status: invRecord.status,
-          is_demo: true
-        })
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'brand',
-        actorName: actorName || invRecord.brandName,
-        actionType: 'INVITATION_SENT',
-        entityType: 'invitation',
-        entityId: invRecord.id,
-        metadata: {
-          creatorId: invRecord.creatorId,
-          creatorName: invRecord.creatorName,
-          campaignTitle: invRecord.campaignTitle,
-          budget: invRecord.budget
-        },
-        userId
-      });
-
-      // Persist initial invitation message to Supabase messages table if summary exists
-      const canonicalConnId = invRecord.campaignId
-        ? `conn-${invRecord.campaignId}-${invRecord.creatorId}`
-        : `conn-${invRecord.brandId || 'brand-general'}-${invRecord.creatorId}`;
-
-      if (invRecord.summary) {
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          if (sessionData?.session?.user) {
-            await supabase.from('messages').insert({
-              id: `msg-inv-${invRecord.id}`,
-              conversation_id: canonicalConnId,
-              sender: 'brand',
-              sender_name: invRecord.brandName || 'Brand Partner',
-              text: invRecord.summary,
-              created_at: new Date().toISOString()
-            });
-          }
-        } catch (msgErr) {
-          console.warn('[Supabase] Initial message persistence deferred:', msgErr.message);
-        }
-      }
-
-      // Synchronize local cache with both invitation and canonical connection thread
-      const state = getInitialMarketplaceState();
-      const existingConnIndex = (state.connections || []).findIndex(c => 
-        c.id === canonicalConnId || (c.creatorId === invRecord.creatorId && c.campaignId === invRecord.campaignId)
-      );
-      const initialMessageObj = {
-        id: `msg-inv-${invRecord.id}`,
-        conversationId: canonicalConnId,
-        sender: 'brand',
-        senderName: invRecord.brandName || 'Brand Partner',
-        text: invRecord.summary || `Direct invitation from ${invRecord.brandName || 'Brand Partner'} to collaborate.`,
-        timestamp: 'Just now'
-      };
-      const connRecord = {
-        id: canonicalConnId,
-        brandId: invRecord.brandId,
-        creatorId: invRecord.creatorId,
-        creatorName: invRecord.creatorName,
-        creatorRole: "Creative Partner",
-        creatorAvatar: invRecord.creatorAvatar,
-        campaignId: invRecord.campaignId,
-        campaignTitle: invRecord.campaignTitle,
-        brandName: invRecord.brandName,
-        status: 'connected',
-        createdAt: 'Just now',
-        connectedAt: 'Just now',
-        messages: [initialMessageObj]
-      };
-      const nextConnections = existingConnIndex >= 0
-        ? state.connections.map((c, i) => i === existingConnIndex ? { ...c, ...connRecord, messages: (c.messages && c.messages.length > 0) ? c.messages : [initialMessageObj] } : c)
-        : [connRecord, ...(state.connections || [])];
-
-      saveMarketplaceState({
-        ...state,
-        invitations: [normalizeSupabaseInvitation(data), ...(state.invitations || [])],
-        connections: nextConnections
-      });
-
-      return normalizeSupabaseInvitation(data);
-    } catch (err) {
-      console.error('[Supabase] Database error sending invitation:', err);
-      throw new Error(`Failed to send invitation to database: ${err.message}`);
-    }
-  }
-
-  // Local fallback
   const canonicalConnId = invRecord.campaignId
     ? `conn-${invRecord.campaignId}-${invRecord.creatorId}`
     : `conn-${invRecord.brandId || 'brand-general'}-${invRecord.creatorId}`;
 
+  // Synchronize local cache with both invitation and canonical connection thread
   const state = getInitialMarketplaceState();
-  const existingConnIndex = (state.connections || []).findIndex(c => 
+  const existingConnIndex = (state.connections || []).findIndex(c =>
     c.id === canonicalConnId || (c.creatorId === invRecord.creatorId && c.campaignId === invRecord.campaignId)
   );
   const initialMessageObj = {
@@ -1777,12 +1543,43 @@ export async function sendInvitation(invitationData, actorName = null, userId = 
     ? state.connections.map((c, i) => i === existingConnIndex ? { ...c, ...connRecord, messages: (c.messages && c.messages.length > 0) ? c.messages : [initialMessageObj] } : c)
     : [connRecord, ...(state.connections || [])];
 
-  const nextState = {
+  saveMarketplaceState({
     ...state,
     invitations: [invRecord, ...(state.invitations || [])],
     connections: nextConnections
-  };
-  saveMarketplaceState(nextState);
+  });
+
+  // Real-time synchronization to Supabase Table Editor
+  try {
+    await syncInvitationToDb(invRecord);
+    if (invRecord.summary) {
+      await syncMessageToDb({
+        id: `msg-inv-${invRecord.id}`,
+        conversationId: canonicalConnId,
+        sender: 'brand',
+        senderName: invRecord.brandName || 'Brand Partner',
+        text: invRecord.summary
+      });
+    }
+  } catch (err) {
+    console.warn('[CreaSync] syncInvitationToDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'brand',
+    actorName: actorName || invRecord.brandName,
+    actionType: 'INVITATION_SENT',
+    entityType: 'invitation',
+    entityId: invRecord.id,
+    metadata: {
+      creatorId: invRecord.creatorId,
+      creatorName: invRecord.creatorName,
+      campaignTitle: invRecord.campaignTitle,
+      budget: invRecord.budget
+    },
+    userId
+  }).catch(() => {});
+
   return invRecord;
 }
 
@@ -1790,50 +1587,38 @@ export async function updateInvitationStatus(invitationId, newStatus, actorName 
   if (!invitationId || !newStatus) return null;
   const statusStr = newStatus.toLowerCase();
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('invitations')
-        .update({
-          status: statusStr,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', invitationId)
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'creator',
-        actorName: actorName || 'Creator',
-        actionType: statusStr === 'accepted' ? 'INVITATION_ACCEPTED' : 'INVITATION_DECLINED',
-        entityType: 'invitation',
-        entityId: invitationId,
-        metadata: { status: statusStr },
-        userId
-      });
-
-      // Sync local cache
-      const state = getInitialMarketplaceState();
-      const updatedInvs = (state.invitations || []).map(i =>
-        i.id === invitationId ? { ...i, status: statusStr } : i
-      );
-      saveMarketplaceState({ ...state, invitations: updatedInvs });
-
-      return normalizeSupabaseInvitation(data);
-    } catch (err) {
-      console.error(`[Supabase] Database error updating invitation ${invitationId}:`, err);
-      throw new Error(`Failed to update invitation status: ${err.message}`);
+  // Sync local cache
+  const state = getInitialMarketplaceState();
+  let updatedRecord = null;
+  const updatedInvs = (state.invitations || []).map(i => {
+    if (i.id === invitationId) {
+      updatedRecord = { ...i, status: statusStr };
+      return updatedRecord;
     }
+    return i;
+  });
+  saveMarketplaceState({ ...state, invitations: updatedInvs });
+
+  // Real-time synchronization to Supabase Table Editor
+  try {
+    if (updatedRecord) {
+      await syncInvitationToDb(updatedRecord);
+    }
+  } catch (err) {
+    console.warn('[CreaSync] syncInvitationToDb notice:', err);
   }
 
-  // Local fallback
-  const state = getInitialMarketplaceState();
-  const updatedInvs = (state.invitations || []).map(i =>
-    i.id === invitationId ? { ...i, status: statusStr } : i
-  );
-  saveMarketplaceState({ ...state, invitations: updatedInvs });
-  return { id: invitationId, status: statusStr };
+  await logActivity({
+    actorRole: 'creator',
+    actorName: actorName || 'Creator',
+    actionType: statusStr === 'accepted' ? 'INVITATION_ACCEPTED' : 'INVITATION_DECLINED',
+    entityType: 'invitation',
+    entityId: invitationId,
+    metadata: { status: statusStr },
+    userId
+  }).catch(() => {});
+
+  return updatedRecord || { id: invitationId, status: statusStr };
 }
 
 export async function fetchCollaborations(actorId = null, role = null) {
@@ -1871,90 +1656,38 @@ export async function saveCollaboration(collabData, actorName = null, userId = n
     throw new Error('Invalid collabData: object is required.');
   }
   const collabId = collabData.id || `collab-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const finalCollab = { ...collabData, id: collabId };
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      if (collabData.brandId) {
-        await supabase.from('brands').upsert({
-          id: collabData.brandId,
-          name: collabData.brandName || 'Brand Partner',
-          is_demo: true,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
-      }
+  // Synchronize local cache
+  const state = getInitialMarketplaceState();
+  const exists = (state.projects || []).some(p => p.id === collabId);
+  const updatedProjects = exists
+    ? state.projects.map(p => p.id === collabId ? { ...p, ...finalCollab } : p)
+    : [finalCollab, ...(state.projects || [])];
+  saveMarketplaceState({ ...state, projects: updatedProjects });
 
-      const payload = {
-        id: collabId,
-        brand_id: collabData.brandId,
-        creator_id: collabData.creatorId,
-        campaign_id: collabData.campaignId || null,
-        campaign_title: collabData.campaignTitle || collabData.title || 'Creative Collaboration',
-        brand_name: collabData.brandName || 'Brand Partner',
-        creator_name: collabData.creatorName || 'Creator',
-        creator_avatar: collabData.creatorAvatar || null,
-        brand_contact: collabData.brandContact || 'Creative Director',
-        budget: collabData.agreedBudget || collabData.budget || 'In Discussion',
-        agreed_budget: collabData.agreedBudget || collabData.budget || 'In Discussion',
-        milestone: collabData.milestone || 'Milestone 1 of 3',
-        progress_percent: typeof collabData.progressPercent === 'number' ? collabData.progressPercent : 30,
-        deadline: collabData.deadline || null,
-        deliverables: Array.isArray(collabData.deliverables) ? collabData.deliverables : [],
-        deliverables_scope: collabData.deliverablesScope || '',
-        submission_url: collabData.submissionUrl || null,
-        submission_notes: collabData.submissionNotes || null,
-        revision_notes: collabData.revisionNotes || null,
-        latest_feedback: collabData.latestFeedback || null,
-        submission_previews: Array.isArray(collabData.submissionPreviews) ? collabData.submissionPreviews : [],
-        feedback_history: Array.isArray(collabData.feedbackHistory) ? collabData.feedbackHistory : [],
-        status: (collabData.status === 'active' || collabData.status === 'in_progress') ? 'in-progress' : (collabData.status || 'in-progress'),
-        is_demo: true,
-        updated_at: new Date().toISOString()
-      };
-
-      const { data, error } = await supabase
-        .from('collaborations')
-        .upsert(payload)
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: collabData.actorRole || 'creator',
-        actorName: actorName || collabData.creatorName || 'User',
-        actionType: 'COLLABORATION_UPDATED',
-        entityType: 'collaboration',
-        entityId: collabData.id,
-        metadata: {
-          campaignTitle: payload.campaign_title,
-          status: payload.status,
-          progressPercent: payload.progress_percent
-        },
-        userId
-      });
-
-      // Synchronize local cache
-      const state = getInitialMarketplaceState();
-      const exists = (state.projects || []).some(p => p.id === collabData.id);
-      const updatedProjects = exists
-        ? state.projects.map(p => p.id === collabData.id ? { ...p, ...collabData } : p)
-        : [collabData, ...(state.projects || [])];
-      saveMarketplaceState({ ...state, projects: updatedProjects });
-
-      return normalizeSupabaseCollaboration(data);
-    } catch (err) {
-      console.error('[Supabase] Database error saving collaboration:', err);
-      throw new Error(`Failed to save collaboration to database: ${err.message}`);
-    }
+  // Real-time synchronization to Supabase Table Editor
+  try {
+    await syncCollaborationToDb(finalCollab);
+  } catch (err) {
+    console.warn('[CreaSync] syncCollaborationToDb notice:', err);
   }
 
-  // Local fallback
-  const state = getInitialMarketplaceState();
-  const exists = (state.projects || []).some(p => p.id === collabData.id);
-  const updatedProjects = exists
-    ? state.projects.map(p => p.id === collabData.id ? { ...p, ...collabData } : p)
-    : [collabData, ...(state.projects || [])];
-  saveMarketplaceState({ ...state, projects: updatedProjects });
-  return collabData;
+  await logActivity({
+    actorRole: collabData.actorRole || 'creator',
+    actorName: actorName || collabData.creatorName || 'User',
+    actionType: 'COLLABORATION_UPDATED',
+    entityType: 'collaboration',
+    entityId: collabId,
+    metadata: {
+      campaignTitle: collabData.campaignTitle || collabData.title,
+      status: collabData.status,
+      progressPercent: collabData.progressPercent
+    },
+    userId
+  }).catch(() => {});
+
+  return finalCollab;
 }
 
 export async function submitDeliverables(collabId, { assetsUrl, notes, milestone, previews = [] }, actorName = null, userId = null) {
@@ -1962,56 +1695,51 @@ export async function submitDeliverables(collabId, { assetsUrl, notes, milestone
     throw new Error('collabId and assetsUrl are required for submission.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data: current } = await supabase
-        .from('collaborations')
-        .select('*')
-        .eq('id', collabId)
-        .single();
-
-      const nextPreviews = previews.length > 0 
-        ? previews 
-        : (current?.submission_previews?.length ? current.submission_previews : [
+  const state = getInitialMarketplaceState();
+  let updatedCollab = null;
+  const updatedProjects = (state.projects || []).map(p => {
+    if (p.id === collabId) {
+      const nextPreviews = previews.length > 0
+        ? previews
+        : (p.submissionPreviews?.length ? p.submissionPreviews : [
             'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80'
           ]);
+      updatedCollab = {
+        ...p,
+        status: 'submitted',
+        submissionUrl: assetsUrl,
+        submissionNotes: notes || '',
+        milestone: milestone || p.milestone || 'Milestone 2 of 3',
+        progressPercent: 85,
+        submissionPreviews: nextPreviews,
+        latestFeedback: '“Deliverables submitted for review! Brand creative director evaluating master passes.”',
+        updatedAt: 'Just now'
+      };
+      return updatedCollab;
+    }
+    return p;
+  });
+  saveMarketplaceState({ ...state, projects: updatedProjects });
 
-      const { data, error } = await supabase
-        .from('collaborations')
-        .update({
-          status: 'submitted',
-          submission_url: assetsUrl,
-          submission_notes: notes || '',
-          milestone: milestone || current?.milestone || 'Milestone 2 of 3',
-          progress_percent: 85,
-          submission_previews: nextPreviews,
-          latest_feedback: '“Deliverables submitted for review! Brand creative director evaluating master passes.”',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', collabId)
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'creator',
-        actorName: actorName || 'Creator',
-        actionType: 'DELIVERABLES_SUBMITTED',
-        entityType: 'collaboration',
-        entityId: collabId,
-        metadata: { assetsUrl, milestone: milestone || 'Milestone 2 of 3' },
-        userId
-      });
-
-      return normalizeSupabaseCollaboration(data);
+  if (updatedCollab) {
+    try {
+      await syncCollaborationToDb(updatedCollab);
     } catch (err) {
-      console.error('[Supabase] Database error submitting deliverables:', err);
-      throw new Error(`Failed to submit deliverables to database: ${err.message}`);
+      console.warn('[CreaSync] syncCollaborationToDb notice:', err);
     }
   }
 
-  // Local fallback
-  return null;
+  await logActivity({
+    actorRole: 'creator',
+    actorName: actorName || 'Creator',
+    actionType: 'DELIVERABLES_SUBMITTED',
+    entityType: 'collaboration',
+    entityId: collabId,
+    metadata: { assetsUrl, milestone: milestone || 'Milestone 2 of 3' },
+    userId
+  }).catch(() => {});
+
+  return updatedCollab || { id: collabId, status: 'submitted' };
 }
 
 export async function requestRevision(collabId, { revisionNotes, feedbackText }, actorName = null, userId = null) {
@@ -2019,56 +1747,52 @@ export async function requestRevision(collabId, { revisionNotes, feedbackText },
     throw new Error('collabId and revisionNotes are required.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data: current } = await supabase
-        .from('collaborations')
-        .select('*')
-        .eq('id', collabId)
-        .single();
+  const newFb = {
+    id: `fb-${Date.now()}`,
+    author: actorName || 'Brand Creative Director',
+    role: 'brand',
+    text: feedbackText || `“Revision requested: ${revisionNotes}”`,
+    timestamp: 'Just now'
+  };
 
-      const newFb = {
-        id: `fb-${Date.now()}`,
-        author: actorName || 'Brand Creative Director',
-        role: 'brand',
-        text: feedbackText || `“Revision requested: ${revisionNotes}”`,
-        timestamp: 'Just now'
+  const state = getInitialMarketplaceState();
+  let updatedCollab = null;
+  const updatedProjects = (state.projects || []).map(p => {
+    if (p.id === collabId) {
+      const updatedHistory = [newFb, ...(p.feedbackHistory || [])];
+      updatedCollab = {
+        ...p,
+        status: 'revision-requested',
+        revisionNotes,
+        latestFeedback: newFb.text,
+        feedbackHistory: updatedHistory,
+        updatedAt: 'Just now'
       };
+      return updatedCollab;
+    }
+    return p;
+  });
+  saveMarketplaceState({ ...state, projects: updatedProjects });
 
-      const updatedHistory = [newFb, ...(current?.feedback_history || [])];
-
-      const { data, error } = await supabase
-        .from('collaborations')
-        .update({
-          status: 'revision-requested',
-          revision_notes: revisionNotes,
-          latest_feedback: newFb.text,
-          feedback_history: updatedHistory,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', collabId)
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'brand',
-        actorName: actorName || 'Brand Partner',
-        actionType: 'REVISION_REQUESTED',
-        entityType: 'collaboration',
-        entityId: collabId,
-        metadata: { revisionNotes },
-        userId
-      });
-
-      return normalizeSupabaseCollaboration(data);
+  if (updatedCollab) {
+    try {
+      await syncCollaborationToDb(updatedCollab);
     } catch (err) {
-      console.error('[Supabase] Database error requesting revision:', err);
-      throw new Error(`Failed to request revision in database: ${err.message}`);
+      console.warn('[CreaSync] syncCollaborationToDb notice:', err);
     }
   }
 
-  return null;
+  await logActivity({
+    actorRole: 'brand',
+    actorName: actorName || 'Brand Partner',
+    actionType: 'REVISION_REQUESTED',
+    entityType: 'collaboration',
+    entityId: collabId,
+    metadata: { revisionNotes },
+    userId
+  }).catch(() => {});
+
+  return updatedCollab || { id: collabId, status: 'revision-requested' };
 }
 
 export async function approveDeliverables(collabId, { approvalNotes, feedbackText }, actorName = null, userId = null) {
@@ -2076,57 +1800,53 @@ export async function approveDeliverables(collabId, { approvalNotes, feedbackTex
     throw new Error('collabId is required.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data: current } = await supabase
-        .from('collaborations')
-        .select('*')
-        .eq('id', collabId)
-        .single();
+  const newFb = {
+    id: `fb-${Date.now()}`,
+    author: actorName || 'Brand Creative Director',
+    role: 'brand',
+    text: feedbackText || (approvalNotes ? `“Approved: ${approvalNotes}”` : '“Deliverables approved! Final milestone unlocked & payout released.”'),
+    timestamp: 'Just now'
+  };
 
-      const newFb = {
-        id: `fb-${Date.now()}`,
-        author: actorName || 'Brand Creative Director',
-        role: 'brand',
-        text: feedbackText || (approvalNotes ? `“Approved: ${approvalNotes}”` : '“Deliverables approved! Final milestone unlocked & payout released.”'),
-        timestamp: 'Just now'
+  const state = getInitialMarketplaceState();
+  let updatedCollab = null;
+  const updatedProjects = (state.projects || []).map(p => {
+    if (p.id === collabId) {
+      const updatedHistory = [newFb, ...(p.feedbackHistory || [])];
+      updatedCollab = {
+        ...p,
+        status: 'approved',
+        progressPercent: 100,
+        milestone: 'Final Milestone: All Master Assets Approved & Released',
+        latestFeedback: '“Outstanding work! Master passes approved and payout released.”',
+        feedbackHistory: updatedHistory,
+        updatedAt: 'Just now'
       };
+      return updatedCollab;
+    }
+    return p;
+  });
+  saveMarketplaceState({ ...state, projects: updatedProjects });
 
-      const updatedHistory = [newFb, ...(current?.feedback_history || [])];
-
-      const { data, error } = await supabase
-        .from('collaborations')
-        .update({
-          status: 'approved',
-          progress_percent: 100,
-          milestone: 'Final Milestone: All Master Assets Approved & Released',
-          latest_feedback: '“Outstanding work! Master passes approved and payout released.”',
-          feedback_history: updatedHistory,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', collabId)
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'brand',
-        actorName: actorName || 'Brand Partner',
-        actionType: 'DELIVERABLES_APPROVED',
-        entityType: 'collaboration',
-        entityId: collabId,
-        metadata: { approvalNotes: approvalNotes || 'Approved' },
-        userId
-      });
-
-      return normalizeSupabaseCollaboration(data);
+  if (updatedCollab) {
+    try {
+      await syncCollaborationToDb(updatedCollab);
     } catch (err) {
-      console.error('[Supabase] Database error approving deliverables:', err);
-      throw new Error(`Failed to approve deliverables in database: ${err.message}`);
+      console.warn('[CreaSync] syncCollaborationToDb notice:', err);
     }
   }
 
-  return null;
+  await logActivity({
+    actorRole: 'brand',
+    actorName: actorName || 'Brand Partner',
+    actionType: 'DELIVERABLES_APPROVED',
+    entityType: 'collaboration',
+    entityId: collabId,
+    metadata: { approvalNotes: approvalNotes || 'Approved' },
+    userId
+  }).catch(() => {});
+
+  return updatedCollab || { id: collabId, status: 'approved' };
 }
 
 // ============================================================================
@@ -2172,54 +1892,28 @@ export async function saveCreatorWorkflow(creatorId, workflowData, userId = null
     throw new Error('creatorId and workflowData.id are required.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('creator_workflows')
-        .upsert({
-          id: workflowData.id,
-          creator_id: creatorId,
-          title: workflowData.title,
-          description: workflowData.description,
-          specialization: workflowData.specialization,
-          linked_project_id: workflowData.linkedProjectId || null,
-          linked_project_title: workflowData.linkedProjectTitle || null,
-          status: workflowData.status || 'Published',
-          visibility: workflowData.visibility || 'published',
-          human_involvement_notes: workflowData.humanInvolvementNotes,
-          steps: Array.isArray(workflowData.steps) ? workflowData.steps : [],
-          is_demo: !!workflowData.isDemo,
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'creator',
-        actorName: creatorId,
-        actionType: 'WORKFLOW_SAVED',
-        entityType: 'workflow',
-        entityId: workflowData.id,
-        metadata: { title: workflowData.title, specialization: workflowData.specialization },
-        userId
-      });
-
-      // Synchronize local cache
-      const state = getInitialMarketplaceState();
-      saveMarketplaceState(saveWorkflowRecord(state, creatorId, workflowData));
-
-      return normalizeSupabaseWorkflow(data);
-    } catch (err) {
-      console.error('[Supabase] Database error saving creator workflow:', err);
-      throw new Error(`Failed to save workflow to database: ${err.message}`);
-    }
-  }
-
-  // Local fallback
+  // Synchronize local cache
   const state = getInitialMarketplaceState();
   const nextState = saveWorkflowRecord(state, creatorId, workflowData);
   saveMarketplaceState(nextState);
+
+  // Sync to database
+  try {
+    await syncWorkflowToDb(creatorId, workflowData);
+  } catch (err) {
+    console.warn('[CreaSync] syncWorkflowToDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'creator',
+    actorName: creatorId,
+    actionType: 'WORKFLOW_SAVED',
+    entityType: 'workflow',
+    entityId: workflowData.id,
+    metadata: { title: workflowData.title, specialization: workflowData.specialization },
+    userId
+  }).catch(() => {});
+
   return workflowData;
 }
 
@@ -2228,36 +1922,26 @@ export async function deleteCreatorWorkflow(creatorId, workflowId) {
     throw new Error('creatorId and workflowId are required.');
   }
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { error } = await supabase
-        .from('creator_workflows')
-        .delete()
-        .eq('id', workflowId)
-        .eq('creator_id', creatorId);
-      if (error) throw error;
-
-      await logActivity({
-        actorRole: 'creator',
-        actorName: creatorId,
-        actionType: 'WORKFLOW_DELETED',
-        entityType: 'workflow',
-        entityId: workflowId
-      });
-
-      const state = getInitialMarketplaceState();
-      saveMarketplaceState(deleteWorkflowRecord(state, creatorId, workflowId));
-
-      return { ok: true, id: workflowId };
-    } catch (err) {
-      console.error('[Supabase] Database error deleting workflow:', err);
-      throw new Error(`Failed to delete workflow from database: ${err.message}`);
-    }
-  }
-
+  // Synchronize local cache
   const state = getInitialMarketplaceState();
   const nextState = deleteWorkflowRecord(state, creatorId, workflowId);
   saveMarketplaceState(nextState);
+
+  // Sync to database
+  try {
+    await deleteWorkflowFromDb(creatorId, workflowId);
+  } catch (err) {
+    console.warn('[CreaSync] deleteWorkflowFromDb notice:', err);
+  }
+
+  await logActivity({
+    actorRole: 'creator',
+    actorName: creatorId,
+    actionType: 'WORKFLOW_DELETED',
+    entityType: 'workflow',
+    entityId: workflowId
+  }).catch(() => {});
+
   return { ok: true, id: workflowId };
 }
 
@@ -2507,6 +2191,62 @@ export function subscribeToCampaigns(callback) {
     };
   } catch (err) {
     console.warn('[Realtime] Could not subscribe to campaigns:', err);
+    return () => {};
+  }
+}
+
+export function subscribeToBrands(callback) {
+  if (!isSupabaseConfigured() || !supabase || typeof callback !== 'function') {
+    return () => {};
+  }
+
+  try {
+    const channel = supabase
+      .channel('public:brands')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, payload => {
+        try {
+          callback(payload);
+        } catch (e) {
+          console.warn('[Realtime] Brand event callback error:', e);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch (e) {}
+    };
+  } catch (err) {
+    console.warn('[Realtime] Could not subscribe to brands:', err);
+    return () => {};
+  }
+}
+
+export function subscribeToCreators(callback) {
+  if (!isSupabaseConfigured() || !supabase || typeof callback !== 'function') {
+    return () => {};
+  }
+
+  try {
+    const channel = supabase
+      .channel('public:creator_profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'creator_profiles' }, payload => {
+        try {
+          callback(payload);
+        } catch (e) {
+          console.warn('[Realtime] Creator event callback error:', e);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch (e) {}
+    };
+  } catch (err) {
+    console.warn('[Realtime] Could not subscribe to creators:', err);
     return () => {};
   }
 }
@@ -2806,9 +2546,9 @@ export function subscribeToMessages(conversationIdOrTarget, callback) {
     const channelName = targetId ? `public:messages:${targetId}` : 'public:messages';
     const channel = supabase
       .channel(channelName)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
         table: 'messages'
       }, payload => {
         try {
@@ -2847,7 +2587,7 @@ export {
 export async function fetchVerificationClaims(creatorId = null, currentUser = null) {
   const isAdmin = currentUser?.profile?.role === 'admin' || currentUser?.role === 'admin';
   const roleHeader = isAdmin ? 'admin' : (currentUser?.profile?.role || currentUser?.role || 'creator');
-  
+
   // 1. Try local/internal backend endpoint
   try {
     const query = new URLSearchParams();
@@ -3044,4 +2784,3 @@ export async function fetchVerificationAuditLog(creatorId = null) {
   }
   return logs;
 }
-

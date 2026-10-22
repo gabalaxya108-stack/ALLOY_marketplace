@@ -26,6 +26,14 @@ import {
   logoutAdmin
 } from '../services/adminApi';
 import { runAlloyTrustAnalysis } from '../services/alloyTrustEngine';
+import {
+  saveBrand as saveBackendBrand,
+  saveCreator as saveBackendCreator,
+  saveCampaign as saveBackendCampaign,
+  saveCollaboration as saveBackendCollaboration
+} from '../services/marketplaceBackend';
+import { subscribeToMarketplace } from '../data/marketplaceStore';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { RefreshCw, Bell, Search } from 'lucide-react';
 
 export default function AdminDashboardView({ adminUser, onLogout }) {
@@ -106,11 +114,54 @@ export default function AdminDashboardView({ adminUser, onLogout }) {
 
   useEffect(() => {
     loadAllData();
-    // Auto-refresh live data every 60 seconds
+
+    // 1. Subscribe to local store changes (intra-tab & cross-tab events from website)
+    const unsubStore = subscribeToMarketplace((latestState) => {
+      if (latestState) {
+        if (Array.isArray(latestState.brands) && latestState.brands.length > 0) {
+          setBrands(latestState.brands);
+        }
+        if (Array.isArray(latestState.creators) && latestState.creators.length > 0) {
+          setCreators(latestState.creators);
+        }
+        if (Array.isArray(latestState.campaigns) && latestState.campaigns.length > 0) {
+          setCampaigns(latestState.campaigns);
+        }
+        if (Array.isArray(latestState.projects)) {
+          setCollaborations(latestState.projects);
+        }
+        setLastRefreshed(new Date());
+      }
+    });
+
+    // 2. Subscribe to Supabase Cloud Realtime changes for instant multi-user synchronisation
+    let realtimeChannel = null;
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        realtimeChannel = supabase.channel('alloy-admin-realtime-feed')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, () => loadAllData())
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'creator_profiles' }, () => loadAllData())
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'campaigns' }, () => loadAllData())
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'collaborations' }, () => loadAllData())
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'campaign_funding' }, () => loadAllData())
+          .subscribe();
+      } catch (subErr) {
+        console.warn('[Admin Live Feed] Realtime subscription notice:', subErr);
+      }
+    }
+
+    // Auto-refresh fallback every 60 seconds
     const interval = setInterval(() => {
       loadAllData();
     }, 60000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+      if (typeof unsubStore === 'function') unsubStore();
+      if (realtimeChannel && supabase) {
+        supabase.removeChannel(realtimeChannel);
+      }
+    };
   }, []);
 
   const handleRefresh = () => {
@@ -157,19 +208,87 @@ export default function AdminDashboardView({ adminUser, onLogout }) {
     setTrustReports(prev => [newReport, ...prev]);
   };
 
-  // Update Brand Status
-  const handleUpdateBrandStatus = (brandId, status) => {
+  // --- BRAND MANAGEMENT HANDLERS (DB + STORE SYNC) ---
+  const handleUpdateBrandStatus = async (brandId, status) => {
     setBrands(prev => prev.map(b => b.id === brandId ? { ...b, status } : b));
+    const target = brands.find(b => b.id === brandId);
+    if (target) {
+      const updated = { ...target, status, updatedAt: new Date().toISOString() };
+      try {
+        await saveBackendBrand(updated);
+      } catch (err) {
+        console.warn('[Admin] Failed to persist brand status change to DB:', err);
+      }
+    }
   };
 
-  // Update Creator Status
-  const handleUpdateCreatorStatus = (creatorId, status) => {
+  const handleEditBrand = async (updatedBrand) => {
+    if (!updatedBrand || !updatedBrand.id) return;
+    setBrands(prev => prev.map(b => b.id === updatedBrand.id ? { ...b, ...updatedBrand } : b));
+    try {
+      await saveBackendBrand(updatedBrand);
+    } catch (err) {
+      console.warn('[Admin] Failed to persist brand edits to DB:', err);
+    }
+  };
+
+  // --- CREATOR MANAGEMENT HANDLERS (DB + STORE SYNC) ---
+  const handleUpdateCreatorStatus = async (creatorId, status) => {
     setCreators(prev => prev.map(c => c.id === creatorId ? { ...c, status } : c));
+    const target = creators.find(c => c.id === creatorId);
+    if (target) {
+      const updated = { ...target, status, updatedAt: new Date().toISOString() };
+      try {
+        await saveBackendCreator(updated);
+      } catch (err) {
+        console.warn('[Admin] Failed to persist creator status change to DB:', err);
+      }
+    }
   };
 
-  // Update Campaign Status
-  const handleUpdateCampaignStatus = (campaignId, status) => {
+  const handleEditCreator = async (updatedCreator) => {
+    if (!updatedCreator || !updatedCreator.id) return;
+    setCreators(prev => prev.map(c => c.id === updatedCreator.id ? { ...c, ...updatedCreator } : c));
+    try {
+      await saveBackendCreator(updatedCreator);
+    } catch (err) {
+      console.warn('[Admin] Failed to persist creator edits to DB:', err);
+    }
+  };
+
+  // --- CAMPAIGN MANAGEMENT HANDLERS (DB + STORE SYNC) ---
+  const handleUpdateCampaignStatus = async (campaignId, status) => {
     setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, status } : c));
+    const target = campaigns.find(c => c.id === campaignId);
+    if (target) {
+      const updated = { ...target, status, updatedAt: new Date().toISOString() };
+      try {
+        await saveBackendCampaign(updated);
+      } catch (err) {
+        console.warn('[Admin] Failed to persist campaign status change to DB:', err);
+      }
+    }
+  };
+
+  const handleEditCampaign = async (updatedCampaign) => {
+    if (!updatedCampaign || !updatedCampaign.id) return;
+    setCampaigns(prev => prev.map(c => c.id === updatedCampaign.id ? { ...c, ...updatedCampaign } : c));
+    try {
+      await saveBackendCampaign(updatedCampaign);
+    } catch (err) {
+      console.warn('[Admin] Failed to persist campaign edits to DB:', err);
+    }
+  };
+
+  // --- COLLABORATION MANAGEMENT HANDLERS (DB + STORE SYNC) ---
+  const handleEditCollaboration = async (updatedCollab) => {
+    if (!updatedCollab || !updatedCollab.id) return;
+    setCollaborations(prev => prev.map(c => c.id === updatedCollab.id ? { ...c, ...updatedCollab } : c));
+    try {
+      await saveBackendCollaboration(updatedCollab);
+    } catch (err) {
+      console.warn('[Admin] Failed to persist collaboration edits to DB:', err);
+    }
   };
 
   // Save Platform Config
@@ -277,6 +396,7 @@ export default function AdminDashboardView({ adminUser, onLogout }) {
                 <AdminBrandManagement
                   brands={brands}
                   onUpdateBrandStatus={handleUpdateBrandStatus}
+                  onEditBrand={handleEditBrand}
                 />
               )}
 
@@ -284,6 +404,7 @@ export default function AdminDashboardView({ adminUser, onLogout }) {
                 <AdminCreatorManagement
                   creators={creators}
                   onUpdateCreatorStatus={handleUpdateCreatorStatus}
+                  onEditCreator={handleEditCreator}
                 />
               )}
 
@@ -291,6 +412,7 @@ export default function AdminDashboardView({ adminUser, onLogout }) {
                 <AdminCampaignManagement
                   campaigns={campaigns}
                   onUpdateCampaignStatus={handleUpdateCampaignStatus}
+                  onEditCampaign={handleEditCampaign}
                 />
               )}
 
@@ -298,6 +420,7 @@ export default function AdminDashboardView({ adminUser, onLogout }) {
                 <AdminCollaborationTracking
                   collaborations={collaborations}
                   onInterveneCollab={() => setActiveTab('alloy-trust')}
+                  onEditCollaboration={handleEditCollaboration}
                 />
               )}
 

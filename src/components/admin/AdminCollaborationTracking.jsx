@@ -14,15 +14,61 @@ import {
   ShieldCheck,
   Eye,
   X,
-  MessageSquare
+  MessageSquare,
+  Edit2,
+  Save,
+  Check
 } from 'lucide-react';
 
 export default function AdminCollaborationTracking({
   collaborations = [],
-  onInterveneCollab
+  onInterveneCollab,
+  onEditCollaboration
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCollab, setSelectedCollab] = useState(null);
+  const [editingCollab, setEditingCollab] = useState(null);
+  const [editForm, setEditForm] = useState({
+    status: 'active',
+    deliverableStatus: 'Active',
+    budget: '',
+    progressPercent: 50,
+    milestone: ''
+  });
+  const [isSaving, setIsSaving] = useState(false);
+
+  const startEdit = (collab) => {
+    setEditingCollab(collab);
+    setEditForm({
+      status: collab.status || 'active',
+      deliverableStatus: collab.deliverableStatus || collab.status || 'Active',
+      budget: collab.budget || '',
+      progressPercent: collab.progressPercent || collab.progress || 50,
+      milestone: collab.milestone || collab.currentMilestone || ''
+    });
+  };
+
+  const handleSaveCollab = async (e) => {
+    e.preventDefault();
+    if (!editingCollab || !onEditCollaboration) return;
+    setIsSaving(true);
+    try {
+      await onEditCollaboration({
+        ...editingCollab,
+        status: editForm.status,
+        deliverableStatus: editForm.deliverableStatus,
+        budget: editForm.budget,
+        progressPercent: Number(editForm.progressPercent) || 0,
+        progress: Number(editForm.progressPercent) || 0,
+        milestone: editForm.milestone
+      });
+      setEditingCollab(null);
+    } catch (err) {
+      console.error('Failed to update collaboration:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const filteredCollabs = collaborations.filter((collab) => {
     const matchesSearch =
@@ -129,6 +175,15 @@ export default function AdminCollaborationTracking({
                           <Eye size={14} />
                           <span>Track</span>
                         </button>
+                        <button
+                          type="button"
+                          className="alloy-admin-btn-table"
+                          onClick={() => startEdit(collab)}
+                          title="Edit Collaboration & Escrow State"
+                        >
+                          <Edit2 size={14} />
+                          <span>Edit</span>
+                        </button>
                         {isDisputed && (
                           <button
                             type="button"
@@ -157,7 +212,7 @@ export default function AdminCollaborationTracking({
             <div className="alloy-admin-modal-header">
               <div className="alloy-admin-modal-title-group">
                 <GitPullRequest size={20} className="text-amber-400" />
-                <h3>Collaboration Audit: {selectedCollab.campaignTitle}</h3>
+                <h3>Collaboration Audit: {selectedCollab.campaignTitle || selectedCollab.campaign_title || 'Active Contract'}</h3>
               </div>
               <button
                 type="button"
@@ -172,11 +227,11 @@ export default function AdminCollaborationTracking({
               <div className="alloy-admin-dossier-grid">
                 <div className="alloy-admin-dossier-item">
                   <span className="label">Brand</span>
-                  <span className="val">{selectedCollab.brandName}</span>
+                  <span className="val">{selectedCollab.brandName || selectedCollab.brand_name || 'Brand Partner'}</span>
                 </div>
                 <div className="alloy-admin-dossier-item">
                   <span className="label">Creator</span>
-                  <span className="val">{selectedCollab.creatorName}</span>
+                  <span className="val">{selectedCollab.creatorName || selectedCollab.creator_name || 'Creator'}</span>
                 </div>
                 <div className="alloy-admin-dossier-item">
                   <span className="label">Escrow Value</span>
@@ -191,11 +246,23 @@ export default function AdminCollaborationTracking({
               <div className="alloy-admin-brief-box mt-4">
                 <div className="label mb-1 text-xs text-zinc-400 uppercase font-mono">Escrow Vault Verification</div>
                 <p className="text-sm text-zinc-200">
-                  Funds held in smart platform escrow. Payout released automatically upon brand final deliverable sign-off or Super Admin dispute clearance.
+                  Funds held in platform escrow. Payout released automatically upon brand final deliverable sign-off or Super Admin dispute clearance.
                 </p>
               </div>
 
-              <div className="alloy-admin-modal-actions mt-6">
+              <div className="alloy-admin-modal-actions mt-6 flex justify-between items-center">
+                <button
+                  type="button"
+                  className="alloy-admin-btn-primary"
+                  onClick={() => {
+                    const target = selectedCollab;
+                    setSelectedCollab(null);
+                    startEdit(target);
+                  }}
+                >
+                  <Edit2 size={14} />
+                  <span>Edit Contract Milestone</span>
+                </button>
                 <button
                   type="button"
                   className="alloy-admin-btn-secondary"
@@ -205,6 +272,105 @@ export default function AdminCollaborationTracking({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Collaboration & Milestone Modal */}
+      {editingCollab && (
+        <div className="alloy-modal-backdrop" onClick={() => setEditingCollab(null)}>
+          <div className="alloy-admin-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="alloy-admin-modal-header">
+              <div className="alloy-admin-modal-title-group">
+                <Edit2 size={20} className="text-amber-400" />
+                <h3>Edit Contract: {editingCollab.campaignTitle || editingCollab.title || editingCollab.id}</h3>
+              </div>
+              <button
+                type="button"
+                className="alloy-modal-close"
+                onClick={() => setEditingCollab(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCollab} className="alloy-admin-modal-body">
+              <div className="alloy-admin-form-group mb-3">
+                <label className="text-xs text-zinc-400 uppercase font-mono">Contract Milestone / Stage</label>
+                <select
+                  value={editForm.deliverableStatus}
+                  onChange={(e) => setEditForm({ ...editForm, deliverableStatus: e.target.value, status: e.target.value.toLowerCase() })}
+                  className="alloy-admin-input w-full mt-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white"
+                >
+                  <option value="Active">Active / In Progress</option>
+                  <option value="submission_pending">Submission Pending</option>
+                  <option value="in_review">In Review / Submitted</option>
+                  <option value="revision-requested">Revision Requested</option>
+                  <option value="approved">Approved</option>
+                  <option value="completed">Completed & Escrow Released</option>
+                  <option value="disputed">Disputed / In Escrow Hold</option>
+                </select>
+              </div>
+
+              <div className="alloy-admin-form-group mb-3">
+                <label className="text-xs text-zinc-400 uppercase font-mono">Current Milestone Title</label>
+                <input
+                  type="text"
+                  value={editForm.milestone}
+                  onChange={(e) => setEditForm({ ...editForm, milestone: e.target.value })}
+                  placeholder="e.g. Concept Draft, First Cut, Final 4K Master"
+                  className="alloy-admin-input w-full mt-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white"
+                />
+              </div>
+
+              <div className="alloy-admin-form-grid grid grid-cols-2 gap-3 mb-3">
+                <div className="alloy-admin-form-group">
+                  <label className="text-xs text-zinc-400 uppercase font-mono">Escrow Budget</label>
+                  <input
+                    type="text"
+                    value={editForm.budget}
+                    onChange={(e) => setEditForm({ ...editForm, budget: e.target.value })}
+                    placeholder="₹12,000"
+                    className="alloy-admin-input w-full mt-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white"
+                  />
+                </div>
+                <div className="alloy-admin-form-group">
+                  <label className="text-xs text-zinc-400 uppercase font-mono">Progress Percentage ({editForm.progressPercent}%)</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={editForm.progressPercent}
+                    onChange={(e) => setEditForm({ ...editForm, progressPercent: Number(e.target.value) })}
+                    className="w-full mt-2 accent-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div className="alloy-admin-brief-box mt-3 text-xs text-zinc-400">
+                Changes saved here persist forever in Supabase and update Brand Workspace, Creator Workspace, and Campaign Workspaces instantly.
+              </div>
+
+              <div className="alloy-admin-modal-actions mt-5 flex justify-end gap-3">
+                <button
+                  type="button"
+                  className="alloy-admin-btn-secondary"
+                  onClick={() => setEditingCollab(null)}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="alloy-admin-btn-primary flex items-center gap-2"
+                  disabled={isSaving}
+                >
+                  <Save size={16} />
+                  <span>{isSaving ? 'Saving to Database...' : 'Save & Propagate Changes'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

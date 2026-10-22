@@ -206,15 +206,27 @@ export default function PipelineTraceModal({
   onClose,
   pipelineTrace,
   isLoading = false,
+  error = null,
+  onRetry = null,
+  campaign = null,
+  skipAnimation = false,
   onSelectCreator,
   onViewAllEligible,
-  onEditCampaign
+  onEditCampaign,
+  initialTab = 'pipeline'
 }) {
+  const stages = pipelineTrace?.stages || [];
+  const summary = pipelineTrace?.summary || {};
+  const rankedCreators = pipelineTrace?.rankedCreators || [];
+  const globalExclusions = pipelineTrace?.exclusions || [];
+  const globalWarnings = pipelineTrace?.warnings || [];
+
   const [activeStageIndex, setActiveStageIndex] = useState(0);
-  const [revealedStageCount, setRevealedStageCount] = useState(1);
+  const [revealedStageCount, setRevealedStageCount] = useState(() => skipAnimation ? (stages.length || 7) : 1);
   const [isManualInspection, setIsManualInspection] = useState(false);
   const [expandedExclusions, setExpandedExclusions] = useState({});
-  const [activeTab, setActiveTab] = useState('pipeline'); // 'pipeline' | 'eligible' | 'exclusions'
+  const [expandedReviews, setExpandedReviews] = useState({});
+  const [activeTab, setActiveTab] = useState(initialTab); // 'pipeline' | 'brief' | 'eligible' | 'review' | 'exclusions'
   const [inspectorOpen, setInspectorOpen] = useState(false);
 
   // Track the previous isOpen value for edge-detection
@@ -223,21 +235,49 @@ export default function PipelineTraceModal({
   const stagesTrackRef = useRef(null);
   const stageRefs = useRef([]);
 
-  const stages = pipelineTrace?.stages || [];
-  const summary = pipelineTrace?.summary || {};
-  const rankedCreators = pipelineTrace?.rankedCreators || [];
-  const globalExclusions = pipelineTrace?.exclusions || [];
-  const globalWarnings = pipelineTrace?.warnings || [];
-  const isComplete = revealedStageCount >= stages.length;
+  const activeError = useMemo(() => {
+    if (error) {
+      return typeof error === 'string' ? error : (error.message || 'Pipeline execution failed.');
+    }
+    if (pipelineTrace?.error) {
+      return typeof pipelineTrace.error === 'string' ? pipelineTrace.error : (pipelineTrace.error.message || 'Pipeline execution failed.');
+    }
+    if (pipelineTrace && pipelineTrace.ok === false) {
+      return pipelineTrace.error || 'Pipeline execution returned an unsuccessful status.';
+    }
+    if (!isLoading && !pipelineTrace) {
+      return 'Pipeline trace data is unavailable. The pipeline has not executed.';
+    }
+    return null;
+  }, [error, pipelineTrace, isLoading]);
+
+  const hasError = Boolean(activeError);
+  const isComplete = !hasError && (stages.length > 0 ? revealedStageCount >= stages.length : Boolean(pipelineTrace));
+
+  const reviewCandidates = useMemo(() => {
+    const list = pipelineTrace?.requiresReview || pipelineTrace?.requiresReviewCreators;
+    return Array.isArray(list) ? list : [];
+  }, [pipelineTrace]);
+
+  const displayedReviewCount = useMemo(() => {
+    if (typeof summary.requiresReviewCount === 'number') {
+      return summary.requiresReviewCount;
+    }
+    if (typeof summary.reviewCount === 'number') {
+      return summary.reviewCount;
+    }
+    return reviewCandidates.length;
+  }, [summary, reviewCandidates]);
 
   // Fix 3: Reset modal state to Execution Stages whenever modal opens for a new viewing session
   useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
       // Modal just opened — reset to initial presentation state
-      setActiveTab('pipeline');
+      setActiveTab(initialTab);
       setActiveStageIndex(0);
-      setRevealedStageCount(1);
+      setRevealedStageCount(skipAnimation ? (stages.length || 7) : 1);
       setExpandedExclusions({});
+      setExpandedReviews({});
       setIsManualInspection(false);
       setInspectorOpen(false);
       // Reset scroll position on next frame
@@ -248,7 +288,7 @@ export default function PipelineTraceModal({
       });
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen]);
+  }, [isOpen, skipAnimation, stages.length, initialTab]);
 
   // Fix 5: Progressive summary counts derived from the currently revealed stages
   const revealedStages = useMemo(() => stages.slice(0, revealedStageCount), [stages, revealedStageCount]);
@@ -293,8 +333,8 @@ export default function PipelineTraceModal({
   }, [isManualInspection]);
 
   useEffect(() => {
-    if (!isOpen || !pipelineTrace || stages.length === 0) {
-      setRevealedStageCount(1);
+    if (!isOpen || !pipelineTrace || stages.length === 0 || skipAnimation) {
+      setRevealedStageCount(skipAnimation ? (stages.length || 7) : 1);
       setActiveStageIndex(0);
       setIsManualInspection(false);
       isManualInspectionRef.current = false;
@@ -321,7 +361,7 @@ export default function PipelineTraceModal({
     }, 1600);
 
     return () => clearInterval(interval);
-  }, [isOpen, pipelineTrace]);
+  }, [isOpen, pipelineTrace, skipAnimation, stages.length]);
 
   // Smoothly keep the active stage centered in horizontal desktop track during automated reveal
   useEffect(() => {
@@ -358,10 +398,17 @@ export default function PipelineTraceModal({
     }
   };
 
-  const showInspector = inspectorOpen && activeTab === 'pipeline';
+  const showInspector = !hasError && inspectorOpen && activeTab === 'pipeline';
 
   const toggleExclusion = (id) => {
     setExpandedExclusions(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const toggleReview = (id) => {
+    setExpandedReviews(prev => ({
       ...prev,
       [id]: !prev[id]
     }));
@@ -499,16 +546,20 @@ export default function PipelineTraceModal({
               </h4>
               <div className="inspector-leaderboard">
                 {rankedCreators.slice(0, 5).map((item, idx) => (
-                  <div key={item.creatorId} className="leaderboard-row">
+                  <div key={item.creatorId || idx} className="leaderboard-row">
                     <span className="leaderboard-rank">#{idx + 1}</span>
-                    <img src={item.creator.avatar} alt={item.creator.name} className="leaderboard-avatar" />
+                    <img
+                      src={item.creator?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"}
+                      alt={item.creator?.name || item.creatorId}
+                      className="leaderboard-avatar"
+                    />
                     <div className="leaderboard-info">
-                      <span className="leaderboard-name">{item.creator.name}</span>
-                      <span className="leaderboard-spec">{item.creator.specialty}</span>
+                      <span className="leaderboard-name">{item.creator?.name || item.creatorId}</span>
+                      <span className="leaderboard-spec">{item.creator?.specialty || 'Creator'}</span>
                     </div>
                     <div className="leaderboard-score">
-                      <span className="leaderboard-score-num">{item.score}%</span>
-                      <span className="leaderboard-score-label">{item.fitLabel}</span>
+                      <span className="leaderboard-score-num">{item.score || 0}%</span>
+                      <span className="leaderboard-score-label">{item.fitLabel || 'Fit'}</span>
                     </div>
                   </div>
                 ))}
@@ -634,25 +685,42 @@ export default function PipelineTraceModal({
         <div className="pipeline-modal-header">
           <div className="pipeline-header-info">
             <div className="pipeline-header-badge-row">
-              <span className="live-pulse-dot" />
+              <span
+                className={hasError ? "status-dot-failed" : "live-pulse-dot"}
+                style={hasError ? { width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' } : undefined}
+              />
               <span className="section-label">
                 Backend Filtering Pipeline
               </span>
               <span className="badge-subtle">
-                Trace ID: {pipelineTrace?.executionId ? `${pipelineTrace.executionId.slice(0, 14)}…` : 'exec_authoritative'}
+                Trace ID: {pipelineTrace?.executionId ? `${pipelineTrace.executionId.slice(0, 14)}…` : (hasError ? 'exec_failed' : 'exec_authoritative')}
               </span>
               {pipelineTrace?.source && (
                 <span className="badge-subtle">
                   Source: {pipelineTrace.source}
                 </span>
               )}
+              {hasError && (
+                <span className="badge-subtle" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                  Status: Failed
+                </span>
+              )}
             </div>
             <h2 className="pipeline-campaign-title font-editorial">
-              {pipelineTrace?.campaignTitle || 'Campaign Filtering Trace'}
+              {pipelineTrace?.campaignTitle || campaign?.title || 'Campaign Filtering Trace'}
             </h2>
           </div>
 
           <div className="pipeline-header-actions">
+            {!isComplete && !hasError && !isLoading && stages.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm skip-animation-btn"
+                onClick={() => setRevealedStageCount(stages.length)}
+              >
+                <span>Skip Animation</span>
+              </button>
+            )}
             <button
               type="button"
               className="modal-close-btn"
@@ -664,7 +732,7 @@ export default function PipelineTraceModal({
           </div>
         </div>
 
-        {pipelineTrace?.isStale && (
+        {pipelineTrace?.isStale && !hasError && (
           <div className="pipeline-stale-banner" style={{
             background: 'rgba(235, 110, 75, 0.12)',
             border: '1px solid rgba(235, 110, 75, 0.35)',
@@ -682,7 +750,98 @@ export default function PipelineTraceModal({
           </div>
         )}
 
-        {isLoading && !pipelineTrace ? (
+        {hasError ? (
+          <div className="pipeline-error-container studio-card" style={{
+            margin: '24px 28px',
+            padding: '40px 32px',
+            textAlign: 'center',
+            background: 'var(--bg-card, #ffffff)',
+            borderRadius: '12px',
+            border: '1px solid rgba(239, 68, 68, 0.25)',
+            boxShadow: '0 8px 24px rgba(239, 68, 68, 0.06)'
+          }}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px'
+            }}>
+              <AlertTriangle size={30} color="#ef4444" />
+            </div>
+
+            <h3 className="font-editorial" style={{ fontSize: '1.75rem', marginBottom: '8px', color: 'var(--text-primary)' }}>
+              Pipeline Execution Failed
+            </h3>
+
+            <p style={{
+              fontSize: '0.95rem',
+              color: '#ef4444',
+              fontWeight: 500,
+              maxWidth: 580,
+              margin: '0 auto 16px',
+              lineHeight: 1.5
+            }}>
+              {activeError}
+            </p>
+
+            <div style={{
+              maxWidth: 620,
+              margin: '0 auto 24px',
+              padding: '14px 18px',
+              borderRadius: '8px',
+              background: 'var(--bg-card-subtle, #FAF7F2)',
+              border: '1px solid var(--border-light, #E4DDD4)',
+              textAlign: 'left',
+              fontSize: '0.84rem',
+              color: 'var(--text-secondary, #77716A)',
+              lineHeight: 1.5
+            }}>
+              <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                Authoritative Data Integrity Notice
+              </strong>
+              The pipeline could not be executed against authoritative creator records. To preserve matching accuracy, Alloy does not fall back to local sample data when server database queries fail, and unexecuted pipelines are never classified as eligible or ineligible.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              {onRetry && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={onRetry}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <RotateCcw size={15} />
+                  <span>Retry Pipeline Execution</span>
+                </button>
+              )}
+              {onEditCampaign && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    onClose();
+                    onEditCampaign();
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <FileText size={15} />
+                  <span>Edit Campaign Brief</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={onClose}
+              >
+                Close Trace
+              </button>
+            </div>
+          </div>
+        ) : isLoading && !pipelineTrace ? (
           <div className="pipeline-loading-container">
             <div className="ai-processing-visual">
               <span className="ai-processing-ring" />
@@ -698,7 +857,7 @@ export default function PipelineTraceModal({
         ) : (
           <>
             {/* Top Summary KPI Bar */}
-            <div className="pipeline-kpi-bar">
+            <div className="pipeline-kpi-bar" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
               <div className="pipeline-kpi-item">
                 <span className="pipeline-kpi-label">Authoritative Pool</span>
                 <div className="pipeline-kpi-val">{summary.totalCandidates ?? 0} Creators</div>
@@ -706,6 +865,12 @@ export default function PipelineTraceModal({
               <div className="pipeline-kpi-item">
                 <span className="pipeline-kpi-label">Eligible Candidates</span>
                 <div className="pipeline-kpi-val val-green">{displayedQualifiedCount} Qualified</div>
+              </div>
+              <div className="pipeline-kpi-item">
+                <span className="pipeline-kpi-label">Requires Review</span>
+                <div className="pipeline-kpi-val text-amber" style={{ color: '#d97706' }}>
+                  {displayedReviewCount} Review
+                </div>
               </div>
               <div className="pipeline-kpi-item">
                 <span className="pipeline-kpi-label">Total Excluded</span>
@@ -717,12 +882,12 @@ export default function PipelineTraceModal({
                   {isComplete ? (
                     <>
                       <CheckCircle2 size={16} color="#10b981" />
-                      <span>7 Stages Computed</span>
+                      <span>{stages.length > 0 ? `${stages.length} Stages Computed` : 'Pipeline Executed'}</span>
                     </>
                   ) : (
                     <>
                       <span className="live-pulse-dot" />
-                      <span>Presenting Trace ({revealedStageCount}/7)…</span>
+                      <span>Presenting Trace ({revealedStageCount}/{stages.length || 7})…</span>
                     </>
                   )}
                 </div>
@@ -759,6 +924,14 @@ export default function PipelineTraceModal({
               </button>
               <button
                 type="button"
+                className={`pipeline-tab-btn ${activeTab === 'review' ? 'active' : ''}`}
+                onClick={() => handleSelectTab('review')}
+              >
+                <AlertTriangle size={15} color={activeTab === 'review' ? '#d97706' : undefined} />
+                <span>Needs Review ({reviewCandidates.length})</span>
+              </button>
+              <button
+                type="button"
                 className={`pipeline-tab-btn ${activeTab === 'exclusions' ? 'active' : ''}`}
                 onClick={() => handleSelectTab('exclusions')}
               >
@@ -777,15 +950,37 @@ export default function PipelineTraceModal({
                   <div className="pipeline-pacing-indicator-bar">
                     <div className="pacing-text-wrap">
                       <span className="pacing-live-indicator">
-                        {isComplete ? '✓ Presentation Complete' : '• Presenting computed backend results (Stage-by-stage review)'}
+                        {isComplete
+                          ? (summary.totalCandidates === 0 ? '✓ Pipeline Executed (Empty Creator Pool)' : '✓ Presentation Complete')
+                          : '• Presenting computed backend results (Stage-by-stage review)'}
                       </span>
                       <span className="pacing-desc">
                         {isComplete
-                          ? 'Click any stage card to inspect exact candidates and exclusion reasons.'
-                          : `Currently reviewing Stage ${revealedStageCount} of 7. Each stage enforces a mandatory eligibility dimension.`}
+                          ? (summary.totalCandidates === 0
+                              ? 'The server executed all filtering stages against the authoritative database, but the candidate pool contains 0 registered creators. No matching candidates could be evaluated.'
+                              : 'Click any stage card to inspect exact candidates and exclusion reasons.')
+                          : `Currently reviewing Stage ${revealedStageCount} of ${stages.length || 7}. Each stage enforces a mandatory eligibility dimension.`}
                       </span>
                     </div>
                   </div>
+
+                  {summary.totalCandidates === 0 && isComplete && (
+                    <div className="pipeline-empty-pool-banner studio-card" style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '14px 20px',
+                      margin: '0 0 16px 0',
+                      borderRadius: '8px',
+                      background: 'var(--bg-card-subtle, #FAF7F2)',
+                      border: '1px solid var(--border-light, #E4DDD4)'
+                    }}>
+                      <Info size={18} color="var(--text-secondary, #77716A)" />
+                      <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary, #77716A)' }}>
+                        <strong style={{ color: 'var(--text-primary, #191816)' }}>Empty Authoritative Pool:</strong> The database currently has 0 published creators available for matching. All pipeline stages executed successfully with zero input candidates.
+                      </div>
+                    </div>
+                  )}
 
                   {/* Desktop Horizontal Track */}
                   <div className="horizontal-stages-track-wrap" ref={stagesTrackRef}>
@@ -1097,35 +1292,73 @@ export default function PipelineTraceModal({
                 <div className="pipeline-eligible-tab-content">
                   {rankedCreators.length === 0 ? (
                     <div className="pipeline-empty-state studio-card text-center">
-                      <AlertTriangle size={40} className="text-amber" style={{ margin: '0 auto 14px' }} />
-                      <h3 className="font-editorial empty-heading">
-                        No Creators Met All Mandatory Requirements
-                      </h3>
-                      <p className="empty-subtext">
-                        The campaign brief specified mandatory toolchains, specializations, or formats that none of the available creators currently possess in verified portfolio records.
-                      </p>
-                      <div className="empty-actions-row">
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => setActiveTab('exclusions')}
-                        >
-                          View Exclusion Ledger
-                        </button>
-                        {onEditCampaign && (
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={() => {
-                              onClose();
-                              onEditCampaign();
-                            }}
-                          >
-                            <FileText size={14} />
-                            <span>Adjust Campaign Brief</span>
-                          </button>
-                        )}
-                      </div>
+                      {summary.totalCandidates === 0 ? (
+                        <>
+                          <Users size={40} style={{ margin: '0 auto 14px', color: 'var(--text-tertiary, #968F87)' }} />
+                          <h3 className="font-editorial empty-heading">
+                            Authoritative Creator Pool is Empty
+                          </h3>
+                          <p className="empty-subtext">
+                            The authoritative creator pool currently contains 0 creators. The pipeline completed execution, but no candidates were available in the database to evaluate against this campaign brief.
+                          </p>
+                          {onEditCampaign && (
+                            <div className="empty-actions-row">
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                  onClose();
+                                  onEditCampaign();
+                                }}
+                              >
+                                <FileText size={14} />
+                                <span>View Campaign Brief</span>
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle size={40} className="text-amber" style={{ margin: '0 auto 14px' }} />
+                          <h3 className="font-editorial empty-heading">
+                            No Creators Met All Mandatory Requirements
+                          </h3>
+                          <p className="empty-subtext">
+                            The campaign brief specified mandatory toolchains, specializations, or formats that none of the available creators currently possess in verified portfolio records.
+                          </p>
+                          <div className="empty-actions-row">
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={() => setActiveTab('pipeline')}
+                            >
+                              <Layers size={14} />
+                              <span>View Pipeline Execution</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={() => setActiveTab('exclusions')}
+                            >
+                              <XCircle size={14} />
+                              <span>View Exclusion Ledger</span>
+                            </button>
+                            {onEditCampaign && (
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  onClose();
+                                  onEditCampaign();
+                                }}
+                              >
+                                <FileText size={14} />
+                                <span>Adjust Campaign Brief</span>
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div className="eligible-creators-list">
@@ -1159,16 +1392,22 @@ export default function PipelineTraceModal({
                       </div>
 
                       <div className="eligible-cards-grid">
-                        {rankedCreators.map((item, idx) => (
-                          <div key={item.creatorId} className="eligible-creator-card studio-card">
+                        {(rankedCreators || []).map((item, idx) => (
+                          <div key={item.creatorId || idx} className="eligible-creator-card studio-card">
                             <div className="eligible-card-left">
                               <span className="eligible-rank-badge">#{idx + 1}</span>
-                              <img src={item.creator.avatar} alt={item.creator.name} className="eligible-avatar" />
+                              <img
+                                src={item.creator?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"}
+                                alt={item.creator?.name || item.creatorId}
+                                className="eligible-avatar"
+                              />
                               <div className="eligible-info">
-                                <h4 className="eligible-name">{item.creator.name}</h4>
-                                <span className="eligible-specialty">{item.creator.specialty} • {item.creator.location}</span>
+                                <h4 className="eligible-name">{item.creator?.name || item.creatorId}</h4>
+                                <span className="eligible-specialty">
+                                  {item.creator?.specialty || 'Creator'}{item.creator?.location ? ` • ${item.creator.location}` : ''}
+                                </span>
                                 <div className="eligible-styles-cloud">
-                                  {(item.creator.styles || []).slice(0, 3).map((s, i) => (
+                                  {(item.creator?.styles || []).slice(0, 3).map((s, i) => (
                                     <span key={i} className="eligible-style-pill">{s}</span>
                                   ))}
                                 </div>
@@ -1177,9 +1416,9 @@ export default function PipelineTraceModal({
 
                             <div className="eligible-card-middle">
                               <p className="eligible-evidence-quote">
-                                "{item.explanation.summary}"
+                                "{item.explanation?.summary || 'Creator passed all mandatory criteria.'}"
                               </p>
-                              {item.explanation.highlights && item.explanation.highlights.length > 0 && (
+                              {Array.isArray(item.explanation?.highlights) && item.explanation.highlights.length > 0 && (
                                 <ul className="eligible-highlights-list">
                                   {item.explanation.highlights.slice(0, 2).map((h, i) => (
                                     <li key={i}>{h}</li>
@@ -1190,10 +1429,10 @@ export default function PipelineTraceModal({
 
                             <div className="eligible-card-right">
                               <div className="eligible-score-box">
-                                <span className="score-number">{item.score}%</span>
-                                <span className="score-label">{item.fitLabel}</span>
+                                <span className="score-number">{item.score || 0}%</span>
+                                <span className="score-label">{item.fitLabel || 'Eligible'}</span>
                               </div>
-                              {onSelectCreator && (
+                              {onSelectCreator && item.creator && (
                                 <button
                                   type="button"
                                   className="btn btn-secondary btn-sm eligible-view-btn"
@@ -1207,6 +1446,241 @@ export default function PipelineTraceModal({
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB: Needs Review Candidates */}
+              {activeTab === 'review' && (
+                <div className="pipeline-review-tab-content">
+                  <div className="exclusions-header-intro" style={{ marginBottom: 18 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <AlertTriangle size={20} color="#d97706" />
+                      <h3 className="font-editorial" style={{ fontSize: '1.4rem', margin: 0 }}>
+                        {reviewCandidates.length} Candidates Requiring Review
+                      </h3>
+                    </div>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                      These candidates were not excluded, but profile evidence is ambiguous, incomplete, or requires manual human confirmation before an eligibility determination can be made.
+                    </p>
+                  </div>
+
+                  {reviewCandidates.length === 0 ? (
+                    <div className="pipeline-empty-state studio-card text-center" style={{ padding: '40px 24px' }}>
+                      <CheckCircle2 size={36} color="#10b981" style={{ margin: '0 auto 12px' }} />
+                      <h4 className="font-editorial" style={{ fontSize: '1.25rem', margin: '0 0 6px 0' }}>
+                        No Candidates Require Review
+                      </h4>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto' }}>
+                        {summary.totalCandidates === 0
+                          ? 'No review candidates could be evaluated because the authoritative creator pool is empty.'
+                          : 'All candidate creators have either satisfied every mandatory eligibility criterion or have verified exclusion records. No candidates have unresolved or ambiguous evidence.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="exclusions-ledger-list">
+                      {reviewCandidates.map((candidate, idx) => {
+                        const creatorName = candidate?.creatorName || candidate?.creator?.name || candidate?.name || 'Unnamed Creator';
+                        const creatorId = candidate?.creatorId || candidate?.creator?.id || candidate?.id || `rev-${idx}`;
+                        const specialty = candidate?.creator?.specialty || candidate?.specialty || '';
+                        const avatar = candidate?.creator?.avatar || candidate?.avatar || null;
+
+                        // Extract unverified requirements
+                        const unverifiedList = Array.isArray(candidate?.unknownRequirements) && candidate.unknownRequirements.length > 0
+                          ? candidate.unknownRequirements
+                          : Array.isArray(candidate?.requirements)
+                            ? candidate.requirements.filter(r => r && r.status === 'UNKNOWN')
+                            : [];
+
+                        // Extract distinct human-readable reasons
+                        const reasons = [];
+                        if (Array.isArray(candidate?.reasons)) {
+                          candidate.reasons.forEach(r => {
+                            if (r && typeof r === 'string' && !reasons.includes(r)) {
+                              reasons.push(r);
+                            }
+                          });
+                        }
+                        unverifiedList.forEach(u => {
+                          if (u?.reason && typeof u.reason === 'string' && !reasons.includes(u.reason)) {
+                            reasons.push(u.reason);
+                          }
+                        });
+                        if (reasons.length === 0) {
+                          reasons.push('Candidate profile requires manual verification for unconfirmed campaign criteria.');
+                        }
+
+                        const isExpanded = !!expandedReviews[`rev-${creatorId}-${idx}`];
+
+                        return (
+                          <div
+                            key={creatorId || idx}
+                            className="studio-card"
+                            style={{
+                              background: 'var(--bg-card, #ffffff)',
+                              border: '1px solid var(--border-light, #E4DDD4)',
+                              borderLeft: '3px solid #d97706',
+                              borderRadius: 8,
+                              padding: '16px 20px'
+                            }}
+                          >
+                            <div className="ledger-card-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                              <div className="ledger-creator-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <AlertTriangle size={16} color="#d97706" />
+                                {avatar && (
+                                  <img
+                                    src={avatar}
+                                    alt={creatorName}
+                                    style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover' }}
+                                  />
+                                )}
+                                <span className="ledger-name" style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                                  {creatorName}
+                                </span>
+                                {creatorId && (
+                                  <span className="ledger-id" style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                                    ({creatorId})
+                                  </span>
+                                )}
+                                {specialty && (
+                                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: 4 }}>
+                                    • {specialty}
+                                  </span>
+                                )}
+                              </div>
+
+                              <span
+                                style={{
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  padding: '3px 8px',
+                                  borderRadius: 4,
+                                  background: 'rgba(217, 119, 6, 0.12)',
+                                  color: '#b45309'
+                                }}
+                              >
+                                Requires Review
+                              </span>
+                            </div>
+
+                            {/* Unverified Requirements Badges */}
+                            <div style={{ marginBottom: 10 }}>
+                              <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                                Unverified Requirements:
+                              </span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                                {unverifiedList.length > 0 ? (
+                                  unverifiedList.map((item, i) => {
+                                    const reqLabel = typeof item === 'string'
+                                      ? item
+                                      : (item?.requirement ? String(item.requirement).replace(/_/g, ' ') : 'Unspecified');
+                                    return (
+                                      <span
+                                        key={i}
+                                        className="criteria-pill"
+                                        style={{
+                                          borderColor: 'rgba(217, 119, 6, 0.35)',
+                                          background: 'rgba(217, 119, 6, 0.06)',
+                                          color: '#92400e',
+                                          fontSize: '0.75rem',
+                                          textTransform: 'capitalize'
+                                        }}
+                                      >
+                                        {reqLabel}
+                                      </span>
+                                    );
+                                  })
+                                ) : (
+                                  <span
+                                    className="criteria-pill"
+                                    style={{
+                                      borderColor: 'rgba(217, 119, 6, 0.35)',
+                                      background: 'rgba(217, 119, 6, 0.06)',
+                                      color: '#92400e',
+                                      fontSize: '0.75rem'
+                                    }}
+                                  >
+                                    General Eligibility Evidence
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Human-Readable Reasons */}
+                            <div style={{ marginBottom: 10 }}>
+                              <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                                Review Reasons:
+                              </span>
+                              <ul style={{ margin: '4px 0 0 0', paddingLeft: 18, fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+                                {reasons.map((r, i) => (
+                                  <li key={i} style={{ marginBottom: 3, lineHeight: 1.4 }}>
+                                    {r}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+
+                            {/* Meta & Actions Row */}
+                            <div className="ledger-meta-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border-light, #E4DDD4)' }}>
+                              <span style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>
+                                Status: <strong>Awaiting Manual Review</strong> (Not classified as failure)
+                              </span>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                {candidate?.creator && onSelectCreator && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    style={{ fontSize: '0.75rem', padding: '3px 10px' }}
+                                    onClick={() => onSelectCreator(candidate.creator)}
+                                  >
+                                    <span>Inspect Profile</span>
+                                    <ArrowRight size={12} />
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  className="ledger-tech-toggle"
+                                  onClick={() => toggleReview(`rev-${creatorId}-${idx}`)}
+                                >
+                                  <span>{isExpanded ? 'Hide Details' : 'View Details'}</span>
+                                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Expandable Details Drawer */}
+                            {isExpanded && (
+                              <div
+                                className="ledger-decision-drawer"
+                                style={{
+                                  marginTop: 10,
+                                  padding: 12,
+                                  background: 'var(--bg-card-subtle, #FAF7F2)',
+                                  borderRadius: 6,
+                                  border: '1px solid var(--border-light, #E4DDD4)'
+                                }}
+                              >
+                                {unverifiedList.length > 0 && (
+                                  <div style={{ marginBottom: 8 }}>
+                                    <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>Evidence Breakdown:</strong>
+                                    {unverifiedList.map((u, j) => (
+                                      <div key={j} style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                                        <strong>{u.requirement}:</strong> {u.reason}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)' }}>
+                                  Candidate was withheld from ranked eligible matching to prevent false positives until evidence is manually confirmed.
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1229,7 +1703,11 @@ export default function PipelineTraceModal({
                       <CheckCircle2 size={24} color="#10b981" />
                       <div>
                         <strong>No Excluded Creators</strong>
-                        <p>All candidates satisfied every mandatory requirement.</p>
+                        <p>
+                          {summary.totalCandidates === 0
+                            ? 'No candidates were evaluated because the creator pool was empty.'
+                            : 'All candidates satisfied every mandatory requirement.'}
+                        </p>
                       </div>
                     </div>
                   ) : (

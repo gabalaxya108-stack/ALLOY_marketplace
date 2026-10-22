@@ -3,15 +3,24 @@
 
 import React, { useState } from 'react';
 import { X, ArrowRight, Check, Sparkles, Edit3, ArrowLeft, RefreshCw } from 'lucide-react';
-import { analyzeBrief } from '../ai/briefAnalyzer';
+import { analyzeBrief, analyzeBriefAsync } from '../ai/briefAnalyzer';
 import { getSmartClarification } from '../ai/smartClarifier';
 
-export default function CampaignModal({ isOpen, onClose, onCampaignCreated, activeBrand }) {
+export default function CampaignModal({
+  isOpen,
+  onClose,
+  onCampaignCreated,
+  activeBrand,
+  initialStage = 'input',
+  initialAnalysis = null,
+  initialClarification = null,
+  initialNaturalText = ''
+}) {
   // Mode: 'input' | 'clarify' | 'processing' | 'review' | 'transitioning'
-  const [stage, setStage] = useState('input');
-  const [naturalText, setNaturalText] = useState('');
-  const [analysis, setAnalysis] = useState(null);
-  const [clarification, setClarification] = useState(null);
+  const [stage, setStage] = useState(initialStage);
+  const [naturalText, setNaturalText] = useState(initialNaturalText);
+  const [analysis, setAnalysis] = useState(initialAnalysis);
+  const [clarification, setClarification] = useState(initialClarification);
   const [selectedClarificationOption, setSelectedClarificationOption] = useState('');
   const [transitionStatusText, setTransitionStatusText] = useState('Understanding your creative direction…');
 
@@ -32,11 +41,11 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
     setStage('processing');
     setTransitionStatusText('Reading your campaign brief…');
 
-    setTimeout(() => {
-      setTransitionStatusText('Extracting creative direction & format…');
-      
-      setTimeout(() => {
-        const result = analyzeBrief(naturalText);
+    setTimeout(async () => {
+      setTransitionStatusText('Structuring creative direction with Groq AI…');
+
+      try {
+        const result = await analyzeBriefAsync(naturalText);
         setAnalysis(result);
 
         // Check if smart clarification is needed (Part 3)
@@ -47,8 +56,13 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
         } else {
           setStage('review');
         }
-      }, 500);
-    }, 450);
+      } catch (err) {
+        console.warn('[CampaignModal] Groq analysis fallback:', err);
+        const fallback = analyzeBrief(naturalText);
+        setAnalysis(fallback);
+        setStage('review');
+      }
+    }, 350);
   };
 
   const handleApplyClarification = (option) => {
@@ -57,14 +71,21 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
     setNaturalText(enrichedText);
 
     setStage('processing');
-    setTransitionStatusText('Updating campaign understanding…');
+    setTransitionStatusText('Updating brief understanding with Groq AI…');
 
-    setTimeout(() => {
-      const enrichedResult = analyzeBrief(enrichedText);
-      setAnalysis(enrichedResult);
-      setClarification(null);
-      setStage('review');
-    }, 400);
+    setTimeout(async () => {
+      try {
+        const enrichedResult = await analyzeBriefAsync(enrichedText);
+        setAnalysis(enrichedResult);
+        setClarification(null);
+        setStage('review');
+      } catch (err) {
+        const fallback = analyzeBrief(enrichedText);
+        setAnalysis(fallback);
+        setClarification(null);
+        setStage('review');
+      }
+    }, 350);
   };
 
   // Part 24: Signature "WOW" Moment Transition
@@ -96,18 +117,20 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
           deliverables: analysis.deliverables || [analysis.contentFormat || 'Key Campaign Visuals'],
           creativeDirection: analysis.creativeDirection,
           creativeStyle: analysis.creativeDirection || 'Contemporary Luxury',
-          desiredCreatorSpecialties: analysis.contentFormat?.toLowerCase().includes('video') ? ['AI Video'] : analysis.contentFormat?.toLowerCase().includes('3d') ? ['3D'] : ['AI Photography'],
-          requirements: {
+          desiredCreatorSpecialties: (analysis.hasExplicitFormat && !analysis.isFlexible)
+            ? (analysis.contentFormat?.toLowerCase().includes('video') ? ['AI Video'] : analysis.contentFormat?.toLowerCase().includes('3d') ? ['3D'] : ['AI Photography'])
+            : [],
+          requirements: analysis.requirements || {
             mandatory: {
-              formats: analysis.contentFormat ? [analysis.contentFormat] : [],
-              styles: analysis.creativeDirection ? [analysis.creativeDirection] : []
+              formats: (analysis.hasExplicitFormat && !analysis.isFlexible && analysis.contentFormat) ? [analysis.contentFormat] : [],
+              styles: (analysis.hasExplicitStyle && !analysis.isFlexible && analysis.creativeDirection) ? [analysis.creativeDirection] : []
             },
             preferred: {
               platforms: analysis.platform ? [analysis.platform] : ['Instagram'],
               industries: analysis.industry ? [analysis.industry] : []
             }
           },
-          traits: analysis.traits,
+          traits: Array.isArray(analysis?.traits) ? analysis.traits : (Array.isArray(analysis?.styleTokens) ? analysis.styleTokens : []),
           shortlist: []
         };
 
@@ -132,13 +155,13 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
-      <div 
+      <div
         className="modal-content campaign-modal-sheet"
         onClick={(e) => e.stopPropagation()}
       >
-        <button 
-          type="button" 
-          className="modal-close-btn" 
+        <button
+          type="button"
+          className="modal-close-btn"
           onClick={handleClose}
           aria-label="Close"
         >
@@ -199,8 +222,8 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
                 <button type="button" className="btn btn-secondary" onClick={handleClose}>
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn btn-primary btn-lg"
                   disabled={!naturalText.trim()}
                 >
@@ -231,7 +254,7 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
             </div>
 
             <div className="clarification-options-grid">
-              {clarification.options.map((opt, i) => (
+              {(Array.isArray(clarification?.options) ? clarification.options : []).map((opt, i) => (
                 <button
                   key={i}
                   type="button"
@@ -245,8 +268,8 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
             </div>
 
             <div style={{ marginTop: '24px', textAlign: 'center' }}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-subtle btn-sm"
                 onClick={() => setStage('review')}
               >
@@ -291,32 +314,32 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
             <div className="understood-summary-grid">
               <div className="understood-cell">
                 <span className="understood-label">Creative Direction</span>
-                <span className="understood-val font-editorial">{analysis.creativeDirection}</span>
+                <span className="understood-val font-editorial">{analysis.creativeDirection || analysis.creativeStyle || 'Contemporary Luxury'}</span>
               </div>
 
               <div className="understood-cell">
                 <span className="understood-label">Content Format</span>
-                <span className="understood-val">{analysis.contentFormat}</span>
+                <span className="understood-val">{analysis.contentFormat || 'Key Campaign Visuals'}</span>
               </div>
 
               <div className="understood-cell">
                 <span className="understood-label">Audience</span>
-                <span className="understood-val">{analysis.audience}</span>
+                <span className="understood-val">{analysis.audience || analysis.targetAudience || 'Target Audience'}</span>
               </div>
 
               <div className="understood-cell">
                 <span className="understood-label">Platform</span>
-                <span className="understood-val">{analysis.platform}</span>
+                <span className="understood-val">{analysis.platform || analysis.preferredPlatform || 'Multi-platform'}</span>
               </div>
 
               <div className="understood-cell">
                 <span className="understood-label">Budget</span>
-                <span className="understood-val">{analysis.budget}</span>
+                <span className="understood-val">{analysis.budget || 'Flexible / Not specified'}</span>
               </div>
 
               <div className="understood-cell">
                 <span className="understood-label">Timeline</span>
-                <span className="understood-val">{analysis.timeline}</span>
+                <span className="understood-val">{analysis.timeline || 'Flexible / Open'}</span>
               </div>
             </div>
 
@@ -324,18 +347,24 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
             <div className="campaign-dna-inline-strip">
               <span className="sidebar-heading" style={{ marginBottom: 0 }}>Campaign DNA:</span>
               <div className="chip-cloud" style={{ display: 'inline-flex', gap: '6px' }}>
-                {analysis.traits.map((t, i) => (
-                  <span key={i} className="campaign-dna-pill" style={{ fontSize: '0.75rem', padding: '3px 10px' }}>
-                    {t}
+                {(Array.isArray(analysis?.traits) ? analysis.traits : (Array.isArray(analysis?.styleTokens) ? analysis.styleTokens : [])).length > 0 ? (
+                  (Array.isArray(analysis?.traits) ? analysis.traits : (Array.isArray(analysis?.styleTokens) ? analysis.styleTokens : [])).map((t, i) => (
+                    <span key={i} className="campaign-dna-pill" style={{ fontSize: '0.75rem', padding: '3px 10px' }}>
+                      {t}
+                    </span>
+                  ))
+                ) : (
+                  <span className="campaign-dna-pill" style={{ fontSize: '0.75rem', padding: '3px 10px', opacity: 0.7 }}>
+                    {analysis?.creativeStyle || analysis?.industry || 'General Creative'}
                   </span>
-                ))}
+                )}
               </div>
             </div>
 
             {/* Actions: Looks right? */}
             <div className="modal-actions-footer" style={{ marginTop: '28px' }}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-secondary"
                 onClick={handleResetToEdit}
               >
@@ -343,8 +372,8 @@ export default function CampaignModal({ isOpen, onClose, onCampaignCreated, acti
                 <span>Edit Brief</span>
               </button>
 
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-primary btn-lg"
                 onClick={handleConfirmAndFindCreators}
               >

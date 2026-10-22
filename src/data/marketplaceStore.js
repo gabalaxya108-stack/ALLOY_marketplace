@@ -497,7 +497,7 @@ export function getPublicCreatorProfile(creator) {
       workflowStages: p.workflowStages || []
     }));
   // Brands have read-only access to published workflows only
-  const publishedWorkflows = (creator.workflows || []).filter(w => 
+  const publishedWorkflows = (creator.workflows || []).filter(w =>
     (w.visibility === 'published' || w.status === 'Published') && w.visibility !== 'private'
   );
 
@@ -802,6 +802,8 @@ export function createCampaignRecord(campaignData, brand) {
   return {
     id: campaignData.id || `camp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     ownerBrandId: brandId,
+    brandId: brandId,
+    owner_brand_id: brandId,
     brandName,
     brandAvatar,
     brandWebsite,
@@ -857,6 +859,189 @@ export function createBrandRecord(brandData) {
   };
 }
 
+/**
+ * Unambiguous, semantically defensible mappings from creative disciplines
+ * to canonical industry sectors in the Alloy marketplace taxonomy (FILTER_OPTIONS.industries).
+ *
+ * Disciplines that represent production mediums, formats, or crafts rather than commercial
+ * industry sectors (e.g. '3D CGI', 'Animation & Motion', 'Video Editing', 'UGC', 'Editorial Storytelling',
+ * 'AI Product Visuals') are intentionally excluded. When a mapping is absent or uncertain,
+ * industries are left unresolved rather than misclassifying the creator under an unrelated sector.
+ */
+export const DISCIPLINE_TO_INDUSTRY_MAP = {
+  'AI Fashion': 'Luxury & High Fashion',
+  'AI Beauty': 'Beauty & Skincare',
+  'Consumer Technology': 'Consumer Tech & Hardware',
+  'Food & Beverage': 'Food & Beverage'
+};
+
+/**
+ * Normalizes string arrays by trimming and removing empty values.
+ */
+function normalizeStringList(items, candidateObjectKeys = []) {
+  if (!items) return [];
+  const list = Array.isArray(items) ? items : [items];
+  const out = [];
+  for (const item of list) {
+    if (typeof item === 'string' && item.trim()) {
+      out.push(item.trim());
+    } else if (item && typeof item === 'object') {
+      for (const k of candidateObjectKeys) {
+        if (typeof item[k] === 'string' && item[k].trim()) {
+          out.push(item[k].trim());
+          break;
+        }
+      }
+    }
+  }
+  return Array.from(new Set(out));
+}
+
+/**
+ * Builds a published creator profile record from onboarding form data and optional AI DNA.
+ *
+ * Rules:
+ * 1. Preserves actual user-selected tools, disciplines/industries, and styles.
+ * 2. Uses AI-generated profile data (dnaResult) ONLY as a fallback when user data is absent.
+ * 3. Never overwrites genuine user selections with hardcoded example values.
+ * 4. Handles missing or empty optional fields consistently with the existing profile model (empty arrays).
+ */
+export function buildPublishedCreatorProfile(profileData = {}, dnaResult = null) {
+  const data = profileData || {};
+
+  // 1. Resolve Tools: User explicit > Portfolio declared > AI DNA fallback > empty array
+  let tools = normalizeStringList(data.tools);
+  if (tools.length === 0) {
+    const portfolioTools = normalizeStringList(
+      (data.portfolio || []).flatMap(p => Array.isArray(p?.tools) ? p.tools : [])
+    );
+    if (portfolioTools.length > 0) {
+      tools = portfolioTools;
+    } else if (dnaResult) {
+      const aiTools = normalizeStringList(dnaResult.tools);
+      const aiProductionTools = normalizeStringList(dnaResult.productionTools, ['tool', 'name']);
+      const aiProvenanceTools = normalizeStringList(dnaResult.provenance?.creatorProvided?.toolsUsed);
+      const combinedAiTools = Array.from(new Set([...aiTools, ...aiProductionTools, ...aiProvenanceTools]));
+      if (combinedAiTools.length > 0) {
+        tools = combinedAiTools;
+      }
+    }
+  }
+
+  // 2. Resolve Styles: User explicit > AI DNA fallback > empty array
+  let styles = normalizeStringList(data.styles);
+  if (styles.length === 0 && dnaResult) {
+    const aiStyles = normalizeStringList(dnaResult.styles);
+    const aiCreativeStyles = normalizeStringList(dnaResult.creativeStyles, ['style', 'name']);
+    const aiProvenanceStyles = normalizeStringList(dnaResult.provenance?.creatorProvided?.preferredStyles);
+    const combinedAiStyles = Array.from(new Set([...aiStyles, ...aiCreativeStyles, ...aiProvenanceStyles]));
+    if (combinedAiStyles.length > 0) {
+      styles = combinedAiStyles;
+    }
+  }
+
+  // 3. Resolve Disciplines & Capabilities: User explicit > AI DNA fallback > empty array
+  const disciplines = normalizeStringList(data.disciplines);
+  let capabilities = normalizeStringList(data.capabilities);
+  if (capabilities.length === 0) {
+    capabilities = disciplines.length > 0
+      ? disciplines
+      : (dnaResult ? normalizeStringList(dnaResult.capabilities) : []);
+  }
+
+  // 4. Resolve Industries: User explicit > Derived from user disciplines > AI DNA fallback > empty array
+  let industries = normalizeStringList(data.industries);
+  if (industries.length === 0) {
+    if (disciplines.length > 0) {
+      const mapped = disciplines
+        .map(d => DISCIPLINE_TO_INDUSTRY_MAP[d])
+        .filter(Boolean);
+      industries = Array.from(new Set(mapped));
+    }
+    if (industries.length === 0 && dnaResult) {
+      const aiIndustries = normalizeStringList(dnaResult.industries);
+      const aiProvenanceIndustries = normalizeStringList(dnaResult.provenance?.creatorProvided?.declaredIndustries);
+      const combinedAiIndustries = Array.from(new Set([...aiIndustries, ...aiProvenanceIndustries]));
+      if (combinedAiIndustries.length > 0) {
+        industries = combinedAiIndustries;
+      }
+    }
+  }
+
+  // 5. Resolve Specialty & Creative Identity
+  const rawSpecialty = typeof data.specialty === 'string' ? data.specialty.trim() : '';
+  const specialty = rawSpecialty || disciplines[0] || dnaResult?.provenance?.creatorProvided?.statedSpecialty || 'AI Visual Direction';
+
+  const rawCreativeIdentity = typeof data.creativeIdentity === 'string' ? data.creativeIdentity.trim() : '';
+  const creativeIdentity = rawCreativeIdentity || specialty;
+
+  // 6. Handle & Unique ID
+  const rawHandle = typeof data.handle === 'string' ? data.handle.trim() : '';
+  const id = rawHandle
+    ? rawHandle.replace('@', '').replace(/\./g, '-')
+    : (typeof data.id === 'string' && data.id.trim() ? data.id.trim() : `creator-${Date.now()}`);
+
+  const name = typeof data.name === 'string' && data.name.trim()
+    ? data.name.trim()
+    : 'Creative Artist';
+
+  const handle = rawHandle
+    ? (rawHandle.startsWith('@') ? rawHandle : `@${rawHandle}`)
+    : '@creator.ai';
+
+  const location = typeof data.location === 'string' && data.location.trim()
+    ? data.location.trim()
+    : 'Remote (Global)';
+
+  const availability = typeof data.availability === 'string' && data.availability.trim()
+    ? data.availability.trim()
+    : 'Available for projects';
+
+  const portfolio = Array.isArray(data.portfolio) ? data.portfolio : [];
+  const heroWork = typeof data.heroWork === 'string' && data.heroWork.trim()
+    ? data.heroWork.trim()
+    : (portfolio[0]?.image || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=85');
+
+  const avatar = typeof data.avatar === 'string' && data.avatar.trim()
+    ? data.avatar.trim()
+    : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+
+  const bio = typeof data.bio === 'string' && data.bio.trim()
+    ? data.bio.trim()
+    : 'AI Creator on Alloy.';
+
+  return {
+    id,
+    name,
+    handle,
+    creativeIdentity,
+    specialty,
+    location,
+    availability,
+    statusBadge: 'Profile Live',
+    heroWork,
+    avatar,
+    bio,
+    styles,
+    disciplines,
+    capabilities,
+    industries,
+    tools,
+    experience: typeof data.experience === 'string' ? data.experience : '3+ years AI-native cinema',
+    turnaround: typeof data.turnaround === 'string' ? data.turnaround : '48h concept boards',
+    featured: typeof data.featured === 'boolean' ? data.featured : true,
+    projects: portfolio,
+    socials: (data.socials && typeof data.socials === 'object') ? data.socials : {},
+    categoryTags: Array.isArray(data.categoryTags) ? data.categoryTags : [],
+    technicalSkills: Array.isArray(data.technicalSkills) ? data.technicalSkills : [],
+    creativeSkills: Array.isArray(data.creativeSkills) ? data.creativeSkills : [],
+    dna: dnaResult || null
+  };
+}
+
+export const createCreatorRecord = buildPublishedCreatorProfile;
+
+
 // ----------------------------------------------------
 // 9. BRAND DATA ISOLATION SELECTORS
 // ----------------------------------------------------
@@ -884,23 +1069,27 @@ export function getBrandScopedData(state, brandId, isDemoMode = false) {
 
   // Strict Brand Isolation:
   // In real brand mode, ONLY campaigns owned by this specific brandId
-  const campaigns = (state.campaigns || []).filter(c => c.ownerBrandId === currentBrand.id);
+  const campaigns = (state.campaigns || []).filter(c =>
+    c.ownerBrandId === currentBrand.id ||
+    c.brandId === currentBrand.id ||
+    c.owner_brand_id === currentBrand.id
+  );
 
   // Active campaign must strictly belong to this brand
   const activeCampaign = (state.activeCampaignId && campaigns.find(c => c.id === state.activeCampaignId)) || campaigns[0] || null;
 
   // Invitations strictly belonging to this brand
-  const invitations = (state.invitations || []).filter(inv => 
+  const invitations = (state.invitations || []).filter(inv =>
     inv.brandId === currentBrand.id || (campaigns.length > 0 && campaigns.some(c => c.id === inv.campaignId))
   );
 
   // Collaborations / Projects strictly belonging to this brand
-  const projects = (state.projects || []).filter(p => 
+  const projects = (state.projects || []).filter(p =>
     p.brandId === currentBrand.id || (campaigns.length > 0 && campaigns.some(c => c.id === p.campaignId))
   );
 
   // Messaging connections strictly belonging to this brand
-  const connections = (state.connections || []).filter(conn => 
+  const connections = (state.connections || []).filter(conn =>
     conn.brandId === currentBrand.id || (campaigns.length > 0 && campaigns.some(c => c.id === conn.campaignId))
   );
 
@@ -946,7 +1135,7 @@ export function getPublicCreatorOpportunities(state) {
   // Combine with initial opportunities, deduplicating by campaignId
   const initialOpps = state.opportunities || INITIAL_CREATOR_OPPORTUNITIES;
   const campaignIdsSeen = new Set(publishedCampaignOpps.map(o => o.campaignId));
-  
+
   const additionalOpps = initialOpps.filter(o => !campaignIdsSeen.has(o.campaignId));
   return [...publishedCampaignOpps, ...additionalOpps];
 }
@@ -958,7 +1147,7 @@ export function getPublicCreatorOpportunities(state) {
 export function getVerificationClaimsRecord(creatorId = null) {
   const state = getInitialMarketplaceState();
   let claims = state.verificationClaims || [];
-  
+
   // If claims not yet initialized in state, seed with Maya Chen's demo claims
   if (claims.length === 0) {
     const maya = (state.creators || []).find(c => c.id === 'maya-chen') || state.creators?.[0];
@@ -1072,7 +1261,7 @@ export function getVerificationClaimsRecord(creatorId = null) {
 export function submitVerificationClaimRecord(claimData) {
   const state = getInitialMarketplaceState();
   const currentClaims = getVerificationClaimsRecord();
-  
+
   const newClaim = {
     id: claimData.id || `claim-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
     creatorId: claimData.creatorId,
@@ -1166,7 +1355,7 @@ export function submitVerificationClaimRecord(claimData) {
 export function reviewVerificationClaimRecord({ claimId, decision, notes = '', reviewerName = 'Platform Auditor' }) {
   const state = getInitialMarketplaceState();
   const currentClaims = getVerificationClaimsRecord();
-  
+
   const target = currentClaims.find(c => c.id === claimId);
   if (!target) return null;
 
@@ -1216,7 +1405,7 @@ export function reviewVerificationClaimRecord({ claimId, decision, notes = '', r
       if (cr.id === target.creatorId) {
         const tv = { ...(cr.trustVerification || {}) };
         if (target.claimType === 'portfolio') {
-          tv.portfolioEvidence = (tv.portfolioEvidence || []).map(p => 
+          tv.portfolioEvidence = (tv.portfolioEvidence || []).map(p =>
             p.id === target.id || p.projectId === target.evidenceDetails?.projectId
               ? { ...p, status: newStatus, reviewedAt: now, reviewerNotes: notes }
               : p
@@ -1292,8 +1481,27 @@ export function recordCampaignFunding(campaignId, paymentData) {
 
   const updatedState = { ...state, campaigns };
   saveMarketplaceState(updatedState);
+
+  // Real-time synchronization to Supabase Table Editor (payments & campaign funding)
+  if (typeof window !== 'undefined') {
+    import('../services/dbSync.js').then(({ syncFundingToDb, syncCampaignToDb }) => {
+      syncFundingToDb({
+        campaignId,
+        amountPaise: paymentData.amount,
+        amountRupees: Number(paymentData.amount_rupees || (paymentData.amount / 100) || 0),
+        currency: 'INR',
+        paymentId: paymentData.payment_id || paymentData.paymentId,
+        orderId: paymentData.order_id || paymentData.orderId,
+        funderName: paymentData.funder_name || 'Brand Partner',
+        verified: true
+      }).catch(() => {});
+
+      const updatedCamp = campaigns.find(c => c.id === campaignId);
+      if (updatedCamp) {
+        syncCampaignToDb(updatedCamp).catch(() => {});
+      }
+    }).catch(() => {});
+  }
+
   return updatedState;
 }
-
-
-

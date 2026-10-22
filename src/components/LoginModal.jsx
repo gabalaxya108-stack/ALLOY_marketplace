@@ -1,19 +1,26 @@
 // src/components/LoginModal.jsx
 // ALLOY — Luxury Blended Editorial Login & Workspace Entry Modal
-// Seamless integration of Google OAuth, role preselection, 
+// Seamless integration of Google OAuth, role preselection,
 // protected action notices, and 1-click evaluation demos.
 
 import React, { useState, useEffect } from 'react';
-import { 
-  X, Briefcase, Palette, ArrowRight, ShieldCheck, 
-  Mail, Lock, UserPlus, AlertCircle, Loader, Sparkles, Check 
+import {
+  X, Briefcase, Palette, ArrowRight, ShieldCheck,
+  Mail, Lock, UserPlus, AlertCircle, Loader, Sparkles, Check
 } from 'lucide-react';
-import { signIn, signUp, signInWithGoogle, getBackendStatus } from '../services/marketplaceBackend';
+import {
+  signIn,
+  signUp,
+  signInWithGoogle,
+  getBackendStatus,
+  getGoogleClientId,
+  setGoogleClientId
+} from '../services/marketplaceBackend';
 
-export default function LoginModal({ 
-  isOpen, 
-  onClose, 
-  onLoginBrand, 
+export default function LoginModal({
+  isOpen,
+  onClose,
+  onLoginBrand,
   onLoginCreator,
   onLoginSuccess,
   initialRole = 'brand',
@@ -29,6 +36,8 @@ export default function LoginModal({
   const [successMsg, setSuccessMsg] = useState('');
   const [isDemoFallbackOpen, setIsDemoFallbackOpen] = useState(false);
   const [demoFallbackData, setDemoFallbackData] = useState(null);
+  const [isGoogleSetupOpen, setIsGoogleSetupOpen] = useState(false);
+  const [customGoogleClientId, setCustomGoogleClientId] = useState(getGoogleClientId() || '');
 
   // Dedicated demo credentials for evaluation
   const DEMO_CREDENTIALS = {
@@ -139,52 +148,28 @@ export default function LoginModal({
       }
 
       await signInWithGoogle({ role: targetRole });
-      // Browser redirects to Google when Supabase OAuth is configured
+      // Browser redirects to Google OAuth (accounts.google.com) to ask for Gmail
     } catch (err) {
       setLoading(false);
-      console.info('[Alloy Auth] Native Google OAuth redirect pending; registering Google user directly to Supabase');
-      
-      const googleEmail = email && email.includes('@') ? email : (selectedRole === 'brand' ? 'google.brand@alloy.market' : 'google.creator@alloy.market');
-      const googleName = displayName || (selectedRole === 'brand' ? 'Google Brand Partner' : 'Google Creator Studio');
-      
-      // Save and update user directly in Supabase profiles, creator_profiles / brands, and activity_logs
-      let verifiedUser = await saveAndAuthenticateToSupabase(googleEmail, 'AlloyUser2026!', selectedRole, googleName);
-
-      if (!verifiedUser) {
-        verifiedUser = {
-          id: `usr-${googleEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
-          email: googleEmail,
-          role: selectedRole,
-          display_name: googleName,
-          profile: {
-            id: `usr-${googleEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
-            email: googleEmail,
-            role: selectedRole,
-            display_name: googleName
-          }
-        };
+      if (err.code === 'google_config_required' || err.code === 'google_not_enabled') {
+        setIsGoogleSetupOpen(true);
+      } else {
+        setErrorMsg(err.message || 'Google OAuth failed to initialize.');
       }
-
-      setSuccessMsg(`Authenticated via Google as ${selectedRole === 'brand' ? 'Brand Studio' : 'Creator Studio'}!`);
-
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('creasync_active_user', JSON.stringify(verifiedUser));
-          localStorage.setItem('creasync_active_role', selectedRole);
-        } catch (e) {}
-      }
-
-      setTimeout(() => {
-        if (onLoginSuccess) {
-          onLoginSuccess(verifiedUser, selectedRole);
-        } else if (selectedRole === 'brand') {
-          onLoginBrand(verifiedUser);
-        } else {
-          onLoginCreator(verifiedUser);
-        }
-        if (onClose) onClose();
-      }, 500);
     }
+  };
+
+  const handleSaveGoogleClientIdAndLaunch = (e) => {
+    e.preventDefault();
+    if (!customGoogleClientId.trim()) {
+      setErrorMsg('Please enter your Google Client ID from Google Cloud Console.');
+      return;
+    }
+    setGoogleClientId(customGoogleClientId.trim());
+    setIsGoogleSetupOpen(false);
+    setErrorMsg('');
+    // Immediately launch Google OAuth flow
+    handleGoogleSignIn();
   };
 
   // 1-Click Demo Evaluation Sign In
@@ -244,7 +229,7 @@ export default function LoginModal({
         // Direct Server-Side Fallback: Guarantees Supabase Table Editor update with zero rate limit
         const resolvedEmail = email || `${selectedRole}@alloy.market`;
         const resolvedName = displayName || resolvedEmail.split('@')[0];
-        
+
         let syncedUser = await saveAndAuthenticateToSupabase(resolvedEmail, password || 'AlloyUser2026!', selectedRole, resolvedName);
         if (!syncedUser) {
           syncedUser = {
@@ -345,19 +330,19 @@ export default function LoginModal({
   };
 
   return (
-    <div 
-      className="alloy-modal-backdrop" 
-      onClick={onClose} 
-      role="dialog" 
-      aria-modal="true" 
+    <div
+      className="alloy-modal-backdrop"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
       aria-labelledby="login-modal-title"
     >
       <div className="alloy-login-card-editorial" onClick={(e) => e.stopPropagation()}>
-        
+
         {/* Floating Close Button */}
-        <button 
-          type="button" 
-          className="alloy-modal-close" 
+        <button
+          type="button"
+          className="alloy-modal-close"
           onClick={onClose}
           aria-label="Close dialog"
         >
@@ -368,21 +353,21 @@ export default function LoginModal({
             COLUMN 1: High-Contrast, Elegant Auth Form (Compact Single Page)
             ======================================================== */}
         <div className="alloy-login-form-col">
-          
+
           {/* Brand Wordmark & Eyebrow Row */}
           <div className="alloy-login-brand-header">
             <div className="alloy-login-brand-row">
-              <img 
-                src="/assets/alloy-wordmark.webp" 
-                alt="Alloy" 
-                className="alloy-login-logo-img" 
+              <img
+                src="/assets/alloy-wordmark.webp"
+                alt="Alloy"
+                className="alloy-login-logo-img"
               />
               <div className="alloy-login-pill">
                 <Sparkles size={10} className="pill-star" />
                 <span>WORKSPACE ENTRY</span>
               </div>
             </div>
-            
+
             <h2 id="login-modal-title" className="alloy-login-headline font-editorial">
               {authMode === 'signup' ? 'Create Your Account' : 'Login to Alloy'}
             </h2>
@@ -396,14 +381,117 @@ export default function LoginModal({
             </div>
           )}
 
+          {/* PRIMARY FIRST SECTION: Google OAuth 2.0 Direct Sign In */}
+          <div className="alloy-google-hero-section mb-2">
+            {/* Role Preselection / Selector (Inline) */}
+            <div className="auth-role-select-group mb-3">
+              <label className="text-[11px] uppercase font-mono text-zinc-400 block mb-1.5">1. Select Your Workspace</label>
+              <div className="auth-role-picker">
+                <button
+                  type="button"
+                  className={`role-pill-btn ${selectedRole === 'brand' ? 'is-selected' : ''}`}
+                  onClick={() => handleSelectRole('brand')}
+                >
+                  <Briefcase size={13} />
+                  <span>Brand Studio</span>
+                  {selectedRole === 'brand' && <Check size={11} className="role-check" />}
+                </button>
+
+                <button
+                  type="button"
+                  className={`role-pill-btn ${selectedRole === 'creator' ? 'is-selected' : ''}`}
+                  onClick={() => handleSelectRole('creator')}
+                >
+                  <Palette size={13} />
+                  <span>Creator Studio</span>
+                  {selectedRole === 'creator' && <Check size={11} className="role-check" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Google OAuth Action Button */}
+            <button
+              type="button"
+              id="google-signin-btn"
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              className="btn-google-oauth w-full shadow-lg"
+              title="Authenticate with your verified Google / Gmail account"
+            >
+              {loading ? (
+                <Loader size={16} className="auth-spinner" />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+              )}
+              <span className="font-semibold text-sm">
+                {loading
+                  ? 'Connecting to Google...'
+                  : authMode === 'signup'
+                    ? `Sign up with Google as ${selectedRole === 'brand' ? 'Brand' : 'Creator'}`
+                    : `Continue with Google as ${selectedRole === 'brand' ? 'Brand' : 'Creator'}`}
+              </span>
+            </button>
+
+            {/* Google Cloud Console Setup Prompt if credentials needed */}
+            {isGoogleSetupOpen && (
+              <div className="alloy-google-setup-card mt-3 p-3.5 bg-zinc-900 border border-amber-500/40 rounded-lg text-left">
+                <div className="flex justify-between items-center mb-1.5">
+                  <div className="flex items-center gap-1.5 text-amber-400 font-semibold text-xs">
+                    <Sparkles size={14} />
+                    <span>Google Cloud Console Client ID</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsGoogleSetupOpen(false)}
+                    className="text-zinc-400 hover:text-white"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-300 mb-2 leading-relaxed">
+                  Enter your Web Client ID from Google Cloud Console to prompt account selection:
+                </p>
+                <div className="bg-black/60 p-2 rounded text-[10px] font-mono text-zinc-400 mb-2 space-y-0.5">
+                  <div>Redirect URI: <span className="text-amber-300">http://localhost:5173</span></div>
+                </div>
+                <form onSubmit={handleSaveGoogleClientIdAndLaunch} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. 123456789-xyz.apps.googleusercontent.com"
+                    value={customGoogleClientId}
+                    onChange={(e) => setCustomGoogleClientId(e.target.value)}
+                    className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-zinc-500 focus:border-amber-400 focus:outline-none"
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-black font-semibold text-xs rounded whitespace-nowrap"
+                  >
+                    Launch Google
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
+
+          {/* Form Divider */}
+          <div className="alloy-auth-divider my-3">
+            <span>Or Sign In with Email & Password</span>
+          </div>
+
           {/* Mode Switcher: Login vs Create Account */}
           <div className="alloy-auth-toggle-bar">
             <button
               type="button"
               className={`auth-toggle-tab ${authMode === 'signin' ? 'is-active' : ''}`}
-              onClick={() => { 
-                setAuthMode('signin'); 
-                setErrorMsg(''); 
+              onClick={() => {
+                setAuthMode('signin');
+                setErrorMsg('');
                 setIsDemoFallbackOpen(false);
                 const creds = DEMO_CREDENTIALS[selectedRole];
                 if (creds) {
@@ -418,88 +506,15 @@ export default function LoginModal({
             <button
               type="button"
               className={`auth-toggle-tab ${authMode === 'signup' ? 'is-active' : ''}`}
-              onClick={() => { 
-                setAuthMode('signup'); 
-                setErrorMsg(''); 
-                setIsDemoFallbackOpen(false); 
+              onClick={() => {
+                setAuthMode('signup');
+                setErrorMsg('');
+                setIsDemoFallbackOpen(false);
               }}
               id="auth-tab-signup"
             >
               Create Account
             </button>
-          </div>
-
-          {/* Role Preselection / Selector (Inline) */}
-          <div className="auth-role-select-group">
-            <div className="auth-role-picker">
-              <button
-                type="button"
-                className={`role-pill-btn ${selectedRole === 'brand' ? 'is-selected' : ''}`}
-                onClick={() => handleSelectRole('brand')}
-              >
-                <Briefcase size={13} />
-                <span>Brand Studio</span>
-                {selectedRole === 'brand' && <Check size={11} className="role-check" />}
-              </button>
-
-              <button
-                type="button"
-                className={`role-pill-btn ${selectedRole === 'creator' ? 'is-selected' : ''}`}
-                onClick={() => handleSelectRole('creator')}
-              >
-                <Palette size={13} />
-                <span>Creator Studio</span>
-                {selectedRole === 'creator' && <Check size={11} className="role-check" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Google OAuth Action Button */}
-          <button
-            type="button"
-            id="google-signin-btn"
-            onClick={handleGoogleSignIn}
-            disabled={loading}
-            className="btn-google-oauth"
-          >
-            {loading ? (
-              <Loader size={14} className="auth-spinner" />
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-            )}
-            <span>
-              {loading 
-                ? 'Connecting...' 
-                : authMode === 'signup' 
-                  ? `Sign up with Google as ${selectedRole === 'brand' ? 'Brand' : 'Creator'}` 
-                  : `Continue with Google as ${selectedRole === 'brand' ? 'Brand' : 'Creator'}`}
-            </span>
-          </button>
-
-          {/* Fallback Notice for Unconfigured Supabase OAuth */}
-          {isDemoFallbackOpen && (
-            <div className="demo-oauth-notice-banner">
-              <div className="notice-banner-text">
-                <p>Google OAuth requires Supabase in <code>.env</code>.</p>
-              </div>
-              <button
-                type="button"
-                className="btn-demo-quick-action"
-                onClick={() => handleQuickDemoEnter(selectedRole)}
-              >
-                <span>Demo {selectedRole === 'brand' ? 'Brand' : 'Creator'} →</span>
-              </button>
-            </div>
-          )}
-
-          {/* Form Divider */}
-          <div className="alloy-auth-divider">
-            <span>{authMode === 'signup' ? 'Or Enter Account Details' : 'Or Sign In with Email'}</span>
           </div>
 
           {/* Error / Success Messages */}
@@ -558,10 +573,10 @@ export default function LoginModal({
             {authMode === 'signup' && (
               <div className="auth-input-container">
                 <UserPlus size={14} className="auth-input-icon" />
-                <input 
+                <input
                   id="auth-name"
-                  type="text" 
-                  className="auth-text-input" 
+                  type="text"
+                  className="auth-text-input"
                   placeholder="Full Name / Studio Name"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
@@ -572,10 +587,10 @@ export default function LoginModal({
 
             <div className="auth-input-container">
               <Mail size={14} className="auth-input-icon" />
-              <input 
+              <input
                 id="auth-email"
-                type="email" 
-                className="auth-text-input" 
+                type="email"
+                className="auth-text-input"
                 placeholder="Email Address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -585,10 +600,10 @@ export default function LoginModal({
 
             <div className="auth-input-container">
               <Lock size={14} className="auth-input-icon" />
-              <input 
+              <input
                 id="auth-password"
-                type="password" 
-                className="auth-text-input" 
+                type="password"
+                className="auth-text-input"
                 placeholder="Password (min. 6 characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -607,8 +622,8 @@ export default function LoginModal({
               ) : (
                 <>
                   <span>
-                    {authMode === 'signup' 
-                      ? 'Create Account & Enter' 
+                    {authMode === 'signup'
+                      ? 'Create Account & Enter'
                       : `Login to ${selectedRole === 'brand' ? 'Brand Studio' : 'Creator Studio'}`}
                   </span>
                   <ArrowRight size={14} />
@@ -680,16 +695,16 @@ export default function LoginModal({
         <div className="alloy-login-visual-col">
           <div className="visual-blended-frame">
             <div className="visual-sculpture-wrapper">
-              <img 
-                src="/assets/alloy-emblem-transparent.png" 
-                alt="Alloy Intertwined Creative Sculpture" 
+              <img
+                src="/assets/alloy-emblem-transparent.png"
+                alt="Alloy Intertwined Creative Sculpture"
                 className="blended-sculpture-img"
               />
             </div>
-            
+
             {/* Soft Ambient Blend Overlay */}
             <div className="visual-ambient-overlay" aria-hidden="true" />
-            
+
             {/* Elegant Editorial Quote Badge */}
             <div className="visual-quote-badge">
               <span className="quote-eyebrow">THE ALLOY CONCEPT</span>

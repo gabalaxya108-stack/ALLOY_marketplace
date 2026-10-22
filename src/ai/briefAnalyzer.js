@@ -4,6 +4,150 @@
 
 import { defaultAIProvider } from './provider.js';
 
+const API_BASE = typeof window !== 'undefined' ? '' : (typeof process !== 'undefined' && process.env?.API_BASE ? process.env.API_BASE : '');
+
+export async function analyzeBriefAsync(naturalText = '', options = {}) {
+  const text = (naturalText || '').trim();
+  const lower = text.toLowerCase();
+
+  if (text.length < 10) {
+    return extractStructuredBriefDeterministic(text, lower);
+  }
+
+  const cacheKey = `brief_async_${text.slice(0, 100)}_${text.length}`;
+
+  return defaultAIProvider.analyzeAsync(cacheKey, text, async () => {
+    // 1. Custom mock fetcher for automated tests
+    if (typeof options.fetcher === 'function') {
+      try {
+        const res = await options.fetcher(text);
+        if (res) return normalizeAiBriefResponse(res, text, lower, 'groq-mock');
+      } catch (e) {
+        console.warn('[CreaBrief] Fetcher error, using deterministic fallback:', e?.message || e);
+        return extractStructuredBriefDeterministic(text, lower);
+      }
+    }
+
+    // 2. Query backend Groq CreaBrief endpoint
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/creabrief`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.ok && data.brief) {
+          return normalizeAiBriefResponse(data.brief, text, lower, data.source || 'groq');
+        }
+      }
+    } catch (err) {
+      console.warn('[CreaBrief] Remote Groq call deferred, using deterministic fallback:', err?.message || err);
+    }
+
+    // 3. Graceful deterministic fallback
+    return extractStructuredBriefDeterministic(text, lower);
+  });
+}
+
+export function normalizeAiBriefResponse(brief = {}, text = '', lower = '', source = 'groq') {
+  const isFlexibleBrief = Boolean(
+    brief.isFlexible ?? (
+      lower.includes('any creator') ||
+      lower.includes('all creators') ||
+      lower.includes('anyone') ||
+      lower.includes('open to any') ||
+      lower.includes('no preference') ||
+      lower.includes('flexible') ||
+      lower.includes('any style') ||
+      lower.includes('any format') ||
+      lower.includes('any specialty')
+    )
+  );
+
+  const formatText = brief.contentFormats || brief.deliverables || '';
+  const hasExplicitFormat = Boolean(
+    brief.hasExplicitFormat ?? (
+      !isFlexibleBrief && (
+        formatText.toLowerCase().includes('video') ||
+        formatText.toLowerCase().includes('stills') ||
+        formatText.toLowerCase().includes('3d') ||
+        formatText.toLowerCase().includes('film') ||
+        formatText.toLowerCase().includes('reel') ||
+        formatText.toLowerCase().includes('vertical') ||
+        formatText.toLowerCase().includes('9:16')
+      )
+    )
+  );
+
+  const styleTokens = Array.isArray(brief.traits)
+    ? brief.traits
+    : (Array.isArray(brief.styleTokens)
+      ? brief.styleTokens
+      : (typeof brief.creativeStyle === 'string'
+        ? brief.creativeStyle.split(',').map(s => s.trim()).filter(Boolean)
+        : []));
+
+  const contentFormat = brief.contentFormats || (isFlexibleBrief ? 'Open / Multi-format Visual Assets' : 'Visual Campaign Assets');
+  const deliverables = brief.deliverables || (isFlexibleBrief ? 'Flexible Campaign Visuals' : 'Key Art & Video Passes');
+  const creativeDirection = brief.creativeDirection || brief.creativeStyle || (isFlexibleBrief ? 'Open Creative Direction' : 'Contemporary Commercial Editorial');
+  const toneOfVoice = brief.desiredTone || brief.toneOfVoice || (isFlexibleBrief ? 'Versatile and adaptable' : 'Authentic and visually elevated');
+  const platform = brief.preferredPlatforms || brief.platform || 'Instagram';
+
+  const requirements = brief.requirements || {
+    mandatory: {
+      skills: Array.isArray(brief.requiredCreatorCapabilities) ? brief.requiredCreatorCapabilities : [],
+      specialization: Array.isArray(brief.mandatorySpecialization) ? brief.mandatorySpecialization : [],
+      tools: Array.isArray(brief.requiredTools) ? brief.requiredTools : [],
+      formats: (hasExplicitFormat && !isFlexibleBrief && contentFormat) ? [contentFormat] : [],
+      styles: [],
+      commercialLicensing: Boolean(brief.mandatoryRequirements?.some(r => typeof r === 'string' && (r.toLowerCase().includes('commercial') || r.toLowerCase().includes('license')))),
+      minProjects: 0
+    },
+    preferred: {
+      formats: contentFormat ? [contentFormat] : [],
+      styles: styleTokens,
+      platforms: platform ? [platform] : ['Instagram'],
+      industries: brief.industry ? [brief.industry] : []
+    }
+  };
+
+  return {
+    isSufficient: true,
+    isFlexible: isFlexibleBrief,
+    hasExplicitFormat,
+    hasExplicitStyle: styleTokens.length > 0,
+    confidence: 'high',
+    source,
+    isLiveAI: source === 'groq' || source === 'groq-mock',
+    rawText: text,
+    title: brief.title || 'Creative Campaign Brief',
+    objective: brief.objective || 'Brand Visual Campaign',
+    product: brief.productOrService || brief.product || 'Featured Product',
+    industry: brief.industry || 'General Commercial',
+    targetAudience: brief.targetAudience || 'Modern consumers',
+    audience: brief.targetAudience || 'Modern consumers',
+    preferredPlatform: platform,
+    platform,
+    contentFormat,
+    creativeDirection,
+    creativeStyle: creativeDirection,
+    toneOfVoice,
+    deliverables,
+    budget: brief.budget || null,
+    timeline: brief.deadline || brief.timeline || null,
+    additionalRequirements: isFlexibleBrief
+      ? 'Open to diverse creative expressions across all creators'
+      : (brief.creativeDirection || 'Refined commercial aesthetic'),
+    missingInformation: Array.isArray(brief.missingInformation) ? brief.missingInformation : [],
+    clarifyingQuestions: Array.isArray(brief.clarifyingQuestions) ? brief.clarifyingQuestions : [],
+    styleTokens,
+    traits: styleTokens,
+    requirements
+  };
+}
+
 export function analyzeBrief(naturalText = '') {
   const text = (naturalText || '').trim();
   const lower = text.toLowerCase();
@@ -28,7 +172,9 @@ function extractStructuredBriefDeterministic(text, lower) {
         { field: 'contentFormat', label: 'Deliverables & Format', prompt: 'Specify desired output formats (e.g., 4K Stills, 9:16 Video Loops)' },
         { field: 'budget', label: 'Budget Tier', prompt: 'Specify target budget (e.g., $5,000 – $10,000)' },
         { field: 'timeline', label: 'Turnaround Timeline', prompt: 'Specify completion target (e.g., 2–3 weeks)' }
-      ]
+      ],
+      styleTokens: [],
+      traits: []
     };
   }
 
@@ -87,21 +233,44 @@ function extractStructuredBriefDeterministic(text, lower) {
   if (lower.includes('print') || lower.includes('editorial')) platforms.push('High-Gloss Print');
   const preferredPlatform = platforms.length > 0 ? platforms.join(', ') : 'Instagram (Reels & Feed)';
 
+  // Check if brief expresses openness/flexibility or absence of hard constraints
+  const isFlexibleBrief = Boolean(
+    lower.includes('any creator') ||
+    lower.includes('all creators') ||
+    lower.includes('anyone') ||
+    lower.includes('open to any') ||
+    lower.includes('no preference') ||
+    lower.includes('flexible') ||
+    lower.includes('any style') ||
+    lower.includes('any format') ||
+    lower.includes('any specialty')
+  );
+
   // 6. Content Format & Deliverables
   let contentFormat = 'Visual Campaign Assets';
   let deliverables = 'Key Art & Video Passes';
+  let hasExplicitFormat = false;
+
   if (lower.includes('reel') || lower.includes('short-form') || lower.includes('vertical') || lower.includes('loop') || lower.includes('9:16')) {
     contentFormat = 'Short-Form Kinetic Video (9:16)';
     deliverables = '3x 9:16 Vertical Video Loops, 2x Master Stills';
+    hasExplicitFormat = true;
   } else if (lower.includes('film') || lower.includes('cinema') || lower.includes('video') || lower.includes('commercial')) {
     contentFormat = 'Cinematic Hero Film';
     deliverables = '1x 60s 4K Hero Film, 4x Key Stills';
+    hasExplicitFormat = true;
   } else if (lower.includes('still') || lower.includes('photo') || lower.includes('render') || lower.includes('4k')) {
     contentFormat = '4K Master Stills Suite';
     deliverables = '6x High-Resolution 4K Key Campaign Stills';
+    hasExplicitFormat = true;
   } else if (lower.includes('3d') || lower.includes('cgi') || lower.includes('motion')) {
     contentFormat = '3D CGI Kinetic Animation';
     deliverables = '1x 30s 3D Motion Master, 4x Mechanical Stills';
+    hasExplicitFormat = true;
+  } else if (isFlexibleBrief) {
+    contentFormat = 'Open / Multi-format Visual Assets';
+    deliverables = 'Flexible Campaign Visuals';
+    hasExplicitFormat = false;
   }
 
   // 7. Creative Style & Tone of Voice
@@ -114,8 +283,8 @@ function extractStructuredBriefDeterministic(text, lower) {
   if (lower.includes('surreal') || lower.includes('dream') || lower.includes('ethereal')) styleTokens.push('Ethereal Surreal');
   if (lower.includes('authentic') || lower.includes('natural') || lower.includes('human')) styleTokens.push('Authentic Naturalism');
 
-  const creativeStyle = styleTokens.length > 0 ? styleTokens.join(', ') : 'Contemporary Commercial Editorial';
-  const toneOfVoice = styleTokens.length > 0 ? styleTokens.slice(0, 2).join(' and ') : 'Authentic and visually elevated';
+  const creativeStyle = styleTokens.length > 0 ? styleTokens.join(', ') : (isFlexibleBrief ? 'Open Creative Direction' : 'Contemporary Commercial Editorial');
+  const toneOfVoice = styleTokens.length > 0 ? styleTokens.slice(0, 2).join(' and ') : (isFlexibleBrief ? 'Versatile and adaptable' : 'Authentic and visually elevated');
 
   // 8. Honest Budget Extraction (NEVER invent missing budget!)
   let budget = null;
@@ -140,21 +309,21 @@ function extractStructuredBriefDeterministic(text, lower) {
 
   // 10. Missing Information Detection
   const missingInformation = [];
-  if (!budget) {
+  if (!budget && !isFlexibleBrief) {
     missingInformation.push({
       field: 'budget',
       label: 'Budget Tier',
       prompt: 'Budget was not specified in your prompt. (e.g. $5,000 – $10,000)'
     });
   }
-  if (!timeline) {
+  if (!timeline && !isFlexibleBrief) {
     missingInformation.push({
       field: 'timeline',
       label: 'Target Timeline',
       prompt: 'Production timeline was not specified. (e.g. 2–3 weeks)'
     });
   }
-  if (styleTokens.length === 0) {
+  if (styleTokens.length === 0 && !isFlexibleBrief) {
     missingInformation.push({
       field: 'creativeStyle',
       label: 'Specific Visual Style',
@@ -165,8 +334,11 @@ function extractStructuredBriefDeterministic(text, lower) {
   const title = deriveCampaignTitle(lower, industry);
 
   return {
-    isSufficient: text.length >= 25,
-    confidence: text.length > 70 && styleTokens.length > 0 ? 'high' : 'medium',
+    isSufficient: isFlexibleBrief ? true : text.length >= 25,
+    isFlexible: isFlexibleBrief,
+    hasExplicitFormat,
+    hasExplicitStyle: styleTokens.length > 0,
+    confidence: isFlexibleBrief ? 'high' : (text.length > 70 && styleTokens.length > 0 ? 'high' : 'medium'),
     rawText: text,
     title,
     objective,
@@ -180,9 +352,25 @@ function extractStructuredBriefDeterministic(text, lower) {
     deliverables,
     budget, // strictly null if not provided in prompt!
     timeline, // strictly null if not provided in prompt!
-    additionalRequirements: styleTokens.length > 0 ? `Focus on ${styleTokens.join(', ')} visual treatment` : 'Refined commercial aesthetic',
+    additionalRequirements: isFlexibleBrief ? 'Open to diverse creative expressions across all creators' : (styleTokens.length > 0 ? `Focus on ${styleTokens.join(', ')} visual treatment` : 'Refined commercial aesthetic'),
     missingInformation,
-    styleTokens
+    styleTokens,
+    traits: styleTokens || [],
+    requirements: {
+      mandatory: {
+        skills: [],
+        specialization: [],
+        tools: [],
+        formats: hasExplicitFormat && !isFlexibleBrief ? [contentFormat] : [],
+        styles: []
+      },
+      preferred: {
+        formats: contentFormat ? [contentFormat] : [],
+        styles: styleTokens,
+        platforms: platforms.length > 0 ? platforms : ['Instagram'],
+        industries: industry !== 'General Creative' ? [industry] : []
+      }
+    }
   };
 }
 
