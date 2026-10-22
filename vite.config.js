@@ -4,6 +4,7 @@ import { createGroqMiddleware } from './server/groqMiddleware.js';
 import { createAdminMiddleware } from './server/adminMiddleware.js';
 import { createPaymentMiddleware } from './server/paymentMiddleware.js';
 import { createDbMiddleware } from './server/dbMiddleware.js';
+import { createApplicationMiddleware } from './server/applicationMiddleware.js';
 
 export default defineConfig(({ mode }) => {
   // Load environment variables on the server side (including non-VITE_ keys)
@@ -80,6 +81,8 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use(createGroqMiddleware());
           server.middlewares.use(createAdminMiddleware());
           server.middlewares.use(createPaymentMiddleware());
+          server.middlewares.use(createApplicationMiddleware());
+          server.middlewares.use(createApplicationMiddleware());
         },
         configurePreviewServer(server) {
           server.middlewares.use(createDbMiddleware());

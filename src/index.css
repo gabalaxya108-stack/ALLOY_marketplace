@@ -10,12 +10,12 @@
   --bg-tertiary: #E5DED4;         /* Muted Travertine */
   --bg-card: #FFFFFF;
   --bg-card-subtle: #FAF7F2;
-  
+
   --text-primary: #191816;        /* Charcoal Black */
   --text-secondary: #77716A;      /* Warm Grey */
   --text-tertiary: #968F87;       /* Muted Stone */
   --text-inverted: #FAF8F5;
-  
+
   /* ALLOY Accents */
   --accent-forest: #214C35;       /* Primary Deep Forest Green */
   --accent-forest-hover: #163624;
@@ -30,7 +30,7 @@
   --accent-lavender-light: #F5EFEB;
   --accent-lavender-deep: #214C35;
   --accent-lavender-border: rgba(33, 76, 53, 0.2);
-  
+
   --accent-pink: #F4E8DE;
   --accent-pink-light: #FAF2EC;
   --accent-pink-deep: #99714F;
@@ -55,7 +55,7 @@
   --accent-blue-light: #F0F6FA;
   --accent-blue-deep: #2A4858;
   --accent-blue-border: rgba(42, 72, 88, 0.2);
-  
+
   /* Borders & Dividers */
   --border-light: #E4DDD4;        /* Subtle Warm Grey */
   --border-medium: #D5CCC0;       /* Medium Warm Border */
@@ -16344,7 +16344,7 @@ img, video {
     grid-template-columns: 1fr;
     gap: 40px;
   }
-  
+
   .explanation-pillars-grid {
     grid-template-columns: 1fr;
   }
@@ -21130,3 +21130,306 @@ a,
 }
 
 
+
+.opp-deliverables-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.deliverable-pill {
+  font-size: 0.74rem;
+  font-weight: 500;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.opp-fit-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--accent-forest);
+  background: var(--accent-mint-light);
+  border: 1px solid var(--accent-mint-border);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+}
+
+.opp-card-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-light);
+}
+
+/* 3. Pre-Bid Eligibility Banners */
+.prebid-banner {
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.prebid-banner.eligible {
+  background: var(--accent-mint-light);
+  border: 1px solid var(--accent-mint-border);
+}
+
+.prebid-banner.ineligible {
+  background: #FEF2F2;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.prebid-banner.requires-review {
+  background: var(--accent-yellow-light);
+  border: 1px solid var(--accent-yellow-border);
+}
+
+.prebid-banner-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.prebid-banner.eligible .prebid-banner-title { color: var(--accent-forest); }
+.prebid-banner.ineligible .prebid-banner-title { color: #DC2626; }
+.prebid-banner.requires-review .prebid-banner-title { color: var(--accent-yellow-deep); }
+
+.prebid-banner-desc {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.prebid-banner-sub {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  margin-top: 6px;
+  line-height: 1.45;
+}
+
+/* 4. Interactive Portfolio Evidence Selector */
+.evidence-selector-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.evidence-selector-card:hover {
+  border-color: var(--accent-gold);
+  background: var(--bg-card-subtle);
+}
+
+.evidence-selector-card.selected {
+  border-color: var(--accent-forest);
+  background: var(--accent-mint-light);
+}
+
+.evidence-selector-card input[type="checkbox"] {
+  accent-color: var(--accent-forest);
+  width: 16px;
+  height: 16px;
+}
+
+/* 5. My Applications Cards */
+.my-application-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow-subtle);
+  transition: box-shadow var(--transition-fast);
+}
+
+.my-application-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.app-terms-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.app-terms-summary-grid .term-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.app-terms-summary-grid .term-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.app-proposal-quote {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  line-height: 1.55;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent-gold);
+  background: var(--bg-card-subtle);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* Counter offer callout in application card */
+.counter-offer-callout {
+  padding: 16px 18px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-pink-light);
+  border: 1px solid var(--accent-pink-border);
+}
+
+/* 6. Brand Workspace Campaign Management & Review */
+.brand-campaign-control-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  margin-top: 14px;
+}
+
+.brand-control-status-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-application-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-subtle);
+  transition: box-shadow var(--transition-fast);
+}
+
+.brand-application-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.brand-app-creator-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.brand-app-creator-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-app-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--border-light);
+}
+
+.brand-app-name-block h4 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.brand-app-name-block span {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+}
+
+.brand-app-terms-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.brand-app-evidence-spotlight {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+/* 7. Responsive Adaptations */
+@media (max-width: 900px) {
+  .opportunities-grid-view {
+    grid-template-columns: 1fr;
+  }
+
+  .marketplace-editorial-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .brand-campaign-control-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .opp-specs-strip {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .app-terms-summary-grid,
+  .brand-app-terms-row {
+    grid-template-columns: 1fr;
+  }
+
+  .opp-card-actions {
+    flex-direction: column;
+  }
+}
