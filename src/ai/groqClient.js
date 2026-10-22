@@ -1,7 +1,7 @@
 // src/ai/groqClient.js
 // Safe frontend client for Groq-powered intelligence in CreaSync
 // Communicates ONLY with server-side /api/ai endpoints.
-// NEVER contains or exposes GROQ_API_KEY.
+// NEVER contains or exposes secret API keys.
 // Provides automatic fallback to local deterministic engines when offline or unconfigured.
 
 import { analyzeBrief as deterministicAnalyzeBrief } from './briefAnalyzer.js';

@@ -632,6 +632,255 @@ runTest('Scenario 20: Execution failure retains previous trace explicitly flagge
   assert.strictEqual(currentTrace.summary.passedEligibilityCount, 3, 'Previous results are retained for review');
 });
 
+// ============================================================================
+// TEST 21: Integrated Eligibility Engine Three-Outcome Contract
+// ============================================================================
+runTest('Scenario 21: Pipeline integrates eligibility engine with 3 distinct outcomes (ELIGIBLE, INELIGIBLE, REQUIRES_REVIEW)', () => {
+  const maya = CREATORS.find(c => c.id === 'maya-chen');
+  assert(maya, 'Maya Chen must exist in creator database');
+
+  // Candidate 1: ELIGIBLE — Maya Chen with explicit 9:16 project and within budget
+  const eligibleCandidate = {
+    ...maya,
+    id: 'creator-eligible-1',
+    name: 'Eligible Video Creator',
+    capabilities: ['AI Video', 'Runway Gen-3'],
+    tools: ['Runway Gen-3'],
+    rate: 8000,
+    currency: 'USD',
+    projects: [
+      { id: 'p1', title: 'Vertical Reel', format: '9:16 Vertical Video Loop', aspect: '9:16' }
+    ]
+  };
+
+  // Candidate 2: INELIGIBLE — Lacks mandatory tool 'Runway Gen-3'
+  const ineligibleCandidate = {
+    ...maya,
+    id: 'creator-ineligible-2',
+    name: 'Ineligible Tool Creator',
+    capabilities: ['AI Video'],
+    tools: ['Midjourney'], // Lacks Runway Gen-3
+    rate: 8000,
+    currency: 'USD',
+    projects: [
+      { id: 'p1', title: 'Vertical Reel', format: '9:16 Vertical Video Loop', aspect: '9:16' }
+    ]
+  };
+
+  // Candidate 3: REQUIRES_REVIEW — Has AI Video & Runway, but portfolio contains only landscape 16:9 (no vertical evidence)
+  const reviewCandidate = {
+    ...maya,
+    id: 'creator-review-3',
+    name: 'Review Pending Creator',
+    categoryTags: ['video', 'social'],
+    capabilities: ['AI Video', 'Runway Gen-3'],
+    tools: ['Runway Gen-3'],
+    rate: 8000,
+    currency: 'USD',
+    projects: [
+      { id: 'p1', title: 'Landscape YouTube Ad', format: '16:9 Video', aspect: '16:9' }
+    ]
+  };
+
+  const campaign = {
+    id: 'camp-three-outcomes',
+    title: 'Vertical Runway Campaign',
+    budget: '$10,000',
+    currency: 'USD',
+    isNegotiable: false,
+    requirements: {
+      mandatory: {
+        skills: ['AI Video'],
+        tools: ['Runway Gen-3'],
+        formats: ['9:16 Vertical Video Loop'],
+        budget: { amount: 10000, currency: 'USD', isNegotiable: false }
+      }
+    }
+  };
+
+  const result = executeFilteringPipeline({
+    campaign,
+    creators: [eligibleCandidate, ineligibleCandidate, reviewCandidate]
+  });
+
+  // Verify total and outcome counts
+  assert.strictEqual(result.summary.totalCandidates, 3);
+  assert.strictEqual(result.summary.passedEligibilityCount, 1, 'Only eligible candidate passes');
+  assert.strictEqual(result.summary.excludedCount, 1, 'Ineligible candidate is excluded');
+  assert.strictEqual(result.summary.requiresReviewCount, 1, 'Review candidate is flagged for review');
+  assert.strictEqual(result.summary.reviewCount, 1, 'reviewCount alias reflects review candidate');
+
+  // Verify eligible ranking
+  assert.strictEqual(result.rankedCreators.length, 1, 'Only eligible candidate is ranked');
+  assert.strictEqual(result.rankedCreators[0].creatorId, 'creator-eligible-1');
+  assert.deepStrictEqual(result.eligibleCreatorIds, ['creator-eligible-1']);
+
+  // Verify ineligible candidate exclusion
+  assert(
+    result.exclusions.some(e => e.creatorId === 'creator-ineligible-2'),
+    'Ineligible candidate must be recorded in exclusions'
+  );
+  const ineligExcl = result.exclusions.find(e => e.creatorId === 'creator-ineligible-2');
+  assert(ineligExcl.reason.toLowerCase().includes('runway'), 'Exclusion retains mandatory failure reason');
+
+  // Verify review candidate availability and details
+  assert.strictEqual(result.requiresReview.length, 1, 'Review candidate must be in requiresReview');
+  assert.strictEqual(result.requiresReview[0].creatorId, 'creator-review-3');
+  assert.strictEqual(result.requiresReview[0].eligibility, 'REQUIRES_REVIEW');
+  assert(result.requiresReview[0].reasons.length > 0, 'Must retain review reasons');
+  assert(
+    result.requiresReview[0].unknownRequirements.some(r => r.requirement === 'formats' && r.status === 'UNKNOWN'),
+    'Unknown formats requirement must be preserved'
+  );
+});
+
+// ============================================================================
+// TEST 22: Ineligible candidate cannot enter eligible ranking via high fit score
+// ============================================================================
+runTest('Scenario 22: Mandatory failure strictly prevents creator from entering eligible ranking regardless of creative score', () => {
+  const maya = CREATORS.find(c => c.id === 'maya-chen');
+
+  // High suitability candidate whose rate exceeds non-negotiable budget
+  const expensiveHighFitCreator = {
+    ...maya,
+    id: 'expensive-high-fit-creator',
+    rate: 25000,
+    currency: 'USD'
+  };
+
+  const campaign = {
+    id: 'camp-strict-budget-test',
+    title: 'Strict Fixed Budget Film',
+    requirements: {
+      mandatory: {
+        budget: { amount: 10000, currency: 'USD', isNegotiable: false }
+      }
+    }
+  };
+
+  const result = executeFilteringPipeline({
+    campaign,
+    creators: [expensiveHighFitCreator]
+  });
+
+  assert.strictEqual(result.status, 'empty');
+  assert.strictEqual(result.summary.passedEligibilityCount, 0);
+  assert.strictEqual(result.rankedCreators.length, 0, 'Cannot enter rankedCreators');
+  assert.strictEqual(result.eligibleCreatorIds.length, 0, 'Cannot enter eligibleCreatorIds');
+  assert.strictEqual(result.exclusions.length, 1, 'Exclusion recorded');
+  assert(result.exclusions[0].reason.includes('$25,000') || result.exclusions[0].reason.includes('budget'));
+});
+
+// ============================================================================
+// TEST 23: Review candidates remain available separately with unknown reasons
+// ============================================================================
+runTest('Scenario 23: Cross-currency mismatch candidate is retained in requiresReview with currency reasons', () => {
+  const maya = CREATORS.find(c => c.id === 'maya-chen');
+
+  // Candidate with rate specified in INR vs campaign in USD
+  const inrCandidate = {
+    ...maya,
+    id: 'inr-creator',
+    rate: '₹85,000',
+    currency: 'INR'
+  };
+
+  const campaign = {
+    id: 'camp-usd-currency-test',
+    title: 'USD Brand Campaign',
+    budget: '$10,000',
+    currency: 'USD',
+    isNegotiable: false,
+    requirements: {
+      mandatory: {
+        budget: { amount: 10000, currency: 'USD', isNegotiable: false }
+      }
+    }
+  };
+
+  const result = executeFilteringPipeline({
+    campaign,
+    creators: [inrCandidate]
+  });
+
+  // Not in eligible ranking
+  assert.strictEqual(result.summary.passedEligibilityCount, 0);
+  assert.strictEqual(result.rankedCreators.length, 0);
+  assert.strictEqual(result.eligibleCreatorIds.length, 0);
+
+  // Retained separately in requiresReview
+  assert.strictEqual(result.summary.requiresReviewCount, 1);
+  assert.strictEqual(result.requiresReview.length, 1);
+  assert.strictEqual(result.requiresReview[0].creatorId, 'inr-creator');
+  assert.strictEqual(result.requiresReview[0].eligibility, 'REQUIRES_REVIEW');
+
+  const budgetUnknown = result.requiresReview[0].unknownRequirements.find(r => r.requirement === 'budget');
+  assert(budgetUnknown, 'Budget must be recorded as unknown requirement');
+  assert.strictEqual(budgetUnknown.status, 'UNKNOWN');
+  assert(budgetUnknown.reason.includes('explicit currency conversion'), 'Reason must explain currency conversion needed');
+  assert.strictEqual(budgetUnknown.difference, null, 'Never calculate misleading raw difference across currencies');
+});
+
+// ============================================================================
+// Scenario 24: Unrecorded format evidence produces REQUIRES_REVIEW without polluting Exclusion Ledger
+// ============================================================================
+runTest('Scenario 24: Unrecorded format evidence produces REQUIRES_REVIEW without polluting Exclusion Ledger', () => {
+  const maya = CREATORS.find(c => c.id === 'maya-chen');
+  assert(maya, 'Maya Chen must exist in creators data');
+
+  const filmCampaign = {
+    id: 'camp-hero-film-eval',
+    title: 'Cinematic Hero Film Campaign',
+    requirements: {
+      mandatory: {
+        formats: ['cinematic hero film']
+      }
+    }
+  };
+
+  const elena = {
+    id: 'elena-rostova-unspec',
+    name: 'Elena Rostova',
+    specialty: 'Unspecified',
+    categoryTags: [],
+    capabilities: [],
+    projects: []
+  };
+
+  const googleStudio = {
+    id: 'google-creator-studio-unspec',
+    name: 'Google Creator Studio',
+    specialty: 'Unspecified',
+    categoryTags: [],
+    capabilities: [],
+    projects: []
+  };
+
+  const result = executeFilteringPipeline({
+    campaign: filmCampaign,
+    creators: [maya, elena, googleStudio]
+  });
+
+  // Maya Chen passes as an AI Video specialist
+  assert.strictEqual(result.summary.passedEligibilityCount, 1, 'Maya Chen must pass eligibility');
+  assert.strictEqual(result.rankedCreators.length, 1, 'Only Maya Chen in ranked creators');
+  assert.strictEqual(result.rankedCreators[0].creatorId, 'maya-chen');
+
+  // Elena Rostova and Google Creator Studio must be in REQUIRES_REVIEW
+  assert.strictEqual(result.summary.requiresReviewCount, 2, 'Two candidates require review');
+  assert.strictEqual(result.requiresReview.length, 2, 'requiresReview contains 2 creators');
+  const reviewIds = result.requiresReview.map(r => r.creatorId);
+  assert(reviewIds.includes('elena-rostova-unspec'), 'Elena Rostova must be in requiresReview');
+  assert(reviewIds.includes('google-creator-studio-unspec'), 'Google Creator Studio must be in requiresReview');
+
+  // CRITICAL: Review candidates must NOT be in the Exclusion Ledger (exclusions)
+  assert.strictEqual(result.summary.excludedCount, 0, 'No confirmed exclusions');
+  assert.strictEqual(result.exclusions.length, 0, 'Exclusion Ledger must be empty');
+  const exclusionIds = result.exclusions.map(e => e.creatorId);
+  assert(!exclusionIds.includes('elena-rostova-unspec'), 'Elena Rostova must not be in exclusions');
+  assert(!exclusionIds.includes('google-creator-studio-unspec'), 'Google Creator Studio must not be in exclusions');
+});
+
 console.log(`\n========================================`);
 console.log(`Pipeline Tests Complete: ${passedTests}/${totalTests} Passed.`);
 console.log(`========================================\n`);

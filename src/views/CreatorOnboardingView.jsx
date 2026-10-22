@@ -5,7 +5,12 @@ import {
   CheckCircle2, ShieldCheck, AlertCircle, RefreshCw, Layers, Sliders 
 } from 'lucide-react';
 import { generateCreatorDNA as groqGenerateCreatorDNA } from '../ai/groqClient';
-import { loadCreatorOnboardingDraft, saveCreatorOnboardingDraft, clearCreatorOnboardingDraft } from '../data/marketplaceStore';
+import {
+  loadCreatorOnboardingDraft,
+  saveCreatorOnboardingDraft,
+  clearCreatorOnboardingDraft,
+  buildPublishedCreatorProfile
+} from '../data/marketplaceStore';
 
 const TOTAL_ONBOARDING_STEPS = 8;
 
@@ -20,6 +25,8 @@ const createDefaultProfileData = () => ({
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
   disciplines: ['AI Fashion', 'AI Photography', 'AI Product Visuals'],
   styles: ['Editorial', 'Cinematic', 'Luxury', 'Minimal'],
+  tools: [],
+  industries: [],
   availability: 'Available for projects',
   socials: {
     instagram: '',
@@ -94,6 +101,8 @@ const buildInitialProfileData = (draftProfileData) => {
     availability: asString(draftProfileData.availability, defaults.availability),
     disciplines: asStringArray(draftProfileData.disciplines, defaults.disciplines),
     styles: asStringArray(draftProfileData.styles, defaults.styles),
+    tools: asStringArray(draftProfileData.tools, defaults.tools || []),
+    industries: asStringArray(draftProfileData.industries, defaults.industries || []),
     socials: {
       instagram: asString(socials.instagram, defaults.socials.instagram),
       tiktok: asString(socials.tiktok, defaults.socials.tiktok),
@@ -220,6 +229,8 @@ export default function CreatorOnboardingView({ onPublishCreator, onExploreMarke
       avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
       disciplines: ['AI Fashion', 'AI Product Visuals', '3D CGI', 'Editorial Storytelling'],
       styles: ['Editorial', 'Cinematic', 'Luxury', 'Minimal'],
+      tools: ['Midjourney v6.1', 'Runway Gen-3', 'ComfyUI', 'Photoshop'],
+      industries: ['Luxury Fashion', 'Editorial', 'Product Advertising'],
       availability: 'Available for projects',
       socials: {
         instagram: 'https://instagram.com/julianvance.ai',
@@ -307,7 +318,9 @@ export default function CreatorOnboardingView({ onPublishCreator, onExploreMarke
         bio: profileData.bio,
         styles: profileData.styles,
         projects: profileData.portfolio,
-        tools: ['Midjourney v6.1', 'Runway Gen-3', 'ComfyUI']
+        tools: (Array.isArray(profileData.tools) && profileData.tools.length > 0)
+          ? profileData.tools
+          : undefined
       };
       const dna = await groqGenerateCreatorDNA(creatorPayload);
       setDnaResult(dna);
@@ -320,28 +333,7 @@ export default function CreatorOnboardingView({ onPublishCreator, onExploreMarke
 
   // Publish Creator Profile
   const handlePublish = () => {
-    const finalCreator = {
-      id: profileData.handle.replace('@', '').replace('.', '-') || `creator-${Date.now()}`,
-      name: profileData.name || 'Julian Vance',
-      handle: profileData.handle || '@julianvance.ai',
-      creativeIdentity: profileData.creativeIdentity || 'AI Visual Director',
-      specialty: profileData.disciplines[0] || 'AI Fashion',
-      location: profileData.location || 'Paris / London',
-      availability: profileData.availability,
-      statusBadge: 'Profile Live',
-      heroWork: profileData.portfolio[0]?.image || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=85',
-      avatar: profileData.avatar,
-      bio: profileData.bio || 'AI Creator on Alloy.',
-      industries: ['Luxury Fashion', 'Editorial', 'Product Advertising'],
-      capabilities: profileData.disciplines,
-      tools: ['Midjourney v6.1', 'Runway Gen-3', 'ComfyUI', 'Photoshop'],
-      experience: profileData.experience,
-      turnaround: profileData.turnaround,
-      featured: true,
-      projects: profileData.portfolio,
-      socials: profileData.socials,
-      dna: dnaResult
-    };
+    const finalCreator = buildPublishedCreatorProfile(profileData, dnaResult);
 
     // Draft is finalized once the creator profile is published
     clearCreatorOnboardingDraft();

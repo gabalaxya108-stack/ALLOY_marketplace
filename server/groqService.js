@@ -137,6 +137,46 @@ JSON SCHEMA:
     jsonMode: true
   });
 
+  const lowerPrompt = naturalPrompt.toLowerCase();
+  const isFlexible = Boolean(
+    lowerPrompt.includes('any creator') ||
+    lowerPrompt.includes('all creators') ||
+    lowerPrompt.includes('open to any') ||
+    lowerPrompt.includes('flexible') ||
+    lowerPrompt.includes('no preference')
+  );
+
+  const formatText = parsed.contentFormats || parsed.deliverables || '';
+  const hasExplicitFormat = !isFlexible && Boolean(
+    lowerPrompt.includes('reel') || lowerPrompt.includes('short-form') || lowerPrompt.includes('vertical') ||
+    lowerPrompt.includes('loop') || lowerPrompt.includes('9:16') || lowerPrompt.includes('film') ||
+    lowerPrompt.includes('cinema') || lowerPrompt.includes('video') || lowerPrompt.includes('commercial') ||
+    lowerPrompt.includes('still') || lowerPrompt.includes('photo') || lowerPrompt.includes('render') ||
+    lowerPrompt.includes('3d') || lowerPrompt.includes('cgi') || lowerPrompt.includes('motion')
+  );
+
+  const rawMandatory = Array.isArray(parsed.mandatoryRequirements) ? parsed.mandatoryRequirements : [];
+  const commercialLicensing = rawMandatory.some(r => typeof r === 'string' && (r.toLowerCase().includes('commercial') || r.toLowerCase().includes('license')));
+  const rawSkills = Array.isArray(parsed.requiredCreatorCapabilities) ? parsed.requiredCreatorCapabilities : [];
+
+  const requirements = parsed.requirements || {
+    mandatory: {
+      skills: rawSkills,
+      specialization: [],
+      tools: [],
+      formats: hasExplicitFormat && formatText ? [formatText] : [],
+      styles: [],
+      commercialLicensing,
+      minProjects: 0
+    },
+    preferred: {
+      styles: parsed.creativeStyle ? [parsed.creativeStyle] : [],
+      platforms: parsed.preferredPlatforms ? [parsed.preferredPlatforms] : ['Instagram'],
+      industries: parsed.industry ? [parsed.industry] : [],
+      tone: parsed.desiredTone ? [parsed.desiredTone] : []
+    }
+  };
+
   // Server-side validation
   return {
     title: parsed.title || 'Creative Campaign Brief',
@@ -150,13 +190,16 @@ JSON SCHEMA:
     contentFormats: parsed.contentFormats || parsed.deliverables || '4K Stills Suite, 9:16 Kinetic Loops',
     deliverables: parsed.deliverables || 'Hero Key Visuals & Loops',
     preferredPlatforms: parsed.preferredPlatforms || 'Instagram, Digital OOH',
-    requiredCreatorCapabilities: Array.isArray(parsed.requiredCreatorCapabilities) ? parsed.requiredCreatorCapabilities : [],
+    requiredCreatorCapabilities: rawSkills,
     budget: parsed.budget || null,
     deadline: parsed.deadline || null,
-    mandatoryRequirements: Array.isArray(parsed.mandatoryRequirements) ? parsed.mandatoryRequirements : [],
+    mandatoryRequirements: rawMandatory,
     optionalPreferences: Array.isArray(parsed.optionalPreferences) ? parsed.optionalPreferences : [],
     missingInformation: Array.isArray(parsed.missingInformation) ? parsed.missingInformation : [],
-    clarifyingQuestions: Array.isArray(parsed.clarifyingQuestions) ? parsed.clarifyingQuestions : []
+    clarifyingQuestions: Array.isArray(parsed.clarifyingQuestions) ? parsed.clarifyingQuestions : [],
+    isFlexible,
+    hasExplicitFormat,
+    requirements
   };
 }
 

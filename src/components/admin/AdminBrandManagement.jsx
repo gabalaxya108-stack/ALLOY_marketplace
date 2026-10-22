@@ -12,17 +12,22 @@ import {
   ShieldCheck,
   Eye,
   Filter,
-  X
+  X,
+  Edit3,
+  Save
 } from 'lucide-react';
 
 export default function AdminBrandManagement({
   brands = [],
   onUpdateBrandStatus,
+  onEditBrand,
   onInspectTrustReport
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedBrand, setSelectedBrand] = useState(null);
+  const [editingBrand, setEditingBrand] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Filtered brands
   const filteredBrands = brands.filter((brand) => {
@@ -34,6 +39,17 @@ export default function AdminBrandManagement({
     const matchesStatus = statusFilter === 'all' || (brand.status || 'verified') === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const handleSaveBrandEdits = (e) => {
+    e.preventDefault();
+    if (!editingBrand) return;
+    onEditBrand?.(editingBrand);
+    setSaveSuccess(true);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setEditingBrand(null);
+    }, 600);
+  };
 
   return (
     <div className="alloy-admin-section">
@@ -146,6 +162,15 @@ export default function AdminBrandManagement({
                         <button
                           type="button"
                           className="alloy-admin-btn-table"
+                          onClick={() => setEditingBrand({ ...brand })}
+                          title="Edit Brand Profile & Details"
+                        >
+                          <Edit3 size={14} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="alloy-admin-btn-table"
                           onClick={() => setSelectedBrand(brand)}
                           title="Inspect Brand Dossier"
                         >
@@ -180,6 +205,130 @@ export default function AdminBrandManagement({
           </tbody>
         </table>
       </div>
+
+      {/* Edit Brand Modal */}
+      {editingBrand && (
+        <div className="alloy-modal-backdrop" onClick={() => setEditingBrand(null)}>
+          <div className="alloy-admin-modal-card wide" onClick={(e) => e.stopPropagation()}>
+            <div className="alloy-admin-modal-header">
+              <div className="alloy-admin-modal-title-group">
+                <Edit3 size={20} className="text-amber-400" />
+                <h3>Edit Brand Entity: {editingBrand.name}</h3>
+              </div>
+              <button
+                type="button"
+                className="alloy-modal-close"
+                onClick={() => setEditingBrand(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBrandEdits} className="alloy-admin-form">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Brand Name *</label>
+                  <input
+                    type="text"
+                    required
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingBrand.name || ''}
+                    onChange={(e) => setEditingBrand({ ...editingBrand, name: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Brand Handle</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingBrand.handle || ''}
+                    onChange={(e) => setEditingBrand({ ...editingBrand, handle: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Industry Sector</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingBrand.industry || ''}
+                    onChange={(e) => setEditingBrand({ ...editingBrand, industry: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Official Website</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingBrand.website || ''}
+                    onChange={(e) => setEditingBrand({ ...editingBrand, website: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Aesthetic / Visual Style</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingBrand.aesthetic || ''}
+                    onChange={(e) => setEditingBrand({ ...editingBrand, aesthetic: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Integrity & Compliance Status</label>
+                  <select
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingBrand.status || 'verified'}
+                    onChange={(e) => setEditingBrand({ ...editingBrand, status: e.target.value })}
+                  >
+                    <option value="verified">Verified Active</option>
+                    <option value="restricted">Restricted / Suspended</option>
+                    <option value="pending">Pending Validation</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="alloy-admin-input-group">
+                <label>Brand Mission & Description</label>
+                <textarea
+                  rows={3}
+                  className="alloy-admin-textarea"
+                  value={editingBrand.description || ''}
+                  onChange={(e) => setEditingBrand({ ...editingBrand, description: e.target.value })}
+                />
+              </div>
+
+              <div className="alloy-admin-modal-actions" style={{ marginTop: '16px' }}>
+                <button
+                  type="submit"
+                  className="alloy-admin-btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <Save size={16} />
+                  <span>{saveSuccess ? 'Saved to DB & Website!' : 'Save Brand Changes'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="alloy-admin-btn-secondary"
+                  onClick={() => setEditingBrand(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Brand Inspection Drawer / Modal */}
       {selectedBrand && (
@@ -222,6 +371,19 @@ export default function AdminBrandManagement({
               </div>
 
               <div className="alloy-admin-modal-actions">
+                <button
+                  type="button"
+                  className="alloy-admin-btn-secondary"
+                  onClick={() => {
+                    const toEdit = { ...selectedBrand };
+                    setSelectedBrand(null);
+                    setEditingBrand(toEdit);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Edit3 size={15} />
+                  <span>Edit Brand</span>
+                </button>
                 {selectedBrand.status === 'restricted' ? (
                   <button
                     type="button"

@@ -13,16 +13,21 @@ import {
   ShieldAlert,
   Palette,
   X,
-  Filter
+  Filter,
+  Edit3,
+  Save
 } from 'lucide-react';
 
 export default function AdminCreatorManagement({
   creators = [],
-  onUpdateCreatorStatus
+  onUpdateCreatorStatus,
+  onEditCreator
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [specialtyFilter, setSpecialtyFilter] = useState('all');
   const [selectedCreator, setSelectedCreator] = useState(null);
+  const [editingCreator, setEditingCreator] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Extract unique specialties
   const specialties = Array.from(new Set(creators.map(c => c.specialty).filter(Boolean)));
@@ -37,6 +42,17 @@ export default function AdminCreatorManagement({
     const matchesSpecialty = specialtyFilter === 'all' || creator.specialty === specialtyFilter;
     return matchesSearch && matchesSpecialty;
   });
+
+  const handleSaveCreatorEdits = (e) => {
+    e.preventDefault();
+    if (!editingCreator) return;
+    onEditCreator?.(editingCreator);
+    setSaveSuccess(true);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setEditingCreator(null);
+    }, 600);
+  };
 
   return (
     <div className="alloy-admin-section">
@@ -143,6 +159,15 @@ export default function AdminCreatorManagement({
                     <td>{projectsCount} Works</td>
                     <td className="text-right">
                       <div className="alloy-admin-action-row">
+                        <button
+                          type="button"
+                          className="alloy-admin-btn-table"
+                          onClick={() => setEditingCreator({ ...creator })}
+                          title="Edit Creator Profile & Attributes"
+                        >
+                          <Edit3 size={14} />
+                          <span>Edit</span>
+                        </button>
                         <button
                           type="button"
                           className="alloy-admin-btn-table"
@@ -270,6 +295,19 @@ export default function AdminCreatorManagement({
                 <button
                   type="button"
                   className="alloy-admin-btn-secondary"
+                  onClick={() => {
+                    const toEdit = { ...selectedCreator };
+                    setSelectedCreator(null);
+                    setEditingCreator(toEdit);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Edit3 size={15} />
+                  <span>Edit Creator</span>
+                </button>
+                <button
+                  type="button"
+                  className="alloy-admin-btn-secondary"
                   onClick={() => setSelectedCreator(null)}
                 >
                   Close Dossier
@@ -279,6 +317,164 @@ export default function AdminCreatorManagement({
           </div>
         );
       })()}
+
+      {/* Edit Creator Modal */}
+      {editingCreator && (
+        <div className="alloy-modal-backdrop" onClick={() => setEditingCreator(null)}>
+          <div className="alloy-admin-modal-card wide" onClick={(e) => e.stopPropagation()}>
+            <div className="alloy-admin-modal-header">
+              <div className="alloy-admin-modal-title-group">
+                <Edit3 size={20} className="text-amber-400" />
+                <h3>Edit Creator Profile: {editingCreator.name}</h3>
+              </div>
+              <button
+                type="button"
+                className="alloy-modal-close"
+                onClick={() => setEditingCreator(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCreatorEdits} className="alloy-admin-form">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Creator Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.name || ''}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, name: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Handle</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.handle || ''}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, handle: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Primary Discipline / Specialty</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.specialty || ''}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, specialty: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Creative Identity / Subtitle</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.creativeIdentity || editingCreator.creative_identity || ''}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, creativeIdentity: e.target.value, creative_identity: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Location / Timezone</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.location || ''}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, location: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Availability</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.availability || 'Available for projects'}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, availability: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Status Badge</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.statusBadge || editingCreator.status_badge || 'Available now'}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, statusBadge: e.target.value, status_badge: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="alloy-admin-input-group">
+                  <label>Turnaround Specification</label>
+                  <input
+                    type="text"
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.turnaround || '48h concept frames'}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, turnaround: e.target.value })}
+                  />
+                </div>
+                <div className="alloy-admin-input-group">
+                  <label>Governance Status</label>
+                  <select
+                    className="alloy-admin-textarea"
+                    style={{ height: '42px', resize: 'none' }}
+                    value={editingCreator.status || 'Published'}
+                    onChange={(e) => setEditingCreator({ ...editingCreator, status: e.target.value })}
+                  >
+                    <option value="Published">Published (Active)</option>
+                    <option value="Draft">Draft Mode</option>
+                    <option value="Archived">Archived</option>
+                    <option value="suspended">Suspended / Restricted</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="alloy-admin-input-group">
+                <label>Creative Bio / Mission</label>
+                <textarea
+                  rows={3}
+                  className="alloy-admin-textarea"
+                  value={editingCreator.bio || ''}
+                  onChange={(e) => setEditingCreator({ ...editingCreator, bio: e.target.value })}
+                />
+              </div>
+
+              <div className="alloy-admin-modal-actions" style={{ marginTop: '16px' }}>
+                <button
+                  type="submit"
+                  className="alloy-admin-btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <Save size={16} />
+                  <span>{saveSuccess ? 'Saved to DB & Website!' : 'Save Creator Changes'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="alloy-admin-btn-secondary"
+                  onClick={() => setEditingCreator(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
