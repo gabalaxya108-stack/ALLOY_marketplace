@@ -36,6 +36,7 @@ import LoginModal from './components/LoginModal';
 import RoleConflictModal from './components/RoleConflictModal';
 import MessagesLoginWall from './components/MessagesLoginWall';
 import JudgeDemoWalkthrough from './components/JudgeDemoWalkthrough';
+import AlloyLoadingScreen from './components/AlloyLoadingScreen';
 import { Sparkles } from 'lucide-react';
 
 import { CREATORS } from './data/creatorsData';
@@ -124,6 +125,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const currentUserRef = useRef(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [pendingAction, setPendingAction] = useState(null);
   const [loginInitialRole, setLoginInitialRole] = useState('brand');
   const [loginNotice, setLoginNotice] = useState(null);
@@ -2086,6 +2088,13 @@ export default function App() {
 
   return (
     <div className="creasynq-app">
+      {/* Luxury Brand Logo Loading Intro Screen */}
+      {showLoadingScreen && (
+        <AlloyLoadingScreen 
+          onComplete={() => setShowLoadingScreen(false)} 
+        />
+      )}
+
       {/* Keep public navigation out of the dedicated admin screens. */}
       {currentView !== 'admin-login' && currentView !== 'admin-dashboard' && (
         <Header

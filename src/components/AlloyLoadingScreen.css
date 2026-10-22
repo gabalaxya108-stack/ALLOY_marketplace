@@ -1,0 +1,364 @@
+/* ==========================================================================
+   ALLOY — Editorial Luxury Logo Loading Screen
+   Theme: Harmonized with the ALLOY Website Design System:
+   Warm Ivory (#F8F5F0), Soft Cream (#EEE7DE), Deep Forest Green (#214C35),
+   Brushed Bronze (#99714F), and Champagne Gold (#C7A47B).
+   ========================================================================== */
+
+.alloy-loader-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 999999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #FAF7F2 0%, #F8F5F0 50%, #F4EFE9 100%);
+  color: var(--text-primary, #191816);
+  overflow: hidden;
+  user-select: none;
+  transition: opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 0.85s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.alloy-loader-overlay.is-exiting {
+  opacity: 0;
+  filter: blur(12px);
+  transform: scale(1.03);
+  pointer-events: none;
+}
+
+/* Atmospheric Editorial Texture Backdrop */
+.alloy-loader-ambient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Subtle Film Grain Texture Matching Website Body */
+.alloy-loader-ambient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+/* Minimal Editorial Grid Lines */
+.alloy-loader-grid {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(33, 76, 53, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(33, 76, 53, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.8;
+}
+
+/* Top Skip Button — Editorial Pill Matching Website */
+.alloy-loader-skip-btn {
+  position: absolute;
+  top: 28px;
+  right: 32px;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--border-light, #DFD8CE);
+  color: var(--text-secondary, #767069);
+  font-family: 'Space Grotesk', -apple-system, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 8px 18px;
+  border-radius: 9999px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(26, 25, 24, 0.04);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.alloy-loader-skip-btn:hover {
+  background: #FFFFFF;
+  border-color: var(--accent-forest, #214C35);
+  color: var(--accent-forest, #214C35);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(33, 76, 53, 0.1);
+}
+
+.alloy-loader-skip-key {
+  display: inline-block;
+  background: #EEE7DE;
+  color: var(--text-primary, #191816);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border: 1px solid #D5CCC0;
+}
+
+/* Center Content Core */
+.alloy-loader-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 520px;
+  padding: 0 24px;
+}
+
+/* Central Emblem Stage */
+.alloy-emblem-stage {
+  position: relative;
+  width: clamp(170px, 25vw, 220px);
+  height: clamp(150px, 22vw, 195px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 26px;
+}
+
+/* Emblem Container with Floating Motion */
+.alloy-emblem-wrapper {
+  position: relative;
+  width: clamp(160px, 23vw, 205px);
+  height: clamp(140px, 20vw, 180px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: emblemFloat 3.4s ease-in-out infinite;
+  overflow: visible;
+}
+
+.alloy-emblem-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 22px 44px rgba(33, 76, 53, 0.15))
+          drop-shadow(0 6px 18px rgba(153, 113, 79, 0.2));
+  animation: emblemIntro 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Subtle molten shimmer pass across emblem */
+.alloy-emblem-shimmer {
+  position: absolute;
+  inset: -15px;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.7) 50%,
+    transparent 70%
+  );
+  border-radius: 50%;
+  pointer-events: none;
+  animation: shimmerSweep 3s ease-in-out infinite;
+  mix-blend-mode: soft-light;
+}
+
+/* Brand Wordmark & Titles */
+.alloy-loader-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 34px;
+}
+
+.alloy-loader-wordmark-img {
+  height: clamp(40px, 5.5vw, 50px);
+  width: auto;
+  object-fit: contain;
+  display: block;
+  animation: wordmarkReveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Website's Signature Eyebrow Pill */
+.alloy-loader-eyebrow-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-light, #DFD8CE);
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--text-secondary, #767069);
+  font-family: 'Space Grotesk', -apple-system, sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  font-weight: 600;
+  text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(26, 25, 24, 0.03);
+  animation: taglineFadeIn 1.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.alloy-loader-eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent-bronze, #9E744A);
+  display: inline-block;
+}
+
+/* Progress Stage */
+.alloy-progress-container {
+  width: 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.alloy-progress-track {
+  width: 100%;
+  height: 3px;
+  background: var(--bg-tertiary, #E5DED4);
+  border-radius: 9999px;
+  overflow: visible;
+  position: relative;
+  box-shadow: inset 0 1px 2px rgba(26, 25, 24, 0.06);
+}
+
+.alloy-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #214C35 0%, #99714F 60%, #C7A47B 100%);
+  border-radius: 9999px;
+  transition: width 0.12s linear;
+  position: relative;
+  box-shadow: 0 0 12px rgba(33, 76, 53, 0.25);
+}
+
+.alloy-progress-glow-tip {
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  background: #214C35;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(33, 76, 53, 0.4), 0 0 12px rgba(199, 164, 123, 0.5);
+}
+
+/* Progress Meta Info (Percentage & Status) */
+.alloy-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Space Grotesk', -apple-system, sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.alloy-progress-status {
+  text-align: left;
+  color: var(--text-secondary, #77716A);
+  font-weight: 500;
+  transition: opacity 0.25s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.alloy-progress-percent {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  font-weight: 700;
+  color: var(--text-primary, #191816);
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle Bottom Trademark / Tag */
+.alloy-loader-footer {
+  position: absolute;
+  bottom: 28px;
+  font-family: 'Space Grotesk', -apple-system, sans-serif;
+  font-size: 0.65rem;
+  letter-spacing: 0.22em;
+  color: var(--text-tertiary, #968F87);
+  text-transform: uppercase;
+}
+
+/* ==========================================================================
+   Keyframes & Dynamic Motion
+   ========================================================================== */
+
+@keyframes emblemFloat {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-5px) scale(1.015);
+  }
+}
+
+@keyframes emblemIntro {
+  0% {
+    opacity: 0;
+    transform: scale(0.85) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes shimmerSweep {
+  0% {
+    transform: translateX(-120%) rotate(25deg);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.7;
+  }
+  70% {
+    transform: translateX(120%) rotate(25deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(120%) rotate(25deg);
+    opacity: 0;
+  }
+}
+
+@keyframes wordmarkReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes taglineFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .alloy-emblem-wrapper,
+  .alloy-emblem-shimmer {
+    animation: none !important;
+  }
+  .alloy-loader-overlay {
+    transition: opacity 0.3s ease !important;
+  }
+}
