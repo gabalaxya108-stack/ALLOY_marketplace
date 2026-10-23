@@ -49,10 +49,8 @@ export function getBackendStatus() {
   };
 }
 
-// ============================================================================
-// 1. AUTHENTICATION & USER SESSIONS
-// ============================================================================
-
+// =====================================================================// 1. AUTHENTICATION & USER SESSIONS
+// =====================================================================
 /**
  * Safely synchronizes an authenticated user's metadata to public.profiles table.
  * Preserves existing database roles to prevent unverified client metadata from
@@ -2722,14 +2720,24 @@ export {
 // Dual-engine: attempts /api/trust or Supabase table, with local store fallback
 // ============================================================================
 
-export async function fetchVerificationClaims(creatorId = null, currentUser = null) {
+export async function fetchVerificationClaims(creatorOrBrandId = null, currentUser = null, options = {}) {
   const isAdmin = currentUser?.profile?.role === 'admin' || currentUser?.role === 'admin';
-  const roleHeader = isAdmin ? 'admin' : (currentUser?.profile?.role || currentUser?.role || 'creator');
+  const roleHeader = isAdmin ? 'admin' : (currentUser?.profile?.role || currentUser?.role || (options.isBrand ? 'brand' : 'creator'));
+
+  const isBrandTarget = options.isBrand || (typeof creatorOrBrandId === 'string' && creatorOrBrandId.startsWith('brand-'));
 
   // 1. Try local/internal backend endpoint
   try {
     const query = new URLSearchParams();
-    if (creatorId) query.set('creatorId', creatorId);
+    if (creatorOrBrandId) {
+      if (isBrandTarget) {
+        query.set('brandId', creatorOrBrandId);
+        query.set('entityType', 'brand');
+      } else {
+        query.set('creatorId', creatorOrBrandId);
+      }
+      query.set('entityId', creatorOrBrandId);
+    }
     if (roleHeader) query.set('role', roleHeader);
     if (currentUser?.id) query.set('userId', currentUser.id);
 
@@ -2750,12 +2758,12 @@ export async function fetchVerificationClaims(creatorId = null, currentUser = nu
     // API server not reachable or offline; fall back to cloud DB or local store
   }
 
-  // 2. Try Supabase cloud table if configured
-  if (isSupabaseConfigured() && supabase) {
+  // 2. Try Supabase cloud table if configured (only for creators where FK passes)
+  if (isSupabaseConfigured() && supabase && !isBrandTarget) {
     try {
       let query = supabase.from('verification_claims').select('*');
-      if (creatorId) {
-        query = query.eq('creator_id', creatorId);
+      if (creatorOrBrandId) {
+        query = query.eq('creator_id', creatorOrBrandId);
       }
       const { data, error } = await query.order('created_at', { ascending: false });
       if (!error && Array.isArray(data) && data.length > 0) {
@@ -2782,11 +2790,13 @@ export async function fetchVerificationClaims(creatorId = null, currentUser = nu
   }
 
   // 3. Fallback to localStorage synchronous record store
-  return getVerificationClaimsRecord(creatorId);
+  const localClaims = getVerificationClaimsRecord(creatorOrBrandId);
+  return localClaims || [];
 }
 
 export async function submitVerificationClaim(claimData, currentUser = null) {
-  const userRole = currentUser?.profile?.role || currentUser?.role || 'creator';
+  const isBrand = claimData.entityType === 'brand' || (claimData.brandId || (claimData.entityId && claimData.entityId.startsWith('brand-')));
+  const userRole = currentUser?.profile?.role || currentUser?.role || (isBrand ? 'brand' : 'creator');
 
   // 1. Try internal backend API
   try {
@@ -2811,8 +2821,8 @@ export async function submitVerificationClaim(claimData, currentUser = null) {
     // Fallback below
   }
 
-  // 2. Try Supabase if configured
-  if (isSupabaseConfigured() && supabase) {
+  // 2. Try Supabase if configured (for creator claims)
+  if (isSupabaseConfigured() && supabase && !isBrand) {
     try {
       const claimRow = {
         id: claimData.id || `claim-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -2902,9 +2912,18 @@ export async function reviewVerificationClaim({ claimId, decision, notes = '', r
   return reviewVerificationClaimRecord({ claimId, decision, notes, reviewerName });
 }
 
-export async function fetchVerificationAuditLog(creatorId = null) {
+export async function fetchVerificationAuditLog(targetId = null) {
   try {
-    const res = await fetch(`/api/trust/audit${creatorId ? `?creatorId=${creatorId}` : ''}`);
+    const query = new URLSearchParams();
+    if (targetId) {
+      if (targetId.startsWith('brand-')) {
+        query.set('brandId', targetId);
+      } else {
+        query.set('creatorId', targetId);
+      }
+      query.set('entityId', targetId);
+    }
+    const res = await fetch(`/api/trust/audit${query.toString() ? `?${query.toString()}` : ''}`);
     if (res.ok) {
       const data = await res.json();
       if (data?.ok && Array.isArray(data.auditLogs)) {
@@ -2917,12 +2936,28 @@ export async function fetchVerificationAuditLog(creatorId = null) {
 
   const state = getInitialMarketplaceState();
   let logs = state.verificationAuditLogs || [];
-  if (creatorId) {
-    logs = logs.filter(l => l.creatorId === creatorId);
+  if (targetId) {
+    logs = logs.filter(l => l.creatorId === targetId || l.brandId === targetId || l.entityId === targetId);
   }
   return logs;
 }
 
+// Brand Trust Service Aliases for Explicit Clarity
+export async function fetchBrandVerificationClaims(brandId, currentUser = null) {
+  return fetchVerificationClaims(brandId, currentUser, { isBrand: true });
+}
+
+export async function submitBrandVerificationClaim(claimData, currentUser = null) {
+  return submitVerificationClaim({ ...claimData, entityType: 'brand' }, currentUser);
+}
+
+export async function reviewBrandVerificationClaim(params) {
+  return reviewVerificationClaim(params);
+}
+
+export async function fetchBrandVerificationAuditLog(brandId) {
+  return fetchVerificationAuditLog(brandId);
+}
 // ============================================================================
 // 14. HYBRID CAMPAIGN MARKETPLACE & APPLICATION SERVICE LAYER
 // ============================================================================

@@ -279,15 +279,21 @@ export function createGroqMiddleware() {
         // GET /api/trust/claims
         if (url === '/api/trust/claims' && req.method === 'GET') {
           const creatorId = queryParams.get('creatorId');
+          const brandId = queryParams.get('brandId');
+          const entityId = queryParams.get('entityId');
+          const entityType = queryParams.get('entityType');
           const claims = getVerificationClaims({
             creatorId,
+            brandId,
+            entityId,
+            entityType,
             isAdmin: isAuthorizedReviewer,
             currentUserId: queryParams.get('userId')
           });
           return sendJson(res, 200, { ok: true, claims });
         }
 
-        // POST /api/trust/claims (Creator submitting verification claim)
+        // POST /api/trust/claims (Creator or Brand submitting verification claim)
         if (url === '/api/trust/claims' && req.method === 'POST') {
           const body = await parseJsonBody(req);
           const newClaim = submitVerificationClaim(body, reqRole);
@@ -312,7 +318,9 @@ export function createGroqMiddleware() {
         // GET /api/trust/audit (Audit trail log)
         if (url === '/api/trust/audit' && req.method === 'GET') {
           const creatorId = queryParams.get('creatorId');
-          const logs = getVerificationAuditLog({ creatorId });
+          const brandId = queryParams.get('brandId');
+          const entityId = queryParams.get('entityId');
+          const logs = getVerificationAuditLog({ creatorId, brandId, entityId });
           return sendJson(res, 200, { ok: true, auditLogs: logs });
         }
 

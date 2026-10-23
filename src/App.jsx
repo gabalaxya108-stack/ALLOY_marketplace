@@ -19,6 +19,7 @@ import BrandOnboardingView from './views/BrandOnboardingView';
 import CreatorOnboardingView from './views/CreatorOnboardingView';
 import CreatorWorkspaceView from './views/CreatorWorkspaceView';
 import TrustCenterView from './views/TrustCenterView';
+import BrandTrustCenterView from './views/BrandTrustCenterView';
 import AdminLoginView from './views/AdminLoginView';
 import AdminDashboardView from './views/AdminDashboardView';
 import { verifyAdminSession, getAdminActiveSession } from './services/adminApi';
@@ -1365,8 +1366,15 @@ export default function App() {
         }
       } else if (hash === 'discover' || hash === '/discover' || hash === 'creators' || hash === '/creators') {
         setCurrentView('discover');
+      } else if (hash === 'brand-trust-center' || hash === '/brand/trust-center' || hash === '/brand-trust-center') {
+        setCurrentView('brand-trust-center');
       } else if (hash === 'trust-center' || hash === '/trust-center') {
-        setCurrentView('trust-center');
+        const role = resolveUserRole(activeUser);
+        if (role === 'brand') {
+          setCurrentView('brand-trust-center');
+        } else {
+          setCurrentView('trust-center');
+        }
       } else if (hash === '/brand/onboard') {
         setCurrentView('brand-onboard');
       } else if (hash === '/brand') {
@@ -1519,8 +1527,15 @@ export default function App() {
       window.location.hash = `/creator/${extraId}`;
     } else if (view === 'discover' || view === 'creators') {
       window.location.hash = 'discover';
+    } else if (view === 'brand-trust-center') {
+      window.location.hash = '/brand/trust-center';
     } else if (view === 'trust-center') {
-      window.location.hash = '/trust-center';
+      const userRole = resolveUserRole(currentUser);
+      if (userRole === 'brand') {
+        window.location.hash = '/brand/trust-center';
+      } else {
+        window.location.hash = '/trust-center';
+      }
     } else if (view === 'brand-onboard') {
       window.location.hash = '/brand/onboard';
     } else if (view === 'creator-join') {
@@ -2731,7 +2746,11 @@ export default function App() {
                 setIsPipelineTraceModalOpen(true);
               }
             }}
-            onOpenTrustCenter={() => setCurrentView('trust-center')}
+            fundingRecords={marketplaceData.campaignFunding || []}
+            onOpenTrustCenter={() => {
+              setInitialBrandTab('trust');
+              navigateTo('brand-workspace');
+            }}
             currentUser={currentUser}
             onLoginSuccess={(user, role) => executePendingActionOrRoute(user, role)}
             onOpenLogin={() => {
@@ -2885,6 +2904,24 @@ export default function App() {
           />
         )}
 
+        {/* VIEW 7B: DEDICATED BRAND TRUST CENTRE */}
+        {currentView === 'brand-trust-center' && (
+          <BrandTrustCenterView
+            brand={currentBrand}
+            currentUser={currentUser}
+            campaigns={brandCampaigns}
+            fundingRecords={marketplaceData.campaignFunding || []}
+            collaborations={brandProjects}
+            invitations={brandInvitations}
+            onUpdateBrand={handleUpdateBrand}
+            onBackToWorkspace={() => navigateTo('brand-workspace')}
+            onNavigateToTab={(tab) => {
+              setInitialBrandTab(tab);
+              navigateTo('brand-workspace');
+            }}
+          />
+        )}
+
         {/* VIEW 8: SUPER ADMIN SECURITY LOGIN */}
         {currentView === 'admin-login' && (
           <AdminLoginView
@@ -2985,7 +3022,11 @@ export default function App() {
                 onProposeCounterOffer={handleProposeCounterOffer}
                 pipelineFilter={pipelineFilter}
                 onClearPipelineFilter={() => setPipelineFilter(null)}
-                onOpenTrustCenter={() => setCurrentView('trust-center')}
+                fundingRecords={marketplaceData.campaignFunding || []}
+                onOpenTrustCenter={() => {
+                  setInitialBrandTab('trust');
+                  navigateTo('brand-workspace');
+                }}
                 onLoginSuccess={(user, role) => executePendingActionOrRoute(user, role)}
                 onOpenLogin={() => setIsLoginOpen(true)}
               />

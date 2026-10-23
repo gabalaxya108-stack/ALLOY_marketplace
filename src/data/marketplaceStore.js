@@ -1224,9 +1224,105 @@ export function getPublicCreatorOpportunities(state) {
 // TRUST CENTRE STORE RECORD MUTATORS (Local State & Broadcast)
 // ============================================================================
 
-export function getVerificationClaimsRecord(creatorId = null) {
+export function getVerificationClaimsRecord(targetId = null) {
   const state = getInitialMarketplaceState();
   let claims = state.verificationClaims || [];
+
+  const brandSeedClaims = [
+    {
+      id: 'claim-lumina-email',
+      brandId: 'brand-demo-lumina',
+      brandName: 'Lumina Botanica',
+      entityId: 'brand-demo-lumina',
+      entityType: 'brand',
+      claimType: 'business_identity',
+      claimTitle: 'Official Business Domain & Email Verification (partnerships@luminabotanica.co)',
+      status: 'verified',
+      evidenceType: 'Corporate DNS TXT Record & Corporate Domain Email Challenge',
+      evidenceUrl: null,
+      evidenceDetails: {
+        domain: 'luminabotanica.co',
+        corporateEmail: 'partnerships@luminabotanica.co',
+        dnsRecordValidated: true,
+        txtRecord: 'alloy-site-verification=lb-sec-9812-auth'
+      },
+      isPrivate: false,
+      reviewerNotes: 'Corporate DNS TXT ownership match confirmed for luminabotanica.co. Domain matches official registrant.',
+      reviewedBy: 'System Automated Domain Auth',
+      reviewedAt: '2026-09-10T12:00:00Z',
+      createdAt: '2026-09-10T11:45:00Z'
+    },
+    {
+      id: 'claim-lumina-incorporation',
+      brandId: 'brand-demo-lumina',
+      brandName: 'Lumina Botanica',
+      entityId: 'brand-demo-lumina',
+      entityType: 'brand',
+      claimType: 'business_identity',
+      claimTitle: 'Certificate of Incorporation & Commercial Registry',
+      status: 'verified',
+      evidenceType: 'Registrar Certificate / Articles of Organization',
+      evidenceUrl: 'https://vault.alloy.market/private/brands/lumina_incorporation_enc.pdf',
+      evidenceDetails: {
+        registeredLegalName: 'Lumina Botanica Organics LLC',
+        jurisdiction: 'Delaware, USA (DE Registry #7192841)',
+        taxIdMasked: '•••••• 8201',
+        incorporationYear: 2023,
+        registrationNumber: 'DE-7192841'
+      },
+      isPrivate: true,
+      reviewerNotes: 'Verified against Delaware Department of State Division of Corporations public registry. Entity is in Good Standing.',
+      reviewedBy: 'Marcus Sterling (Senior Enterprise Compliance)',
+      reviewedAt: '2026-09-12T16:30:00Z',
+      createdAt: '2026-09-11T14:20:00Z'
+    },
+    {
+      id: 'claim-lumina-escrow',
+      brandId: 'brand-demo-lumina',
+      brandName: 'Lumina Botanica',
+      entityId: 'brand-demo-lumina',
+      entityType: 'brand',
+      claimType: 'payment_reliability',
+      claimTitle: 'Razorpay Verified Escrow Account & Instant Release Agreement',
+      status: 'verified',
+      evidenceType: 'Banking Escrow Agreement & Razorpay Route Merchant KYC',
+      evidenceUrl: null,
+      evidenceDetails: {
+        paymentProvider: 'Razorpay Escrow & Smart Collect',
+        merchantIdMasked: 'rzp_live_••••••9182',
+        escrowBondRupees: 500000,
+        autoReleaseThresholdDays: 3
+      },
+      isPrivate: true,
+      reviewerNotes: 'Verified linked merchant bank account. Completed direct KYC verification with Razorpay platform integration.',
+      reviewedBy: 'Alloy Financial Operations',
+      reviewedAt: '2026-09-15T09:15:00Z',
+      createdAt: '2026-09-14T18:00:00Z'
+    },
+    {
+      id: 'claim-lumina-brief-standard',
+      brandId: 'brand-demo-lumina',
+      brandName: 'Lumina Botanica',
+      entityId: 'brand-demo-lumina',
+      entityType: 'brand',
+      claimType: 'campaign_transparency',
+      claimTitle: 'ALLOY Verified Brief Standard & Transparent Commercial Buyout Terms',
+      status: 'verified',
+      evidenceType: 'Standardized Commercial Licensing Template v3.2',
+      evidenceUrl: 'https://vault.alloy.market/public/templates/lumina_creator_brief_standards.pdf',
+      evidenceDetails: {
+        guaranteedRevisionCap: 2,
+        usageScope: 'Digital Social & OOH (12-Month Worldwide)',
+        killFeePercentage: 35,
+        netPaymentDays: 7
+      },
+      isPrivate: false,
+      reviewerNotes: 'Brand brief contract terms audited. Guaranteed 35% kill-fee and 2-round revision limits comply with Creator Fair Pay Standards.',
+      reviewedBy: 'Elena Rostova (Lead Creative Auditor)',
+      reviewedAt: '2026-09-18T14:40:00Z',
+      createdAt: '2026-09-17T11:10:00Z'
+    }
+  ];
 
   // If claims not yet initialized in state, seed with Maya Chen's demo claims
   if (claims.length === 0) {
@@ -1237,6 +1333,8 @@ export function getVerificationClaimsRecord(creatorId = null) {
         id: 'claim-maya-email',
         creatorId: 'maya-chen',
         creatorName: 'Maya Chen',
+        entityId: 'maya-chen',
+        entityType: 'creator',
         claimType: 'identity',
         claimTitle: 'Email Verification (maya.chen@alloy.market)',
         status: tv.email?.status || 'verified',
@@ -1253,6 +1351,8 @@ export function getVerificationClaimsRecord(creatorId = null) {
         id: 'claim-maya-id',
         creatorId: 'maya-chen',
         creatorName: 'Maya Chen',
+        entityId: 'maya-chen',
+        entityType: 'creator',
         claimType: 'identity',
         claimTitle: 'Government Identity Verification (UK Passport)',
         status: tv.identity?.status || 'pending_review',
@@ -1269,6 +1369,8 @@ export function getVerificationClaimsRecord(creatorId = null) {
         id: 'claim-maya-solarium',
         creatorId: 'maya-chen',
         creatorName: 'Maya Chen',
+        entityId: 'maya-chen',
+        entityType: 'creator',
         claimType: 'portfolio',
         claimTitle: 'Portfolio Authenticity: Echoes of the Solarium',
         status: 'verified',
@@ -1285,6 +1387,8 @@ export function getVerificationClaimsRecord(creatorId = null) {
         id: 'claim-maya-lumina',
         creatorId: 'maya-chen',
         creatorName: 'Maya Chen',
+        entityId: 'maya-chen',
+        entityType: 'creator',
         claimType: 'portfolio',
         claimTitle: 'Portfolio Authenticity: Lumina Botanica Serums',
         status: 'pending_review',
@@ -1301,6 +1405,8 @@ export function getVerificationClaimsRecord(creatorId = null) {
         id: 'claim-maya-runway',
         creatorId: 'maya-chen',
         creatorName: 'Maya Chen',
+        entityId: 'maya-chen',
+        entityType: 'creator',
         claimType: 'ai_tools',
         claimTitle: 'AI Model Claim: Runway Gen-3 Alpha Kinetic Motion',
         status: 'verified',
@@ -1317,6 +1423,8 @@ export function getVerificationClaimsRecord(creatorId = null) {
         id: 'claim-maya-licensing',
         creatorId: 'maya-chen',
         creatorName: 'Maya Chen',
+        entityId: 'maya-chen',
+        entityType: 'creator',
         claimType: 'commercial_rights',
         claimTitle: 'Commercial Buyout & Model Terms Warranty',
         status: 'verified',
@@ -1328,12 +1436,21 @@ export function getVerificationClaimsRecord(creatorId = null) {
         reviewedBy: 'Platform Legal Operations',
         reviewedAt: '2026-09-15T16:00:00Z',
         createdAt: '2026-09-15T14:00:00Z'
-      }
+      },
+      ...brandSeedClaims
     ];
+  } else if (!claims.some(c => c.brandId || c.entityType === 'brand')) {
+    // If brand seed claims not yet added, append them
+    claims = [...claims, ...brandSeedClaims];
   }
 
-  if (creatorId) {
-    return claims.filter(c => c.creatorId === creatorId);
+  if (targetId) {
+    return claims.filter(c =>
+      c.creatorId === targetId ||
+      c.brandId === targetId ||
+      c.entityId === targetId ||
+      (typeof targetId === 'string' && targetId.includes('lumina') && ((c.brandId && c.brandId.includes('lumina')) || (c.entityId && c.entityId.includes('lumina'))))
+    );
   }
   return claims;
 }
@@ -1342,10 +1459,21 @@ export function submitVerificationClaimRecord(claimData) {
   const state = getInitialMarketplaceState();
   const currentClaims = getVerificationClaimsRecord();
 
+  const isBrand = claimData.entityType === 'brand' || !!claimData.brandId || (typeof claimData.entityId === 'string' && claimData.entityId.startsWith('brand-'));
+
   const newClaim = {
     id: claimData.id || `claim-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-    creatorId: claimData.creatorId,
-    creatorName: claimData.creatorName || claimData.creatorId,
+    ...(isBrand ? {
+      brandId: claimData.brandId || claimData.entityId || 'brand-demo-lumina',
+      brandName: claimData.brandName || 'Lumina Botanica',
+      entityId: claimData.brandId || claimData.entityId || 'brand-demo-lumina',
+      entityType: 'brand'
+    } : {
+      creatorId: claimData.creatorId || claimData.entityId,
+      creatorName: claimData.creatorName || claimData.creatorId,
+      entityId: claimData.creatorId || claimData.entityId,
+      entityType: 'creator'
+    }),
     claimType: claimData.claimType,
     claimTitle: claimData.claimTitle,
     status: (claimData.status === 'self_declared') ? 'self_declared' : 'pending_review',
@@ -1374,7 +1502,7 @@ export function submitVerificationClaimRecord(claimData) {
   };
 
   // Sync to creator's trustVerification structure
-  if (state.creators && claimData.creatorId) {
+  if (state.creators && !isBrand && claimData.creatorId) {
     updatedState.creators = state.creators.map(cr => {
       if (cr.id === claimData.creatorId) {
         const tv = { ...(cr.trustVerification || {}) };
@@ -1466,7 +1594,10 @@ export function reviewVerificationClaimRecord({ claimId, decision, notes = '', r
   const newAuditEntry = {
     id: `aud-${Date.now()}`,
     claimId: target.id,
-    creatorId: target.creatorId,
+    creatorId: target.creatorId || null,
+    brandId: target.brandId || null,
+    entityId: target.entityId || target.brandId || target.creatorId || null,
+    entityType: target.entityType || (target.brandId ? 'brand' : 'creator'),
     reviewerName,
     action: auditAction,
     notes: updatedClaim.reviewerNotes,
@@ -1479,7 +1610,7 @@ export function reviewVerificationClaimRecord({ claimId, decision, notes = '', r
     verificationAuditLogs: [newAuditEntry, ...currentAuditLogs]
   };
 
-  // Reflect on creator profile
+  // Reflect on creator profile if target was creator
   if (updatedState.creators && target.creatorId) {
     updatedState.creators = updatedState.creators.map(cr => {
       if (cr.id === target.creatorId) {
