@@ -234,6 +234,19 @@ export function createGroqMiddleware() {
           });
         }
 
+        // If client provided candidate creators (e.g. newly published session creators), merge them uniquely
+        if (Array.isArray(body.creators) && body.creators.length > 0) {
+          if (!creators) {
+            creators = body.creators;
+          } else {
+            const existingIds = new Set(creators.map(c => c.id));
+            const newFromClient = body.creators.filter(c => c && c.id && !existingIds.has(c.id));
+            if (newFromClient.length > 0) {
+              creators = [...creators, ...newFromClient];
+            }
+          }
+        }
+
         const result = executeFilteringPipeline({ campaign, creators, options });
 
         return sendJson(res, 200, {
