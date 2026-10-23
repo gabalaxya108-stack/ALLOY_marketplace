@@ -157,7 +157,7 @@ export default function App() {
     }
   });
   const [initialBrandTab, setInitialBrandTab] = useState('overview');
-  const [initialCreatorTab, setInitialCreatorTab] = useState('overview');
+  const [initialCreatorTab, setInitialCreatorTab] = useState('home');
 
   // Judge Demo Walkthrough state with persistent completion/dismissal memory
   const [isJudgeTourOpen, setIsJudgeTourOpen] = useState(() => {
@@ -1515,6 +1515,11 @@ export default function App() {
         setIsRoleConflictOpen(true);
         return;
       }
+      if (extraId) {
+        setInitialCreatorTab(extraId);
+      } else {
+        setInitialCreatorTab('home');
+      }
       setCurrentView('creator-workspace');
       window.location.hash = '/creator';
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2400,9 +2405,20 @@ export default function App() {
     navigateTo('creator-profile', creatorId);
   };
 
-  const handleSelectProject = (project, creator) => {
+  const handleSelectProject = (project, creator = null) => {
     setSelectedProject(project);
-    setSelectedProjectCreator(creator);
+    let resolvedProjCreator = creator;
+    if (!resolvedProjCreator && project) {
+      if (project.creatorId) {
+        resolvedProjCreator = creatorsList.find(c => c.id === project.creatorId) || null;
+      }
+      if (!resolvedProjCreator) {
+        resolvedProjCreator = creatorsList.find(c =>
+          (c.projects || []).some(p => p.id === project.id || p.title === project.title)
+        ) || null;
+      }
+    }
+    setSelectedProjectCreator(resolvedProjCreator);
   };
 
   const handleCreateWorkspaceFromProject = ({ project, creator, suggestedName, suggestedAesthetic }) => {
@@ -2810,6 +2826,7 @@ export default function App() {
             currentUser={currentUser}
             onUpdateCreator={handleUpdateCreator}
             onViewPublicProfile={() => handleOpenCreatorProfile(myCreator.id)}
+            onViewCreatorProfile={(creatorId) => handleOpenCreatorProfile(creatorId)}
             onExploreMarketplace={() => navigateTo('discover')}
             connections={synchronizedConnections}
             onOpenConversation={(conn) => handleOpenConversation(conn, 'creator')}
@@ -3438,11 +3455,19 @@ export default function App() {
           onCreateWorkspace={handleCreateWorkspaceFromProject}
           onSaveWorkflow={handleSaveProjectWorkflow}
           isCreatorOwner={
-            // Creator owns project if logged in as creator and matches creator id, or in demo creator mode
-            resolveUserRole(currentUser) === 'creator' ||
-            (myCreator && myCreator.id === selectedProjectCreator?.id) ||
-            (!currentUser && currentView === 'creator-workspace')
+            Boolean(
+              (myCreator && selectedProjectCreator && myCreator.id === selectedProjectCreator.id) ||
+              (!selectedProjectCreator && resolveUserRole(currentUser) === 'creator')
+            )
           }
+          currentUser={currentUser}
+          currentCreator={myCreator}
+          connections={synchronizedConnections}
+          onOpenConversation={(conn) => handleOpenConversation(conn, 'creator')}
+          onOpenLogin={() => {
+            setLoginNotice('Please sign in to message this creator');
+            setIsLoginOpen(true);
+          }}
         />
       )}
 
