@@ -96,7 +96,8 @@ import {
   respondToApplicationCounterOffer,
   acceptCreatorApplication,
   fetchMyApplications,
-  fetchBrandApplications
+  fetchBrandApplications,
+  syncMessageToDb
 } from './services/marketplaceBackend';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 
@@ -2192,6 +2193,10 @@ export default function App() {
 
       saveBackendCollaboration(newProject, currentUser?.display_name, currentUser?.id).catch(err => {
         console.warn('[CreaSync] Background application collaboration sync deferred:', err);
+      });
+
+      syncMessageToDb(openingMsg).catch(err => {
+        console.warn('[CreaSync] Background opening message sync deferred:', err);
       });
 
       return response;

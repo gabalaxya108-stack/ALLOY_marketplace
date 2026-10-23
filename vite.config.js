@@ -82,13 +82,13 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use(createAdminMiddleware());
           server.middlewares.use(createPaymentMiddleware());
           server.middlewares.use(createApplicationMiddleware());
-          server.middlewares.use(createApplicationMiddleware());
         },
         configurePreviewServer(server) {
           server.middlewares.use(createDbMiddleware());
           server.middlewares.use(createGroqMiddleware());
           server.middlewares.use(createAdminMiddleware());
           server.middlewares.use(createPaymentMiddleware());
+          server.middlewares.use(createApplicationMiddleware());
         }
       }
     ],
