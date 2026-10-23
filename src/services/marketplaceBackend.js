@@ -36,6 +36,8 @@ import {
   syncVerificationClaimToDb
 } from './dbSync.js';
 
+export { syncMessageToDb };
+
 /**
  * Returns backend status descriptor
  */
