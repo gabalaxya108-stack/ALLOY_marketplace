@@ -369,8 +369,14 @@ export function evaluateToolsRequirement(requiredTools, creator) {
   const rawList = toRawArray(requiredTools);
   if (rawList.length === 0) return null;
 
-  const hasTools = Array.isArray(creator?.tools);
-  const hasProjectTools = Array.isArray(creator?.projects) && creator.projects.some(p => Array.isArray(p.tools) && p.tools.length > 0);
+  const projects = Array.isArray(creator?.projects) && creator.projects.length > 0
+    ? creator.projects
+    : (Array.isArray(creator?.portfolio_projects) && creator.portfolio_projects.length > 0
+      ? creator.portfolio_projects
+      : (Array.isArray(creator?.portfolio) ? creator.portfolio : []));
+
+  const hasTools = Array.isArray(creator?.tools) && creator.tools.length > 0;
+  const hasProjectTools = projects.some(p => Boolean(p.tools && (Array.isArray(p.tools) ? p.tools.length > 0 : String(p.tools).trim() !== '')));
 
   if (!creator || (!hasTools && !hasProjectTools)) {
     return {
@@ -385,7 +391,7 @@ export function evaluateToolsRequirement(requiredTools, creator) {
   }
 
   const creatorTools = normalizeTokenArray(creator.tools);
-  const projectTools = (creator.projects || []).flatMap(p => normalizeTokenArray(p.tools));
+  const projectTools = projects.flatMap(p => normalizeTokenArray(toRawArray(p.tools)));
   const combinedTools = new Set([...creatorTools, ...projectTools]);
 
   const missing = [];
@@ -472,10 +478,16 @@ export function evaluateFormatsRequirement(requiredFormats, creator) {
   const rawList = toRawArray(requiredFormats);
   if (rawList.length === 0) return null;
 
+  const projects = Array.isArray(creator?.projects) && creator.projects.length > 0
+    ? creator.projects
+    : (Array.isArray(creator?.portfolio_projects) && creator.portfolio_projects.length > 0
+      ? creator.portfolio_projects
+      : (Array.isArray(creator?.portfolio) ? creator.portfolio : []));
+
   const creatorTags = normalizeTokenArray(creator?.categoryTags);
   const creatorCaps = normalizeTokenArray(creator?.capabilities);
   const creatorSpecialty = normalizeToken(creator?.specialty);
-  const projectFormats = (creator?.projects || []).map(p => normalizeToken(p.format || p.aspect || p.category));
+  const projectFormats = projects.map(p => normalizeToken(p.format || p.aspect || p.category));
 
   const hasSpecialty = creatorSpecialty && creatorSpecialty !== 'unspecified' && creatorSpecialty !== 'unknown';
   const hasFormatEvidence = Boolean(
@@ -579,68 +591,135 @@ export function evaluateFormatsRequirement(requiredFormats, creator) {
 
 /**
  * Evaluates mandatory aesthetic style requirements.
+ * Evaluates both creator profile styles and project-level creativeStyle evidence
+ * with project attribution, preserving project isolation.
  */
 export function evaluateStylesRequirement(requiredStyles, creator) {
   const rawList = toRawArray(requiredStyles);
   if (rawList.length === 0) return null;
 
-  if (!creator || !Array.isArray(creator.styles)) {
-    return {
-      requirement: 'styles',
-      status: ELIGIBILITY_OUTCOMES.UNKNOWN,
-      reason: 'Creator aesthetic styles are not recorded in profile.',
-      evidence: {
-        expected: rawList,
-        actual: null
-      }
-    };
-  }
+  const profileStyles = Array.isArray(creator?.styles) ? creator.styles : [];
+  const projects = Array.isArray(creator?.projects) && creator.projects.length > 0
+    ? creator.projects
+    : (Array.isArray(creator?.portfolio_projects) && creator.portfolio_projects.length > 0
+      ? creator.portfolio_projects
+      : (Array.isArray(creator?.portfolio) ? creator.portfolio : []));
 
-  const creatorStyles = normalizeTokenArray(creator.styles);
-  if (creatorStyles.length === 0) {
+  // Harvest project-level style evidence attributable to originating projects
+  const projectStyleEntries = [];
+  projects.forEach(p => {
+    if (!p) return;
+    const rawStyle = p.creativeStyle || p.creative_style || p.style;
+    const stylesFromP = [];
+    if (typeof rawStyle === 'string' && rawStyle.trim()) {
+      stylesFromP.push(...rawStyle.split(/[,|/]/).map(s => s.trim()).filter(Boolean));
+    } else if (Array.isArray(p.styles)) {
+      stylesFromP.push(...p.styles.filter(s => typeof s === 'string' && s.trim()));
+    }
+    if (stylesFromP.length > 0) {
+      projectStyleEntries.push({
+        projectId: p.id,
+        projectTitle: p.title || 'Portfolio Work',
+        styles: stylesFromP
+      });
+    }
+  });
+
+  const hasProfileStyles = profileStyles.length > 0;
+  const hasProjectStyles = projectStyleEntries.length > 0;
+
+  // If no style metadata exists on profile or projects, return UNKNOWN (requires review)
+  if (!creator || (!hasProfileStyles && !hasProjectStyles)) {
     return {
       requirement: 'styles',
       status: ELIGIBILITY_OUTCOMES.UNKNOWN,
-      reason: 'Creator has empty styles record; aesthetic style alignment cannot be determined.',
+      reason: 'Creator aesthetic styles are not recorded in profile or portfolio projects; aesthetic alignment cannot be determined.',
       evidence: {
         expected: rawList,
-        actual: []
+        actual: null,
+        projectEvidence: []
       }
     };
   }
 
   const missing = [];
   const matched = [];
+  const allMatchedProjects = [];
 
   for (const rawReq of rawList) {
     const req = normalizeToken(rawReq);
-    const isMatch = creatorStyles.some(s => s.includes(req) || req.includes(s));
-    if (isMatch) {
-      matched.push(rawReq);
+
+    // 1. Profile-level match check
+    const profileMatch = profileStyles.find(s => {
+      const norm = normalizeToken(s);
+      return norm.includes(req) || req.includes(norm);
+    });
+
+    // 2. Project-level attributable evidence check
+    const matchedProjectsForReq = [];
+    projectStyleEntries.forEach(pe => {
+      pe.styles.forEach(s => {
+        const norm = normalizeToken(s);
+        if (norm.includes(req) || req.includes(norm)) {
+          const entry = {
+            projectId: pe.projectId,
+            projectTitle: pe.projectTitle,
+            style: s
+          };
+          matchedProjectsForReq.push(entry);
+          if (!allMatchedProjects.some(amp => amp.projectId === entry.projectId && amp.style === entry.style)) {
+            allMatchedProjects.push(entry);
+          }
+        }
+      });
+    });
+
+    if (profileMatch || matchedProjectsForReq.length > 0) {
+      matched.push({
+        requirement: rawReq,
+        profileMatch: profileMatch || null,
+        projectEvidence: matchedProjectsForReq
+      });
     } else {
       missing.push(rawReq);
     }
   }
 
   if (missing.length === 0) {
+    const hasProjectProof = allMatchedProjects.length > 0;
+    const hasProfileProof = matched.some(m => m.profileMatch);
+    let reasonText = `Creator aesthetic style aligns with required style(s): ${rawList.join(', ')}.`;
+
+    if (hasProjectProof && hasProfileProof) {
+      reasonText = `Creator aesthetic style aligns with required style(s): ${rawList.join(', ')} (supported by profile and portfolio project evidence: ${allMatchedProjects.map(p => `"${p.projectTitle}" [${p.style}]`).join(', ')}).`;
+    } else if (hasProjectProof) {
+      reasonText = `Creator aesthetic style aligns with required style(s): ${rawList.join(', ')} (supported by portfolio project evidence from: ${allMatchedProjects.map(p => `"${p.projectTitle}" [${p.style}]`).join(', ')}).`;
+    }
+
     return {
       requirement: 'styles',
       status: ELIGIBILITY_OUTCOMES.PASS,
-      reason: `Creator aesthetic style aligns with required style(s): ${rawList.join(', ')}.`,
+      reason: reasonText,
       evidence: {
         expected: rawList,
-        actual: matched
+        actual: matched.map(m => m.requirement),
+        matchedDetails: matched,
+        matchedProjects: allMatchedProjects,
+        projectEvidence: allMatchedProjects,
+        source: hasProjectProof ? (hasProfileProof ? 'hybrid_profile_and_project' : 'portfolio_project') : 'creator_profile'
       }
     };
   }
 
+  const allRecordedStyles = [...profileStyles, ...projectStyleEntries.flatMap(pe => pe.styles)];
   return {
     requirement: 'styles',
     status: ELIGIBILITY_OUTCOMES.FAIL,
-    reason: `Creator styles (${(creator.styles || []).join(', ')}) do not include required style(s): ${missing.join(', ')}.`,
+    reason: `Creator styles (${allRecordedStyles.join(', ') || 'recorded'}) do not include required style(s): ${missing.join(', ')}.`,
     evidence: {
       expected: rawList,
-      actual: creator.styles,
+      actual: profileStyles,
+      projectStyles: projectStyleEntries,
       missing
     }
   };
@@ -838,7 +917,13 @@ export function evaluatePortfolioThresholdRequirement(minProjects, creator) {
   const threshold = typeof minProjects === 'number' ? minProjects : 0;
   if (threshold <= 0) return null;
 
-  if (!creator || !Array.isArray(creator.projects)) {
+  const projects = Array.isArray(creator?.projects)
+    ? creator.projects
+    : (Array.isArray(creator?.portfolio_projects)
+      ? creator.portfolio_projects
+      : (Array.isArray(creator?.portfolio) ? creator.portfolio : null));
+
+  if (!creator || !Array.isArray(projects)) {
     return {
       requirement: 'minProjects',
       status: ELIGIBILITY_OUTCOMES.UNKNOWN,
@@ -847,7 +932,7 @@ export function evaluatePortfolioThresholdRequirement(minProjects, creator) {
     };
   }
 
-  const count = creator.projects.length;
+  const count = projects.length;
   if (count >= threshold) {
     return {
       requirement: 'minProjects',

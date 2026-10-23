@@ -234,14 +234,8 @@ export async function syncCreatorToDb(creator, userId = null) {
     }
   });
 
-  // Harvest project styles to enrich creator styles if applicable
-  const existingStyles = new Set(creator.styles || []);
-  projects.forEach(p => {
-    const pStyle = p.creativeStyle || p.creative_style;
-    if (pStyle && typeof pStyle === 'string') {
-      pStyle.split(/[,|/]/).map(s => s.trim()).filter(Boolean).forEach(s => existingStyles.add(s));
-    }
-  });
+  // Preserve creator profile styles cleanly without mutating creator.styles with project styles
+  const creatorProfileStyles = Array.isArray(creator.styles) ? [...creator.styles] : [];
 
   const heroWork = creator.heroWork || creator.hero_work || portfolioImages[0] || (projects[0]?.image) || '';
   const videoPreview = creator.videoPreview || creator.video_preview || portfolioVideos[0] || (projects.find(p => p.video)?.video) || null;
@@ -261,7 +255,7 @@ export async function syncCreatorToDb(creator, userId = null) {
     hero_work: heroWork,
     video_preview: videoPreview,
     avatar: creator.avatar || '',
-    styles: Array.from(existingStyles),
+    styles: creatorProfileStyles,
     industries: creator.industries || [],
     capabilities: creator.capabilities || [],
     tools: creator.tools || [],

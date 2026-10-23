@@ -44,7 +44,10 @@ export const READABLE_EXCLUSION_TITLES = {
   MISSING_MANDATORY_SKILLS: 'Required mandatory skills missing',
   SPECIALIZATION_MISMATCH: 'Specialization mismatch',
   TOOL_CHAIN_INCOMPATIBLE: 'Required AI tools/models not in verified toolchain',
-  FORMAT_UNSUPPORTED: 'Deliverable format unsupported'
+  FORMAT_UNSUPPORTED: 'Deliverable format unsupported',
+  STYLE_MISMATCH: 'Creative style mismatch with campaign requirements',
+  INSUFFICIENT_PROJECTS: 'Portfolio evidence below required project threshold',
+  BUDGET_EXCEEDED: 'Budget constraint exceeded'
 };
 
 /**
@@ -152,6 +155,23 @@ function buildDecisionBreakdown(ex) {
             : 'Excluded — commercial readiness requirement not satisfied',
         type: 'fail'
       });
+      break;
+    }
+    case 'STYLE_MISMATCH': {
+      const missingStyles = Array.isArray(missing) ? missing : [];
+      const requiredStyles = Array.isArray(ex.requiredFields) ? ex.requiredFields : (missingStyles.length > 0 ? missingStyles : []);
+      const evidence = (typeof available === 'object' && available !== null) ? available : {};
+      const creatorStyles = Array.isArray(evidence.actual) ? evidence.actual : [];
+      const projectStyles = Array.isArray(evidence.projectStyles)
+        ? evidence.projectStyles.map(pe => `"${pe.projectTitle}": ${pe.styles.join(', ')}`)
+        : [];
+      sections.push({ label: 'Campaign Required Styles', value: requiredStyles.join(', ') || 'None specified', type: 'requirement' });
+      sections.push({ label: 'Creator Profile Styles', value: creatorStyles.length > 0 ? creatorStyles.join(', ') : 'None recorded', type: 'evidence' });
+      if (projectStyles.length > 0) {
+        sections.push({ label: 'Portfolio Project Styles', value: projectStyles.join(' | '), type: 'evidence' });
+      }
+      sections.push({ label: 'Missing Styles', value: missingStyles.join(', ') || 'None', type: 'fail' });
+      sections.push({ label: 'Eligibility Result', value: 'Excluded — creative style not demonstrated in profile or portfolio projects', type: 'fail' });
       break;
     }
     default: {

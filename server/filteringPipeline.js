@@ -730,8 +730,20 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
   const executionId = `exec_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const startTime = Date.now();
 
-  // Authoritative candidate pool
-  const candidatePool = Array.isArray(creators) ? [...creators] : [...CREATORS];
+  // Authoritative candidate pool with normalized project isolation
+  const rawPool = Array.isArray(creators) ? [...creators] : [...CREATORS];
+  const candidatePool = rawPool.map(c => {
+    const rawProjects = (Array.isArray(c.projects) && c.projects.length > 0)
+      ? c.projects
+      : (Array.isArray(c.portfolio_projects) && c.portfolio_projects.length > 0
+        ? c.portfolio_projects
+        : (Array.isArray(c.portfolio) ? c.portfolio : []));
+
+    return {
+      ...c,
+      projects: rawProjects
+    };
+  });
   const totalCandidates = candidatePool.length;
 
   // Step 1: Normalize Brief
@@ -984,6 +996,7 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
         tools: (c.tools || []).slice(0, 3),
         categoryTags: (c.categoryTags || []).slice(0, 3),
         projectCount: (c.projects || []).length,
+        projectStyles: (c.projects || []).map(p => p.creativeStyle || p.creative_style || p.style).filter(Boolean).slice(0, 3),
         isLicensingVerified: Boolean(c.trustVerification?.commercialLicensingEligible || c.commercialLicensingVerified)
       }))
     })),
