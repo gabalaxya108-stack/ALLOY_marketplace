@@ -1246,7 +1246,7 @@ export default function App() {
           setActiveCreatorId(id || null);
           setCurrentView('creator-not-found');
         }
-      } else if (hash === 'discover') {
+      } else if (hash === 'discover' || hash === '/discover' || hash === 'creators' || hash === '/creators') {
         setCurrentView('discover');
       } else if (hash === 'trust-center' || hash === '/trust-center') {
         setCurrentView('trust-center');
@@ -1400,7 +1400,7 @@ export default function App() {
     if (view === 'creator-profile' && extraId) {
       setActiveCreatorId(extraId);
       window.location.hash = `/creator/${extraId}`;
-    } else if (view === 'discover') {
+    } else if (view === 'discover' || view === 'creators') {
       window.location.hash = 'discover';
     } else if (view === 'trust-center') {
       window.location.hash = '/trust-center';
@@ -2377,6 +2377,8 @@ export default function App() {
               setLoginNotice('Please sign in to access your direct messages');
               setIsLoginOpen(true);
             }}
+            onNavigate={navigateTo}
+            onExploreMarketplace={() => navigateTo('discover')}
           />
         )}
 

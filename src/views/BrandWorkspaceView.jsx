@@ -77,11 +77,23 @@ export default function BrandWorkspaceView({
   onOpenTrustCenter,
   currentUser = null,
   onLoginSuccess,
-  onOpenLogin
+  onOpenLogin,
+  onNavigate,
+  onExploreMarketplace
 }) {
   // Navigation Tabs:
   // 'overview' | 'campaigns' | 'discover' | 'shortlists' | 'invitations' | 'collaborations' | 'deliverables' | 'messages' | 'brand-settings'
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+
+  const handleNavigateToDiscover = () => {
+    if (typeof onExploreMarketplace === 'function') {
+      onExploreMarketplace();
+    } else if (typeof onNavigate === 'function') {
+      onNavigate('discover');
+    } else {
+      window.location.hash = 'discover';
+    }
+  };
 
   useEffect(() => {
     if (initialTab) {
@@ -830,11 +842,23 @@ export default function BrandWorkspaceView({
                     <span className="btn btn-secondary btn-sm">Start Campaign</span>
                   </div>
 
-                  <div className="first-choice-box highlighted" onClick={() => handleOpenCreateCampaign('ai')}>
+                  <div 
+                    className="first-choice-box highlighted" 
+                    onClick={handleNavigateToDiscover}
+                    id="btn-structure-brief-ai"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleNavigateToDiscover();
+                      }
+                    }}
+                  >
                     <div className="choice-icon"><Sparkles size={20} className="text-lavender" /></div>
                     <h3>Structure with Alloy Brief AI</h3>
                     <p>Write what you want in plain words. Groq AI structures deliverables and targets.</p>
-                    <span className="btn btn-primary btn-sm">Describe Brief</span>
+                    <span className="btn btn-primary btn-sm" onClick={handleNavigateToDiscover}>Describe Brief</span>
                   </div>
 
                   {isDemoMode ? (
