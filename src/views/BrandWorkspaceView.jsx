@@ -10,7 +10,7 @@ import {
   Clock, DollarSign, Calendar, HelpCircle, Layers, Film, Zap, 
   RotateCcw, Check, ExternalLink, ChevronRight, AlertCircle, FileText,
   Trash2, Filter, Upload, CheckCircle, Share2, Edit3, Compass,
-  ChevronDown, Copy, Shield, ShieldAlert, X, Building, Globe, CheckSquare,
+  ChevronDown, Copy, Shield, ShieldAlert, ShieldCheck, X, Building, Globe, CheckSquare,
   CreditCard
 } from 'lucide-react';
 
@@ -27,6 +27,7 @@ import InviteModal from '../components/InviteModal';
 import CreatorComparisonModal from '../components/CreatorComparisonModal';
 import MessagesLoginWall from '../components/MessagesLoginWall';
 import CampaignFundingModal from '../components/CampaignFundingModal';
+import BrandTrustCenterView from './BrandTrustCenterView';
 import { deduplicateMessages } from '../services/marketplaceBackend';
 
 export default function BrandWorkspaceView({
@@ -44,6 +45,7 @@ export default function BrandWorkspaceView({
     preferredPlatforms: ["Instagram", "TikTok", "Digital OOH"],
     isDemo: true
   },
+  fundingRecords = [],
   allBrands = [],
   isDemoMode = true,
   onSwitchBrand,
@@ -800,6 +802,17 @@ export default function BrandWorkspaceView({
             >
               Brand Profile
             </button>
+
+            <button 
+              type="button" 
+              className={`workspace-tab-btn ${activeTab === 'trust' ? 'active' : ''}`}
+              onClick={() => setActiveTab('trust')}
+              id="tab-btn-trust"
+            >
+              <ShieldCheck size={13} />
+              <span>Trust Centre</span>
+              <span className="tab-count-pill highlight" style={{ marginLeft: '4px' }}>Verified</span>
+            </button>
           </div>
         </div>
 
@@ -1361,26 +1374,24 @@ export default function BrandWorkspaceView({
                   </button>
                 ))}
 
-                {onOpenTrustCenter && (
-                  <button
-                    type="button"
-                    className="filter-pill-btn"
-                    onClick={onOpenTrustCenter}
-                    style={{ 
-                      marginLeft: 'auto', 
-                      background: 'rgba(5, 150, 105, 0.08)', 
-                      borderColor: 'rgba(16, 185, 129, 0.3)',
-                      color: '#065F46',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}
-                    title="Review Platform Trust & Provenance standards for creators"
-                  >
-                    <Shield size={12} color="#059669" />
-                    <span>Trust Centre Standards</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="filter-pill-btn"
+                  onClick={() => setActiveTab('trust')}
+                  style={{ 
+                    marginLeft: 'auto', 
+                    background: 'rgba(5, 150, 105, 0.08)', 
+                    borderColor: 'rgba(16, 185, 129, 0.3)',
+                    color: '#065F46',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}
+                  title="Review Brand Trust & Verification Status"
+                >
+                  <ShieldCheck size={12} color="#059669" />
+                  <span>Brand Trust Centre</span>
+                </button>
               </div>
             </div>
 
@@ -2159,6 +2170,23 @@ export default function BrandWorkspaceView({
 
             </div>
           </div>
+        )}
+
+        {/* ========================================================
+            TAB 10: BRAND TRUST CENTRE
+            ======================================================== */}
+        {activeTab === 'trust' && (
+          <BrandTrustCenterView
+            brand={currentBrand}
+            currentUser={currentUser}
+            campaigns={campaigns}
+            fundingRecords={fundingRecords}
+            collaborations={projects}
+            invitations={invitations}
+            onUpdateBrand={onUpdateBrand}
+            onBackToWorkspace={() => setActiveTab('overview')}
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+          />
         )}
 
       </div>
