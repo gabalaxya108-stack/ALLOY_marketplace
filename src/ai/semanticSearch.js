@@ -1,7 +1,7 @@
 // src/ai/semanticSearch.js
 // Semantic natural-language creator discovery across Creator DNA and portfolio content
 
-import { analyzeCreatorPortfolio } from './creatorAnalyzer';
+import { analyzeCreatorPortfolio } from './creatorAnalyzer.js';
 
 export function semanticCreatorSearch(query = '', creators = []) {
   const trimmed = query.trim();
@@ -43,6 +43,12 @@ export function semanticCreatorSearch(query = '', creators = []) {
     let score = 0;
     const analysis = analyzeCreatorPortfolio(creator);
 
+    const allMediaCaptions = [
+      ...(creator.portfolioMedia || creator.portfolio_media || []).map(m => `${m.caption || ''} ${(m.tags || []).join(' ')}`),
+      ...(creator.portfolioImages || creator.portfolio_images || []),
+      ...(creator.portfolioVideos || creator.portfolio_videos || [])
+    ].join(' ').toLowerCase();
+
     const searchableCorpus = [
       creator.name,
       creator.creativeIdentity,
@@ -52,32 +58,43 @@ export function semanticCreatorSearch(query = '', creators = []) {
       ...(creator.industries || []),
       ...(creator.capabilities || []),
       ...(creator.platforms || []),
-      ...(creator.projects || []).map(p => `${p.title} ${p.description || ''} ${p.creativeDirection || ''} ${p.category || ''}`)
+      ...(creator.categoryTags || []),
+      allMediaCaptions,
+      ...(creator.projects || []).map(p => `${p.title} ${p.description || ''} ${p.creativeDirection || ''} ${p.category || ''} ${p.creativeStyle || ''}`)
     ].join(' ').toLowerCase();
 
-    // Specific query matching weights
+    // Specific query domain matching evaluated dynamically across creator profile & portfolio
+    const matchesDomain = (keywords) => {
+      return keywords.some(kw => 
+        searchableCorpus.includes(kw) ||
+        (creator.categoryTags || []).some(t => t.toLowerCase().includes(kw)) ||
+        (creator.styles || []).some(s => s.toLowerCase().includes(kw)) ||
+        (creator.industries || []).some(ind => ind.toLowerCase().includes(kw))
+      );
+    };
+
     if (lower.includes('skincare') || lower.includes('beauty')) {
-      if (creator.id === 'zora-vance' || creator.id === 'maya-chen' || creator.id === 'elena-rostova' || creator.id === 'sophie-mercier') score += 50;
+      if (matchesDomain(['skincare', 'beauty', 'cosmetics', 'serum', 'hydration', 'botanical', 'viscosity'])) score += 50;
     }
 
     if (lower.includes('fashion') || lower.includes('couture') || lower.includes('luxury')) {
-      if (creator.id === 'elena-rostova' || creator.id === 'maya-chen' || creator.id === 'chloe-davenport' || creator.id === 'sophie-mercier') score += 50;
+      if (matchesDomain(['fashion', 'couture', 'luxury', 'apparel', 'silk', 'editorial', 'vogue'])) score += 50;
     }
 
     if (lower.includes('3d') || lower.includes('tech') || lower.includes('hardware')) {
-      if (creator.id === 'alex-rivera' || creator.id === 'kai-sorenson' || creator.id === 'tariq-al-mansoor') score += 50;
+      if (matchesDomain(['3d', 'tech', 'hardware', 'spatial', 'industrial', 'render', 'cgi'])) score += 50;
     }
 
     if (lower.includes('surreal')) {
-      if (creator.id === 'tariq-al-mansoor' || creator.id === 'saffron-chen' || creator.id === 'liam-oconnor') score += 45;
+      if (matchesDomain(['surreal', 'dream', 'ethereal', 'abstract', 'metaphysical'])) score += 45;
     }
 
     if (lower.includes('instagram') || lower.includes('gen z') || lower.includes('social') || lower.includes('reel')) {
-      if (creator.id === 'nina-novak' || creator.id === 'zora-vance' || creator.id === 'maya-chen') score += 45;
+      if (matchesDomain(['instagram', 'social', 'reel', 'tiktok', 'vertical', '9:16', 'short-form'])) score += 45;
     }
 
     if (lower.includes('cinematic')) {
-      if (creator.id === 'maya-chen' || creator.id === 'mateo-cruz' || creator.id === 'elena-rostova') score += 40;
+      if (matchesDomain(['cinematic', 'film', 'anamorphic', '35mm', 'atmospheric', 'motion'])) score += 40;
     }
 
     // Token frequency score
@@ -110,3 +127,5 @@ export function semanticCreatorSearch(query = '', creators = []) {
     count: results.length
   };
 }
+
+export const semanticSearchCreators = semanticCreatorSearch;

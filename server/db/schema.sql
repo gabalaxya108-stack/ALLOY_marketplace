@@ -126,12 +126,22 @@ CREATE TABLE IF NOT EXISTS public.creator_profiles (
   creative_skills TEXT[] DEFAULT '{}',
   commercial_licensing_verified BOOLEAN DEFAULT TRUE,
   trust_verification JSONB DEFAULT '{}'::jsonb,
+  portfolio_media JSONB DEFAULT '[]'::jsonb,
+  portfolio_images TEXT[] DEFAULT '{}',
+  portfolio_videos TEXT[] DEFAULT '{}',
+  portfolio_projects JSONB DEFAULT '[]'::jsonb,
   status TEXT NOT NULL DEFAULT 'Published' CHECK (status IN ('Draft', 'Published', 'Archived')),
   visibility TEXT NOT NULL DEFAULT 'published' CHECK (visibility IN ('published', 'draft', 'private')),
   is_demo BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration Safeguards for Existing Supabase Instances:
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS portfolio_media JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS portfolio_images TEXT[] DEFAULT '{}';
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS portfolio_videos TEXT[] DEFAULT '{}';
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS portfolio_projects JSONB DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_user ON public.creator_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_specialty ON public.creator_profiles(specialty);
