@@ -1240,22 +1240,49 @@ export async function savePortfolioProject(creatorId, project) {
     throw new Error('creatorId and project.id are required.');
   }
 
+  // Ensure durable media persistence: never persist ephemeral blob: URLs to database or permanent store
+  const sanitizedMedia = Array.isArray(project.media)
+    ? project.media.map(m => ({
+        ...m,
+        url: (m.url && m.url.startsWith('blob:') && m.durableUrl) ? m.durableUrl : m.url
+      }))
+    : [];
+
+  const coverItem = sanitizedMedia.find(m => m.isCover) || sanitizedMedia[0];
+  const videoItem = sanitizedMedia.find(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || ''));
+
+  let sanitizedImage = project.image;
+  if (!sanitizedImage || sanitizedImage.startsWith('blob:')) {
+    sanitizedImage = coverItem ? (coverItem.durableUrl || coverItem.url) : sanitizedImage;
+  }
+  let sanitizedVideo = project.video;
+  if (sanitizedVideo && sanitizedVideo.startsWith('blob:')) {
+    sanitizedVideo = videoItem ? (videoItem.durableUrl || videoItem.url) : sanitizedVideo;
+  }
+
+  const projectToSave = {
+    ...project,
+    image: sanitizedImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=85',
+    video: sanitizedVideo,
+    media: sanitizedMedia
+  };
+
   // Synchronize local cache
   const state = getInitialMarketplaceState();
   const creator = (state.creators || CREATORS).find(c => c.id === creatorId);
   let updatedCreator = null;
   if (creator) {
-    const existingIdx = (creator.projects || []).findIndex(p => p.id === project.id);
+    const existingIdx = (creator.projects || []).findIndex(p => p.id === projectToSave.id);
     const updatedProjects = existingIdx >= 0
-      ? creator.projects.map(p => p.id === project.id ? { ...p, ...project } : p)
-      : [project, ...(creator.projects || [])];
+      ? creator.projects.map(p => p.id === projectToSave.id ? { ...p, ...projectToSave } : p)
+      : [projectToSave, ...(creator.projects || [])];
     updatedCreator = { ...creator, projects: updatedProjects };
     saveMarketplaceState(updateCreatorRecord(state, updatedCreator));
   }
 
   // Sync to database: both project row and updated creator profile row
   try {
-    await syncProjectToDb(creatorId, project);
+    await syncProjectToDb(creatorId, projectToSave);
     if (updatedCreator) {
       await syncCreatorToDb(updatedCreator);
     }
@@ -1272,7 +1299,7 @@ export async function savePortfolioProject(creatorId, project) {
     metadata: { title: project.title, category: project.category }
   }).catch(() => {});
 
-  return project;
+  return projectToSave;
 }
 
 export async function deletePortfolioProject(creatorId, projectId) {
@@ -2164,6 +2191,88 @@ export async function saveCreatorTrustVerification(creatorId, trustData) {
 import { executeFilteringPipeline } from '../../server/filteringPipeline.js';
 
 /**
+ * Sanitizes candidate creators for pipeline network transmission.
+ * Strips heavy binary Data URIs (photos/videos) from image, video, and media items,
+ * replacing them with lightweight storage paths or reference identifiers, while preserving
+ * 100% of the metadata fields (creativeStyle, format, tools, capabilities, clientType)
+ * needed by the deterministic filtering pipeline and matching engine.
+ */
+export function sanitizePipelineCandidates(creators) {
+  if (!Array.isArray(creators)) return creators;
+
+  return creators.map(creator => {
+    if (!creator || typeof creator !== 'object') return creator;
+
+    const sanitized = { ...creator };
+
+    // Strip large data URI avatar
+    if (typeof sanitized.avatar === 'string' && sanitized.avatar.startsWith('data:') && sanitized.avatar.length > 2048) {
+      sanitized.avatar = sanitized.avatar.slice(0, 100) + '...';
+    }
+
+    const rawProjects = Array.isArray(sanitized.projects)
+      ? sanitized.projects
+      : (Array.isArray(sanitized.portfolio_projects)
+        ? sanitized.portfolio_projects
+        : (Array.isArray(sanitized.portfolio) ? sanitized.portfolio : null));
+
+    if (Array.isArray(rawProjects)) {
+      sanitized.projects = rawProjects.map(proj => {
+        if (!proj || typeof proj !== 'object') return proj;
+        const cleanProj = { ...proj };
+
+        if (typeof cleanProj.image === 'string' && cleanProj.image.startsWith('data:')) {
+          cleanProj.image = cleanProj.storagePath || cleanProj.durableUrl || cleanProj.previewUrl || cleanProj.id || '[persisted-image]';
+        }
+        if (typeof cleanProj.video === 'string' && cleanProj.video.startsWith('data:')) {
+          cleanProj.video = cleanProj.storagePath || cleanProj.durableUrl || cleanProj.previewUrl || cleanProj.id || '[persisted-video]';
+        }
+
+        if (Array.isArray(cleanProj.media)) {
+          cleanProj.media = cleanProj.media.map(item => {
+            if (!item || typeof item !== 'object') return item;
+            const cleanItem = { ...item };
+            if (typeof cleanItem.url === 'string' && cleanItem.url.startsWith('data:')) {
+              cleanItem.url = cleanItem.storagePath || cleanItem.durableUrl || cleanItem.previewUrl || cleanItem.id || '[persisted-media]';
+            }
+            if (typeof cleanItem.previewUrl === 'string' && cleanItem.previewUrl.startsWith('data:')) {
+              cleanItem.previewUrl = cleanItem.storagePath || cleanItem.durableUrl || cleanItem.id || '[persisted-media]';
+            }
+            if (typeof cleanItem.durableUrl === 'string' && cleanItem.durableUrl.startsWith('data:')) {
+              cleanItem.durableUrl = cleanItem.storagePath || cleanItem.id || '[persisted-media]';
+            }
+            return cleanItem;
+          });
+        }
+
+        return cleanProj;
+      });
+    }
+
+    return sanitized;
+  });
+}
+
+/**
+ * Sanitizes campaign brief parameters for pipeline network transmission.
+ */
+export function sanitizePipelineCampaign(campaign) {
+  if (!campaign || typeof campaign !== 'object') return campaign;
+  const cleanCampaign = { ...campaign };
+  if (Array.isArray(cleanCampaign.moodboard)) {
+    cleanCampaign.moodboard = cleanCampaign.moodboard.map(item => {
+      if (!item || typeof item !== 'object') return item;
+      const cleanItem = { ...item };
+      if (typeof cleanItem.url === 'string' && cleanItem.url.startsWith('data:')) {
+        cleanItem.url = cleanItem.storagePath || cleanItem.id || '[persisted-image]';
+      }
+      return cleanItem;
+    });
+  }
+  return cleanCampaign;
+}
+
+/**
  * Executes the backend campaign-to-creator filtering pipeline.
  * Tries the live server endpoint /api/pipeline/filter first.
  * If running in static/offline client mode, executes the deterministic pipeline engine directly.
@@ -2174,9 +2283,11 @@ import { executeFilteringPipeline } from '../../server/filteringPipeline.js';
  */
 export async function executeCampaignFilteringPipeline(campaign, creators = null, options = {}) {
   const isNatural = typeof campaign === 'string' || (campaign && typeof campaign.naturalBrief === 'string');
+  const cleanCampaign = isNatural ? campaign : sanitizePipelineCampaign(campaign);
+  const cleanCreators = sanitizePipelineCandidates(creators);
   const payload = isNatural
     ? { naturalBrief: typeof campaign === 'string' ? campaign : campaign.naturalBrief, options }
-    : { campaign, creators, options };
+    : { campaign: cleanCampaign, creators: cleanCreators, options };
 
   // Prepare request headers; attach authenticated session token if available
   const headers = { 'Content-Type': 'application/json' };
@@ -2233,8 +2344,8 @@ export async function executeCampaignFilteringPipeline(campaign, creators = null
   }
 
   // 2. Direct engine execution fallback for structured campaigns
-  const pool = creators || (getInitialMarketplaceState().creators || CREATORS);
-  const result = executeFilteringPipeline({ campaign, creators: pool, options });
+  const pool = cleanCreators || (getInitialMarketplaceState().creators || CREATORS);
+  const result = executeFilteringPipeline({ campaign: cleanCampaign, creators: pool, options });
   return { ok: true, source: 'client-deterministic-fallback', ...result };
 }
 

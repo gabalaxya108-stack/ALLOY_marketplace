@@ -497,8 +497,8 @@ export default function CreatorWorkspaceView({
     const coverItem = mediaList.find(m => m.isCover) || mediaList[0];
     const videoItem = mediaList.find(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || ''));
 
-    const finalImage = coverItem ? coverItem.url : (projectForm.image || '');
-    const finalVideo = videoItem ? videoItem.url : (projectForm.video || null);
+    const finalImage = coverItem ? (coverItem.durableUrl || coverItem.url) : (projectForm.image || '');
+    const finalVideo = videoItem ? (videoItem.durableUrl || videoItem.url) : (projectForm.video || null);
 
     if (!finalImage.trim() && mediaList.length === 0) {
       errors.image = 'At least one creative asset (image or video) is required';
@@ -3082,8 +3082,8 @@ export default function CreatorWorkspaceView({
                     setProjectForm(prev => ({
                       ...prev,
                       media: newMedia,
-                      image: cover ? cover.url : prev.image,
-                      video: firstVid ? firstVid.url : prev.video
+                      image: cover ? (cover.durableUrl || cover.url) : prev.image,
+                      video: firstVid ? (firstVid.durableUrl || firstVid.url) : prev.video
                     }));
                     if (newMedia.length > 0 && projectFormErrors.image) {
                       setProjectFormErrors(prev => ({ ...prev, image: null }));

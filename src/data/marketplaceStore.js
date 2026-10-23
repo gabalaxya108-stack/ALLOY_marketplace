@@ -414,12 +414,22 @@ export function getInitialMarketplaceState() {
                 'Lighting and visual aesthetics'
               ];
             }
-            // Ensure projects retain or merge workflowStages
+            // Ensure projects retain or merge workflowStages and sanitize any transient blob: URLs
             if (Array.isArray(updatedC.projects)) {
               updatedC.projects = updatedC.projects.map(p => {
                 const seedProj = seedCreator?.projects?.find(sp => sp.id === p.id);
+                const sanitizedMedia = Array.isArray(p.media) ? p.media.map(m => ({
+                  ...m,
+                  url: (m.url && m.url.startsWith('blob:') && m.durableUrl) ? m.durableUrl : m.url
+                })) : (seedProj?.media || []);
+                const cover = sanitizedMedia.find(m => m.isCover) || sanitizedMedia[0];
+                const cleanImage = (p.image && p.image.startsWith('blob:'))
+                  ? (cover?.durableUrl || cover?.url || seedProj?.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=85')
+                  : (p.image || seedProj?.image || '');
                 return {
                   ...p,
+                  image: cleanImage,
+                  media: sanitizedMedia,
                   workflowStages: Array.isArray(p.workflowStages) && p.workflowStages.length > 0
                     ? p.workflowStages
                     : (seedProj?.workflowStages || [])

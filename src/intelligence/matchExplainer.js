@@ -67,15 +67,26 @@ export function explainMatch(campaign, creator) {
     );
   }
 
-  // Visual style alignment bullet
-  const matchedStyles = (creator.styles || []).filter(s => cText.includes(s.toLowerCase()));
+  // Visual style alignment bullet (inspecting creator styles & verified project styles)
+  const projectStyles = (relevantProjects || []).flatMap(p => {
+    const s = p.creativeStyle || p.creative_style || p.style;
+    return typeof s === 'string' ? s.split(/[,|/]/).map(x => x.trim()).filter(Boolean) : [];
+  });
+  const allAttributableStyles = Array.from(new Set([...(creator.styles || []), ...projectStyles]));
+  const matchedStyles = allAttributableStyles.filter(s => cText.includes(s.toLowerCase()));
   if (matchedStyles.length > 0) {
+    const fromProject = relevantProjects.find(p => {
+      const s = String(p.creativeStyle || p.creative_style || p.style || '').toLowerCase();
+      return matchedStyles.some(ms => s.includes(ms.toLowerCase()));
+    });
     highlights.push(
-      `Demonstrated visual style aligns with requested ${matchedStyles.join(' and ')} aesthetic.`
+      fromProject
+        ? `Demonstrated visual style aligns with requested ${matchedStyles.join(' and ')} aesthetic (backed by project "${fromProject.title}").`
+        : `Demonstrated visual style aligns with requested ${matchedStyles.join(' and ')} aesthetic.`
     );
   } else {
     highlights.push(
-      `Creator's primary aesthetic is ${creator.styles?.[0] || 'Editorial'}, providing polished visual execution.`
+      `Creator's primary aesthetic is ${creator.styles?.[0] || projectStyles[0] || 'Editorial'}, providing polished visual execution.`
     );
   }
 
