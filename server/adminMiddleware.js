@@ -1107,6 +1107,7 @@ async function handleRegister(req, res, body) {
   const password = body.password || '';
   const role = body.role === 'creator' ? 'creator' : 'brand';
   const displayName = body.displayName || body.name || email.split('@')[0];
+  const details = body.details || body || {};
 
   if (!email || !email.includes('@')) {
     return sendJson(res, 400, {
@@ -1157,40 +1158,87 @@ async function handleRegister(req, res, body) {
     const userId = newUser.user.id;
 
     // Upsert public.profiles
+    const avatarUrl = details.avatar || details.avatarUrl || (role === 'creator'
+      ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'
+      : (details.logo || ''));
+
     await serviceClient.from('profiles').upsert({
       id: userId,
       email,
       role,
       display_name: displayName,
+      avatar_url: avatarUrl,
       updated_at: new Date().toISOString()
     }, { onConflict: 'id' });
 
-    // Isolated fresh start: provision brand or creator record
+    let creatorRecord = null;
+    let brandRecord = null;
+
+    // Isolated fresh start: provision brand or creator record with rich database fields
     if (role === 'creator') {
-      const handle = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}_${userId.slice(0, 4)}`;
-      await serviceClient.from('creator_profiles').upsert({
+      const handle = details.handle 
+        ? (details.handle.startsWith('@') ? details.handle : `@${details.handle}`)
+        : `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}_${userId.slice(0, 4)}`;
+      const experience = details.experience || '3+ years in AI visual arts';
+      const specialty = details.specialty || 'AI Cinematic Direction';
+      const heroWork = details.heroWork || specialty || 'Flagship Studio Showcase';
+      const bio = details.bio || `${displayName} specializes in ${specialty} and cinematic narrative direction.`;
+      const creativeIdentity = details.creativeIdentity || specialty;
+      const location = details.location || 'Remote / Global';
+      const tools = Array.isArray(details.tools) && details.tools.length ? details.tools : ['Midjourney', 'Runway Gen-3', 'Unreal Engine'];
+      const styles = Array.isArray(details.styles) && details.styles.length ? details.styles : ['Cinematic', 'Editorial', 'Hyperreal'];
+
+      creatorRecord = {
         id: `creator-${userId.slice(0, 8)}`,
         user_id: userId,
         name: displayName,
         handle,
+        experience,
+        specialty,
+        hero_work: heroWork,
+        avatar: avatarUrl,
+        bio,
+        creative_identity: creativeIdentity,
+        location,
+        tools,
+        styles,
+        availability: 'Available for projects',
+        status_badge: 'Available now',
+        turnaround: '48h concept frames',
         status: 'Published',
         visibility: 'published',
         is_demo: false,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+      };
+
+      await serviceClient.from('creator_profiles').upsert(creatorRecord, { onConflict: 'id' });
     } else {
       const emailKey = email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
       const brandId = `brand-${emailKey}`;
-      await serviceClient.from('brands').upsert({
+      const handle = details.handle 
+        ? (details.handle.startsWith('@') ? details.handle : `@${details.handle}`)
+        : `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+      const industry = details.industry || 'Beverages & Drinks';
+      const description = details.description || details.productFocus || `${displayName} private studio workspace.`;
+      const website = details.website || '';
+      const logo = details.logo || avatarUrl || '';
+      const aesthetic = details.aesthetic || 'Modern & Editorial';
+
+      brandRecord = {
         id: brandId,
         user_id: userId,
         name: displayName,
+        handle,
+        industry,
+        description,
+        website,
+        logo,
+        aesthetic,
         is_demo: false,
-        industry: 'Creative & Digital',
-        description: `${displayName} private studio workspace.`,
-        aesthetic: 'Modern & Editorial',
         updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+      };
+
+      await serviceClient.from('brands').upsert(brandRecord, { onConflict: 'id' });
     }
 
     // Log registration
@@ -1219,8 +1267,13 @@ async function handleRegister(req, res, body) {
           id: userId,
           email,
           role,
-          display_name: displayName
-        }
+          display_name: displayName,
+          avatar_url: avatarUrl,
+          ...(creatorRecord || brandRecord || {})
+        },
+        creator: creatorRecord,
+        brand: brandRecord,
+        profileDetails: creatorRecord || brandRecord
       }
     });
   } catch (err) {
@@ -1311,36 +1364,88 @@ async function handleRegisterOrLogin(req, res, body) {
       userId = newUser.user.id;
     }
 
+    const details = body.details || body;
+    const avatarUrl = details.avatar || details.avatarUrl || (role === 'creator'
+      ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'
+      : (details.logo || ''));
+
     // 2. Upsert public.profiles
     await serviceClient.from('profiles').upsert({
       id: userId,
       email,
       role,
       display_name: displayName,
+      avatar_url: avatarUrl,
       updated_at: new Date().toISOString()
     }, { onConflict: 'id' });
 
+    let creatorRecord = null;
+    let brandRecord = null;
+
     // 3. Upsert creator_profiles or brands
     if (role === 'creator') {
-      const handle = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}_${userId.slice(0, 4)}`;
-      await serviceClient.from('creator_profiles').upsert({
+      const handle = details.handle 
+        ? (details.handle.startsWith('@') ? details.handle : `@${details.handle}`)
+        : `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}_${userId.slice(0, 4)}`;
+      const experience = details.experience || '3+ years in AI visual arts';
+      const specialty = details.specialty || 'AI Cinematic Direction';
+      const heroWork = details.heroWork || specialty || 'Flagship Studio Showcase';
+      const bio = details.bio || `${displayName} specializes in ${specialty} and cinematic narrative direction.`;
+      const creativeIdentity = details.creativeIdentity || specialty;
+      const location = details.location || 'Remote / Global';
+      const tools = Array.isArray(details.tools) && details.tools.length ? details.tools : ['Midjourney', 'Runway Gen-3', 'Unreal Engine'];
+      const styles = Array.isArray(details.styles) && details.styles.length ? details.styles : ['Cinematic', 'Editorial', 'Hyperreal'];
+
+      creatorRecord = {
         id: `creator-${userId.slice(0, 8)}`,
         user_id: userId,
         name: displayName,
         handle,
+        experience,
+        specialty,
+        hero_work: heroWork,
+        avatar: avatarUrl,
+        bio,
+        creative_identity: creativeIdentity,
+        location,
+        tools,
+        styles,
+        availability: 'Available for projects',
+        status_badge: 'Available now',
+        turnaround: '48h concept frames',
         status: 'Published',
         visibility: 'published',
         is_demo: false,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+      };
+
+      await serviceClient.from('creator_profiles').upsert(creatorRecord, { onConflict: 'id' });
     } else {
-      await serviceClient.from('brands').upsert({
-        id: `brand-${userId.slice(0, 8)}`,
+      const brandId = `brand-${userId.slice(0, 8)}`;
+      const handle = details.handle 
+        ? (details.handle.startsWith('@') ? details.handle : `@${details.handle}`)
+        : `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+      const industry = details.industry || 'Beverages & Drinks';
+      const description = details.description || details.productFocus || `${displayName} private studio workspace.`;
+      const website = details.website || '';
+      const logo = details.logo || avatarUrl || '';
+      const aesthetic = details.aesthetic || 'Modern & Editorial';
+
+      brandRecord = {
+        id: brandId,
         user_id: userId,
         name: displayName,
+        handle,
+        industry,
+        description,
+        website,
+        logo,
+        aesthetic,
         is_demo: false,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+      };
+
+      await serviceClient.from('brands').upsert(brandRecord, { onConflict: 'id' });
     }
 
     // 4. Log in public.activity_logs

@@ -7,7 +7,8 @@ import React, { useState, useEffect } from 'react';
 import {
   X, Briefcase, Palette, ArrowRight, ShieldCheck,
   Mail, Lock, UserPlus, AlertCircle, Loader, Sparkles, Check,
-  KeyRound, RotateCcw
+  KeyRound, RotateCcw, Camera, AtSign, Clock, Award, Building, Globe,
+  ArrowLeft, CheckCircle2, ChevronRight
 } from 'lucide-react';
 import {
   signIn,
@@ -21,6 +22,36 @@ import {
   setGoogleClientId
 } from '../services/marketplaceBackend';
 
+const CURATED_AVATARS = [
+  { id: 'av1', label: 'Editorial', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80' },
+  { id: 'av2', label: 'Studio', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80' },
+  { id: 'av3', label: 'Minimal', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80' },
+  { id: 'av4', label: 'Cinematic', url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=400&q=80' }
+];
+
+const CREATOR_EXPERIENCE_OPTIONS = [
+  '3+ years in AI Video & Cinema',
+  '5+ years Senior Visual Director',
+  '1-2 years Emerging AI Creator',
+  '8+ years Veteran Director & CGI Specialist'
+];
+
+const CREATOR_SPECIALTY_OPTIONS = [
+  'AI Cinematic Video & Animation',
+  'Luxury Drinks & Beverage Visuals',
+  'High-Fashion Synthetic Editorial',
+  '3D Spatial Product Visuals',
+  'Architectural & World-Building Stills'
+];
+
+const BRAND_INDUSTRY_OPTIONS = [
+  'Beverages & Drinks',
+  'Luxury Beauty & Skincare',
+  'Fashion & Haute Couture',
+  'Consumer Electronics & Spatial Tech',
+  'Creative Agency & Media Studio'
+];
+
 export default function LoginModal({
   isOpen,
   onClose,
@@ -31,11 +62,25 @@ export default function LoginModal({
   pendingActionNotice = null
 }) {
   const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup' | 'forgot'
+  const [signupStep, setSignupStep] = useState(1); // 1: Credentials, 2: Mandatory (*), 3: Visual (Skip)
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [selectedRole, setSelectedRole] = useState(initialRole || 'brand'); // 'brand' | 'creator'
+  
+  // Rich profile fields demanded by database
+  const [handle, setHandle] = useState('');
+  const [experience, setExperience] = useState('3+ years in AI Video & Cinema');
+  const [specialty, setSpecialty] = useState('AI Cinematic Video & Animation');
+  const [industry, setIndustry] = useState('Beverages & Drinks');
+  const [productFocus, setProductFocus] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState(CURATED_AVATARS[0].url);
+  const [bio, setBio] = useState('');
+  const [location, setLocation] = useState('');
+  const [website, setWebsite] = useState('');
+  const [aesthetic, setAesthetic] = useState('Modern & Editorial');
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [errorCode, setErrorCode] = useState(''); // 'ACCOUNT_NOT_FOUND' | 'INVALID_PASSWORD' | 'ACCOUNT_EXISTS'
@@ -207,7 +252,128 @@ export default function LoginModal({
     if (onClose) onClose();
   };
 
-  // Credentials submission (Strict Supabase Database verification, fresh start signup, direct password reset)
+  const executeRegistration = async (isSkippingVisualStep = false) => {
+    setErrorMsg('');
+    setErrorCode('');
+    setSuccessMsg('');
+    setLoading(true);
+
+    const safeHandle = handle.trim() 
+      ? (handle.trim().startsWith('@') ? handle.trim() : `@${handle.trim()}`)
+      : `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+
+    const profileDetails = selectedRole === 'creator' ? {
+      handle: safeHandle,
+      experience: experience || '3+ years in AI Video & Cinema',
+      specialty: specialty || 'AI Cinematic Video & Animation',
+      heroWork: specialty || 'AI Cinematic Direction',
+      avatar: (!isSkippingVisualStep && avatarUrl) ? avatarUrl : CURATED_AVATARS[0].url,
+      bio: (!isSkippingVisualStep && bio.trim()) 
+        ? bio.trim() 
+        : `${displayName || 'Creator'} specializes in ${specialty || 'AI Cinematic Direction'} and generative cinema storytelling.`,
+      creativeIdentity: specialty || 'AI Creative Director',
+      location: (!isSkippingVisualStep && location.trim()) ? location.trim() : 'Remote / Global',
+      tools: ['Midjourney', 'Runway Gen-3', 'Unreal Engine'],
+      styles: ['Cinematic', 'Editorial', 'Hyperreal']
+    } : {
+      handle: safeHandle,
+      industry: industry || 'Beverages & Drinks',
+      description: (!isSkippingVisualStep && productFocus.trim()) 
+        ? productFocus.trim() 
+        : `${displayName || 'Brand'} private studio workspace.`,
+      productFocus: productFocus || `${displayName || 'Brand'} private studio workspace.`,
+      website: (!isSkippingVisualStep && website.trim()) ? website.trim() : '',
+      logo: (!isSkippingVisualStep && avatarUrl) ? avatarUrl : '',
+      aesthetic: (!isSkippingVisualStep && aesthetic.trim()) ? aesthetic.trim() : 'Modern & Editorial'
+    };
+
+    try {
+      const result = await registerAccount(email, password, selectedRole, displayName, profileDetails);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('creasync_active_role', selectedRole);
+        } catch (e) {}
+      }
+      setSuccessMsg('Studio account created and registered in database! Entering your fresh workspace...');
+      setTimeout(() => {
+        if (onLoginSuccess) {
+          onLoginSuccess(result?.user, selectedRole);
+        } else if (selectedRole === 'brand') {
+          onLoginBrand(result?.user);
+        } else {
+          onLoginCreator(result?.user);
+        }
+        if (onClose) onClose();
+      }, 500);
+    } catch (err) {
+      if (err.code === 'ACCOUNT_EXISTS' || err.message?.toLowerCase().includes('already exists')) {
+        setErrorCode('ACCOUNT_EXISTS');
+        setErrorMsg('An account with this email already exists in our database. Please sign in or reset your password.');
+        setSignupStep(1);
+      } else {
+        setErrorMsg(err.message || 'Account creation failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStep1Continue = (e) => {
+    if (e) e.preventDefault();
+    if (!email || !email.includes('@')) {
+      setErrorMsg('Please enter a valid email address.');
+      return;
+    }
+    if (!password || password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters.');
+      return;
+    }
+    setErrorMsg('');
+    if (!handle) {
+      const suggested = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+      setHandle(suggested);
+    }
+    if (!displayName) {
+      const suggestedName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      setDisplayName(suggestedName);
+    }
+    setSignupStep(2);
+  };
+
+  const handleStep2Continue = (e) => {
+    if (e) e.preventDefault();
+    if (!displayName.trim()) {
+      setErrorMsg(selectedRole === 'creator' ? 'Please provide your Full Name / Studio Name (* required).' : 'Please provide your Brand or Company Name (* required).');
+      return;
+    }
+    if (!handle.trim()) {
+      setErrorMsg('Please provide a unique handle (* required).');
+      return;
+    }
+    if (selectedRole === 'creator') {
+      if (!experience.trim()) {
+        setErrorMsg('Please select or specify your professional experience / age (* required).');
+        return;
+      }
+      if (!specialty.trim()) {
+        setErrorMsg('Please select or specify your primary creative work / specialty (* required).');
+        return;
+      }
+    } else {
+      if (!industry.trim()) {
+        setErrorMsg('Please specify your industry sector (* required).');
+        return;
+      }
+      if (!productFocus.trim()) {
+        setErrorMsg('Please specify your primary work or product focus (* required).');
+        return;
+      }
+    }
+    setErrorMsg('');
+    setSignupStep(3);
+  };
+
+  // Credentials submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
@@ -215,37 +381,15 @@ export default function LoginModal({
     setSuccessMsg('');
     setIsDemoFallbackOpen(false);
     setDemoFallbackData(null);
-    setLoading(true);
 
     if (authMode === 'signup') {
-      try {
-        const result = await registerAccount(email, password, selectedRole, displayName);
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('creasync_active_role', selectedRole);
-          } catch (e) {}
-        }
-        setSuccessMsg('Account created and registered in database! Entering your fresh workspace...');
-        setTimeout(() => {
-          if (onLoginSuccess) {
-            onLoginSuccess(result?.user, selectedRole);
-          } else if (selectedRole === 'brand') {
-            onLoginBrand(result?.user);
-          } else {
-            onLoginCreator(result?.user);
-          }
-          if (onClose) onClose();
-        }, 500);
-      } catch (err) {
-        if (err.code === 'ACCOUNT_EXISTS' || err.message?.toLowerCase().includes('already exists')) {
-          setErrorCode('ACCOUNT_EXISTS');
-          setErrorMsg('An account with this email already exists in our database. Please sign in or reset your password.');
-        } else {
-          setErrorMsg(err.message || 'Account creation failed. Please try again.');
-        }
-      } finally {
-        setLoading(false);
+      if (signupStep === 1) {
+        return handleStep1Continue(e);
       }
+      if (signupStep === 2) {
+        return handleStep2Continue(e);
+      }
+      return executeRegistration(false);
     } else if (authMode === 'forgot') {
       // Direct hassle-free password reset
       if (password !== confirmPassword) {
@@ -380,12 +524,42 @@ export default function LoginModal({
 
             <h2 id="login-modal-title" className="alloy-login-headline font-editorial">
               {authMode === 'signup'
-                ? 'Create Your Account'
+                ? (signupStep === 1
+                    ? 'Create Your Studio Account'
+                    : signupStep === 2
+                    ? `${selectedRole === 'creator' ? 'Creator' : 'Brand'} Studio Essentials`
+                    : 'Visuals & Creative Bio')
                 : authMode === 'forgot'
                 ? 'Reset Account Password'
                 : 'Login to Alloy'}
             </h2>
           </div>
+
+          {/* Progressive Studio Onboarding Step Indicator */}
+          {authMode === 'signup' && (
+            <div className="auth-step-track">
+              <div className="auth-step-dot-group">
+                <div className={`auth-step-dot ${signupStep === 1 ? 'is-active' : (signupStep > 1 ? 'is-done' : '')}`}>
+                  {signupStep > 1 ? '✓' : '1'}
+                </div>
+                <span className="auth-step-label">Account</span>
+              </div>
+              <ChevronRight size={12} style={{ color: '#A09689' }} />
+              <div className="auth-step-dot-group">
+                <div className={`auth-step-dot ${signupStep === 2 ? 'is-active' : (signupStep > 2 ? 'is-done' : '')}`}>
+                  {signupStep > 2 ? '✓' : '2'}
+                </div>
+                <span className="auth-step-label">Studio *</span>
+              </div>
+              <ChevronRight size={12} style={{ color: '#A09689' }} />
+              <div className="auth-step-dot-group">
+                <div className={`auth-step-dot ${signupStep === 3 ? 'is-active' : ''}`}>
+                  3
+                </div>
+                <span className="auth-step-label">Visuals (Skip)</span>
+              </div>
+            </div>
+          )}
 
           {/* Pending Action Callout Notice (if triggered by a protected action) */}
           {pendingActionNotice && (
@@ -395,8 +569,8 @@ export default function LoginModal({
             </div>
           )}
 
-          {/* PRIMARY FIRST SECTION: Google OAuth 2.0 Direct Sign In (Hidden in forgot password mode) */}
-          {authMode !== 'forgot' && (
+          {/* PRIMARY FIRST SECTION: Google OAuth 2.0 Direct Sign In (Hidden in forgot password or step 2/3) */}
+          {authMode !== 'forgot' && !(authMode === 'signup' && signupStep > 1) && (
             <div className="alloy-google-hero-section mb-2">
               {/* Role Preselection / Selector (Inline) */}
               <div className="auth-role-select-group mb-3">
@@ -496,65 +670,83 @@ export default function LoginModal({
           )}
 
           {/* Form Divider / Mode Guidance */}
-          <div className="alloy-auth-divider my-3">
-            <span>
-              {authMode === 'forgot'
-                ? 'Direct Password Update'
-                : 'Or Sign In with Email & Password'}
-            </span>
-          </div>
+          {!(authMode === 'signup' && signupStep > 1) && (
+            <div className="alloy-auth-divider my-3">
+              <span>
+                {authMode === 'forgot'
+                  ? 'Direct Password Update'
+                  : 'Or Sign In with Email & Password'}
+              </span>
+            </div>
+          )}
 
           {/* Mode Switcher: Login vs Create Account vs Forgot Password Loop */}
-          <div className="alloy-auth-toggle-bar">
-            {authMode === 'forgot' ? (
-              <button
-                type="button"
-                className="auth-toggle-tab is-active w-full text-center"
-                onClick={() => {
-                  setAuthMode('signin');
-                  setErrorMsg('');
-                  setErrorCode('');
-                  setConfirmPassword('');
-                }}
-              >
-                ← Back to Login
-              </button>
-            ) : (
-              <>
+          {!(authMode === 'signup' && signupStep > 1) && (
+            <div className="alloy-auth-toggle-bar">
+              {authMode === 'forgot' ? (
                 <button
                   type="button"
-                  className={`auth-toggle-tab ${authMode === 'signin' ? 'is-active' : ''}`}
+                  className="auth-toggle-tab is-active w-full text-center"
                   onClick={() => {
                     setAuthMode('signin');
                     setErrorMsg('');
                     setErrorCode('');
-                    setIsDemoFallbackOpen(false);
-                    const creds = DEMO_CREDENTIALS[selectedRole];
-                    if (creds) {
-                      setEmail(creds.email);
-                      setPassword(creds.password);
-                    }
+                    setConfirmPassword('');
                   }}
-                  id="auth-tab-signin"
                 >
-                  Login
+                  ← Back to Login
                 </button>
-                <button
-                  type="button"
-                  className={`auth-toggle-tab ${authMode === 'signup' ? 'is-active' : ''}`}
-                  onClick={() => {
-                    setAuthMode('signup');
-                    setErrorMsg('');
-                    setErrorCode('');
-                    setIsDemoFallbackOpen(false);
-                  }}
-                  id="auth-tab-signup"
-                >
-                  Create Account
-                </button>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className={`auth-toggle-tab ${authMode === 'signin' ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setAuthMode('signin');
+                      setErrorMsg('');
+                      setErrorCode('');
+                      setIsDemoFallbackOpen(false);
+                      const creds = DEMO_CREDENTIALS[selectedRole];
+                      if (creds) {
+                        setEmail(creds.email);
+                        setPassword(creds.password);
+                      }
+                    }}
+                    id="auth-tab-signin"
+                  >
+                    Login
+                  </button>
+                  <button
+                    type="button"
+                    className={`auth-toggle-tab ${authMode === 'signup' ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setAuthMode('signup');
+                      setSignupStep(1);
+                      setErrorMsg('');
+                      setErrorCode('');
+                      setIsDemoFallbackOpen(false);
+                    }}
+                    id="auth-tab-signup"
+                  >
+                    Create Account
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Step 2 & 3 Editorial Helper Guidance */}
+          {authMode === 'signup' && signupStep === 2 && (
+            <div style={{ fontSize: '0.74rem', color: '#685F53', marginBottom: '10px', textAlign: 'left', lineHeight: 1.45, background: '#FAF7F2', padding: '6px 10px', borderRadius: '6px', border: '1px solid #E8DFD3' }}>
+              Starred fields (<span className="auth-req-star">*</span>) are required to create your verified database profile.
+            </div>
+          )}
+
+          {authMode === 'signup' && signupStep === 3 && (
+            <div style={{ fontSize: '0.74rem', color: '#685F53', marginBottom: '10px', textAlign: 'left', lineHeight: 1.45, background: '#FAF7F2', padding: '6px 10px', borderRadius: '6px', border: '1px solid #E8DFD3' }}>
+              Personalize your visual identity now, or tap <strong>Skip for now</strong> to launch immediately with luxury presets.
+            </div>
+          )}
 
           {/* Error / Success Messages with Action Loops */}
           {errorMsg && (
@@ -657,156 +849,557 @@ export default function LoginModal({
             </div>
           )}
 
-          {/* Credentials Form */}
+          {/* Credentials & Progressive Studio Setup Form */}
           <form onSubmit={handleSubmit} className="alloy-auth-form">
-            {authMode === 'signup' && (
-              <div className="auth-input-container">
-                <UserPlus size={14} className="auth-input-icon" />
-                <input
-                  id="auth-name"
-                  type="text"
-                  className="auth-text-input"
-                  placeholder="Full Name / Studio Name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  required
-                />
-              </div>
-            )}
+            {/* SIGNUP STEP 1: Account Credentials */}
+            {authMode === 'signup' && signupStep === 1 && (
+              <>
+                <div className="auth-field-row">
+                  <div className="auth-field-header">
+                    <label htmlFor="auth-email" className="auth-field-title">
+                      Work Email <span className="auth-req-star">*</span>
+                    </label>
+                  </div>
+                  <div className="auth-input-container">
+                    <Mail size={14} className="auth-input-icon" />
+                    <input
+                      id="auth-email"
+                      type="email"
+                      className="auth-text-input"
+                      placeholder="e.g. director@studio.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
 
-            <div className="auth-input-container">
-              <Mail size={14} className="auth-input-icon" />
-              <input
-                id="auth-email"
-                type="email"
-                className="auth-text-input"
-                placeholder="Email Address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
+                <div className="auth-field-row">
+                  <div className="auth-field-header">
+                    <label htmlFor="auth-password" className="auth-field-title">
+                      Studio Password <span className="auth-req-star">*</span>
+                    </label>
+                  </div>
+                  <div className="auth-input-container">
+                    <Lock size={14} className="auth-input-icon" />
+                    <input
+                      id="auth-password"
+                      type="password"
+                      className="auth-text-input"
+                      placeholder="Min. 6 characters"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={6}
+                    />
+                  </div>
+                </div>
 
-            <div className="auth-input-container">
-              <Lock size={14} className="auth-input-icon" />
-              <input
-                id="auth-password"
-                type="password"
-                className="auth-text-input"
-                placeholder={authMode === 'forgot' ? "New Password (min. 6 characters)" : "Password (min. 6 characters)"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
-
-            {authMode === 'forgot' && (
-              <div className="auth-input-container">
-                <KeyRound size={14} className="auth-input-icon" />
-                <input
-                  id="auth-confirm-password"
-                  type="password"
-                  className="auth-text-input"
-                  placeholder="Confirm New Password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  minLength={6}
-                />
-              </div>
-            )}
-
-            {/* Forgot Password Link in Signin Mode */}
-            {authMode === 'signin' && (
-              <div className="auth-forgot-row">
-                <span className="auth-db-verified-badge">DB-VERIFIED SECURE ACCESS</span>
-                <button
-                  type="button"
-                  className="auth-forgot-btn"
-                  onClick={() => {
-                    setAuthMode('forgot');
-                    setErrorMsg('');
-                    setErrorCode('');
-                    setConfirmPassword('');
-                  }}
-                  id="btn-forgot-password-link"
-                >
-                  Forgot Password?
-                </button>
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <button type="submit" className="auth-submit-btn" disabled={loading} id="auth-submit-btn">
-              {loading ? (
-                <>
-                  <Loader size={14} className="auth-spinner" />
-                  <span>Connecting...</span>
-                </>
-              ) : (
-                <>
-                  <span>
-                    {authMode === 'signup'
-                      ? 'Create Account & Get Fresh Start'
-                      : authMode === 'forgot'
-                      ? 'Update Password & Enter Workspace'
-                      : `Login to ${selectedRole === 'brand' ? 'Brand Studio' : 'Creator Studio'}`}
-                  </span>
+                <button type="submit" className="auth-submit-btn" id="btn-step1-continue">
+                  <span>Continue to Studio Setup</span>
                   <ArrowRight size={14} />
-                </>
-              )}
-            </button>
+                </button>
+              </>
+            )}
+
+            {/* SIGNUP STEP 2: Mandatory Core Studio & Creator Details */}
+            {authMode === 'signup' && signupStep === 2 && (
+              <>
+                <div className="auth-field-row">
+                  <div className="auth-field-header">
+                    <label htmlFor="auth-name" className="auth-field-title">
+                      {selectedRole === 'creator' ? 'Full Name / Studio Name' : 'Brand / Company Name'} <span className="auth-req-star">*</span>
+                    </label>
+                  </div>
+                  <div className="auth-input-container">
+                    <UserPlus size={14} className="auth-input-icon" />
+                    <input
+                      id="auth-name"
+                      type="text"
+                      className="auth-text-input"
+                      placeholder={selectedRole === 'creator' ? "e.g. Elena Rostova / Lumina Studio" : "e.g. Lumina Botanica"}
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div className="auth-field-row">
+                  <div className="auth-field-header">
+                    <label htmlFor="auth-handle" className="auth-field-title">
+                      Unique Studio Handle <span className="auth-req-star">*</span>
+                    </label>
+                  </div>
+                  <div className="auth-input-container">
+                    <AtSign size={14} className="auth-input-icon" />
+                    <input
+                      id="auth-handle"
+                      type="text"
+                      className="auth-text-input"
+                      placeholder="@handle"
+                      value={handle}
+                      onChange={(e) => setHandle(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {selectedRole === 'creator' ? (
+                  <>
+                    <div className="auth-field-row">
+                      <div className="auth-field-header">
+                        <label htmlFor="auth-experience" className="auth-field-title">
+                          Experience & Professional Age <span className="auth-req-star">*</span>
+                        </label>
+                      </div>
+                      <div className="auth-input-container">
+                        <Clock size={14} className="auth-input-icon" />
+                        <input
+                          id="auth-experience"
+                          type="text"
+                          className="auth-text-input"
+                          placeholder="e.g. 3+ years in AI Video & Cinema"
+                          value={experience}
+                          onChange={(e) => setExperience(e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="auth-chips-grid">
+                        {CREATOR_EXPERIENCE_OPTIONS.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            className={`auth-chip-btn ${experience === opt ? 'is-active' : ''}`}
+                            onClick={() => setExperience(opt)}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="auth-field-row">
+                      <div className="auth-field-header">
+                        <label htmlFor="auth-specialty" className="auth-field-title">
+                          Primary Work / Specialty <span className="auth-req-star">*</span>
+                        </label>
+                      </div>
+                      <div className="auth-input-container">
+                        <Award size={14} className="auth-input-icon" />
+                        <input
+                          id="auth-specialty"
+                          type="text"
+                          className="auth-text-input"
+                          placeholder="e.g. AI Cinematic Video & Animation"
+                          value={specialty}
+                          onChange={(e) => setSpecialty(e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="auth-chips-grid">
+                        {CREATOR_SPECIALTY_OPTIONS.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            className={`auth-chip-btn ${specialty === opt ? 'is-active' : ''}`}
+                            onClick={() => setSpecialty(opt)}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="auth-field-row">
+                      <div className="auth-field-header">
+                        <label htmlFor="auth-industry" className="auth-field-title">
+                          Industry Sector <span className="auth-req-star">*</span>
+                        </label>
+                      </div>
+                      <div className="auth-input-container">
+                        <Building size={14} className="auth-input-icon" />
+                        <input
+                          id="auth-industry"
+                          type="text"
+                          className="auth-text-input"
+                          placeholder="e.g. Beverages & Drinks"
+                          value={industry}
+                          onChange={(e) => setIndustry(e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="auth-chips-grid">
+                        {BRAND_INDUSTRY_OPTIONS.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            className={`auth-chip-btn ${industry === opt ? 'is-active' : ''}`}
+                            onClick={() => setIndustry(opt)}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="auth-field-row">
+                      <div className="auth-field-header">
+                        <label htmlFor="auth-product-focus" className="auth-field-title">
+                          Primary Work / Product Focus <span className="auth-req-star">*</span>
+                        </label>
+                      </div>
+                      <div className="auth-input-container">
+                        <Briefcase size={14} className="auth-input-icon" />
+                        <input
+                          id="auth-product-focus"
+                          type="text"
+                          className="auth-text-input"
+                          placeholder="e.g. Functional sparkling botanicals & restorative elixirs"
+                          value={productFocus}
+                          onChange={(e) => setProductFocus(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="auth-nav-action-row">
+                  <button
+                    type="button"
+                    className="auth-nav-back-btn"
+                    onClick={() => setSignupStep(1)}
+                  >
+                    <ArrowLeft size={13} />
+                    <span>Back</span>
+                  </button>
+                  <button
+                    type="submit"
+                    className="auth-submit-btn"
+                    id="btn-step2-continue"
+                  >
+                    <span>Continue to Visuals</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* SIGNUP STEP 3: Instagram-Style Skippable Visual Profile & Bio */}
+            {authMode === 'signup' && signupStep === 3 && (
+              <>
+                <div className="auth-field-row">
+                  <div className="auth-field-header">
+                    <label className="auth-field-title">
+                      {selectedRole === 'creator' ? 'Profile Avatar' : 'Brand Logo'}
+                    </label>
+                    <span className="auth-opt-badge">Optional (Skippable)</span>
+                  </div>
+                  <div className="auth-avatar-section">
+                    <img
+                      src={avatarUrl || (selectedRole === 'creator' ? CURATED_AVATARS[0].url : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80')}
+                      alt="Avatar preview"
+                      className="auth-avatar-preview"
+                      onError={(e) => { e.target.src = CURATED_AVATARS[0].url; }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '0.68rem', color: '#736B5E', marginBottom: '4px' }}>
+                        Tap preset or paste direct URL:
+                      </div>
+                      <div className="auth-avatar-presets">
+                        {CURATED_AVATARS.map((av) => (
+                          <img
+                            key={av.id}
+                            src={av.url}
+                            alt={av.label}
+                            title={av.label}
+                            className={`auth-preset-thumb ${avatarUrl === av.url ? 'is-selected' : ''}`}
+                            onClick={() => setAvatarUrl(av.url)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="auth-input-container">
+                    <Camera size={14} className="auth-input-icon" />
+                    <input
+                      type="url"
+                      className="auth-text-input"
+                      placeholder="Paste image URL (optional)"
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="auth-field-row">
+                  <div className="auth-field-header">
+                    <label htmlFor="auth-bio" className="auth-field-title">
+                      {selectedRole === 'creator' ? 'Studio Bio / Philosophy' : 'Brand Summary / Vision'}
+                    </label>
+                    <span className="auth-opt-badge">Optional (Skippable)</span>
+                  </div>
+                  <textarea
+                    id="auth-bio"
+                    className="auth-textarea"
+                    rows={2}
+                    placeholder={selectedRole === 'creator'
+                      ? "e.g. Exploring sensory realism, synthetic cinematography, and luxury brand narratives..."
+                      : "e.g. Crafted botanicals redefining modern luxury hydration through conscious alchemy..."}
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                  />
+                </div>
+
+                <div className="auth-field-row">
+                  <div className="auth-field-header">
+                    <label htmlFor="auth-location" className="auth-field-title">
+                      Location / Studio Base
+                    </label>
+                    <span className="auth-opt-badge">Optional (Skippable)</span>
+                  </div>
+                  <div className="auth-input-container">
+                    <Globe size={14} className="auth-input-icon" />
+                    <input
+                      id="auth-location"
+                      type="text"
+                      className="auth-text-input"
+                      placeholder="e.g. Tokyo & London (or Remote)"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {selectedRole === 'brand' && (
+                  <>
+                    <div className="auth-field-row">
+                      <div className="auth-field-header">
+                        <label htmlFor="auth-website" className="auth-field-title">Official Website</label>
+                        <span className="auth-opt-badge">Optional</span>
+                      </div>
+                      <div className="auth-input-container">
+                        <Globe size={14} className="auth-input-icon" />
+                        <input
+                          id="auth-website"
+                          type="url"
+                          className="auth-text-input"
+                          placeholder="https://yourbrand.com"
+                          value={website}
+                          onChange={(e) => setWebsite(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="auth-field-row">
+                      <div className="auth-field-header">
+                        <label htmlFor="auth-aesthetic" className="auth-field-title">Brand Aesthetic</label>
+                        <span className="auth-opt-badge">Optional</span>
+                      </div>
+                      <div className="auth-input-container">
+                        <Sparkles size={14} className="auth-input-icon" />
+                        <input
+                          id="auth-aesthetic"
+                          type="text"
+                          className="auth-text-input"
+                          placeholder="e.g. Modern Minimalist Luxury"
+                          value={aesthetic}
+                          onChange={(e) => setAesthetic(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="auth-nav-action-row">
+                  <button
+                    type="button"
+                    className="auth-skip-btn"
+                    onClick={() => executeRegistration(true)}
+                    disabled={loading}
+                    id="auth-skip-step3-btn"
+                    title="Skip optional visuals and launch immediately with luxury curated presets"
+                  >
+                    <span>Skip for now →</span>
+                  </button>
+                  <button
+                    type="submit"
+                    className="auth-submit-btn"
+                    disabled={loading}
+                    id="auth-complete-step3-btn"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader size={14} className="auth-spinner" />
+                        <span>Saving to Database...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Complete & Launch</span>
+                        <ArrowRight size={14} />
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div style={{ textAlign: 'center', marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    className="auth-back-link"
+                    onClick={() => setSignupStep(2)}
+                  >
+                    <ArrowLeft size={12} />
+                    <span>Back to Studio Essentials</span>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* SIGNIN & FORGOT PASSWORD MODES */}
+            {authMode !== 'signup' && (
+              <>
+                <div className="auth-input-container">
+                  <Mail size={14} className="auth-input-icon" />
+                  <input
+                    id="auth-email"
+                    type="email"
+                    className="auth-text-input"
+                    placeholder="Email Address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="auth-input-container">
+                  <Lock size={14} className="auth-input-icon" />
+                  <input
+                    id="auth-password"
+                    type="password"
+                    className="auth-text-input"
+                    placeholder={authMode === 'forgot' ? "New Password (min. 6 characters)" : "Password (min. 6 characters)"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+
+                {authMode === 'forgot' && (
+                  <div className="auth-input-container">
+                    <KeyRound size={14} className="auth-input-icon" />
+                    <input
+                      id="auth-confirm-password"
+                      type="password"
+                      className="auth-text-input"
+                      placeholder="Confirm New Password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      minLength={6}
+                    />
+                  </div>
+                )}
+
+                {/* Forgot Password Link in Signin Mode */}
+                {authMode === 'signin' && (
+                  <div className="auth-forgot-row">
+                    <span className="auth-db-verified-badge">DB-VERIFIED SECURE ACCESS</span>
+                    <button
+                      type="button"
+                      className="auth-forgot-btn"
+                      onClick={() => {
+                        setAuthMode('forgot');
+                        setErrorMsg('');
+                        setErrorCode('');
+                        setConfirmPassword('');
+                      }}
+                      id="btn-forgot-password-link"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                )}
+
+                {/* Submit Button */}
+                <button type="submit" className="auth-submit-btn" disabled={loading} id="auth-submit-btn">
+                  {loading ? (
+                    <>
+                      <Loader size={14} className="auth-spinner" />
+                      <span>Connecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        {authMode === 'forgot'
+                          ? 'Update Password & Enter Workspace'
+                          : `Login to ${selectedRole === 'brand' ? 'Brand Studio' : 'Creator Studio'}`}
+                      </span>
+                      <ArrowRight size={14} />
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </form>
 
-          {/* 1-Click Evaluation Demo Autofill Bar (Phase 5 & Phase 7) */}
-          <div className="alloy-demo-bar">
-            <span className="demo-bar-label">Autofill Demo:</span>
-            <div className="demo-bar-actions">
-              <button
-                type="button"
-                className={`demo-pill-btn brand-demo ${selectedRole === 'brand' && email === DEMO_CREDENTIALS.brand.email ? 'is-active-demo' : ''}`}
-                id="demo-login-brand-btn"
-                onClick={() => handleAutofillDemo('brand')}
-                title="Autofill Lumina Botanica credentials"
-              >
-                <Briefcase size={12} />
-                <span>Lumina Botanica</span>
-              </button>
+          {/* 1-Click Evaluation Demo Autofill Bar (Only shown on Signin or Step 1) */}
+          {!(authMode === 'signup' && signupStep > 1) && (
+            <div className="alloy-demo-bar">
+              <span className="demo-bar-label">Autofill Demo:</span>
+              <div className="demo-bar-actions">
+                <button
+                  type="button"
+                  className={`demo-pill-btn brand-demo ${selectedRole === 'brand' && email === DEMO_CREDENTIALS.brand.email ? 'is-active-demo' : ''}`}
+                  id="demo-login-brand-btn"
+                  onClick={() => handleAutofillDemo('brand')}
+                  title="Autofill Lumina Botanica credentials"
+                >
+                  <Briefcase size={12} />
+                  <span>Lumina Botanica</span>
+                </button>
 
-              <button
-                type="button"
-                className={`demo-pill-btn creator-demo ${selectedRole === 'creator' && email === DEMO_CREDENTIALS.creator.email ? 'is-active-demo' : ''}`}
-                id="demo-login-creator-btn"
-                onClick={() => handleAutofillDemo('creator')}
-                title="Autofill Maya Chen credentials"
-              >
-                <Palette size={12} />
-                <span>Maya Chen</span>
-              </button>
+                <button
+                  type="button"
+                  className={`demo-pill-btn creator-demo ${selectedRole === 'creator' && email === DEMO_CREDENTIALS.creator.email ? 'is-active-demo' : ''}`}
+                  id="demo-login-creator-btn"
+                  onClick={() => handleAutofillDemo('creator')}
+                  title="Autofill Maya Chen credentials"
+                >
+                  <Palette size={12} />
+                  <span>Maya Chen</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Direct Demo Entry Link (Phase 7 Option B: Explore without credentials) */}
-          <div style={{ textAlign: 'center', marginTop: '6px' }}>
-            <button
-              type="button"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#8F8880',
-                fontSize: '0.72rem',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                padding: '2px 6px',
-                fontFamily: 'inherit'
-              }}
-              onClick={() => handleQuickDemoEnter(selectedRole)}
-              id="btn-explore-as-demo-direct"
-            >
-              Or explore Alloy instantly as demo {selectedRole === 'brand' ? 'Brand' : 'Creator'} →
-            </button>
-          </div>
+          {!(authMode === 'signup' && signupStep > 1) && (
+            <div style={{ textAlign: 'center', marginTop: '6px' }}>
+              <button
+                type="button"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#8F8880',
+                  fontSize: '0.72rem',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  padding: '2px 6px',
+                  fontFamily: 'inherit'
+                }}
+                onClick={() => handleQuickDemoEnter(selectedRole)}
+                id="btn-explore-as-demo-direct"
+              >
+                Or explore Alloy instantly as demo {selectedRole === 'brand' ? 'Brand' : 'Creator'} →
+              </button>
+            </div>
+          )}
 
           {/* Footer Security Badge */}
           <div className="alloy-auth-footer-badge">

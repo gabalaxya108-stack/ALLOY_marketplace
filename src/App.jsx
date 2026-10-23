@@ -3157,14 +3157,18 @@ export default function App() {
               const emailKey = (brandUser.email || brandUser.id || 'custom').toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, '-');
               const customBrandId = `brand-${emailKey}`;
               const brandName = brandUser.profile?.display_name || brandUser.display_name || (brandUser.email ? brandUser.email.split('@')[0] : 'My Brand Studio');
+              const bDetails = user?.brand || user?.profileDetails || {};
 
               const brandRecord = {
                 id: customBrandId,
                 userId: brandUser.id,
                 name: brandName,
-                industry: 'Creative & Digital',
-                description: `${brandName} private studio workspace.`,
-                aesthetic: 'Modern & Editorial',
+                handle: bDetails.handle || `@${emailKey}`,
+                industry: bDetails.industry || 'Beverages & Drinks',
+                description: bDetails.description || `${brandName} private studio workspace.`,
+                website: bDetails.website || '',
+                logo: bDetails.logo || '',
+                aesthetic: bDetails.aesthetic || 'Modern & Editorial',
                 isDemo: false
               };
 
@@ -3220,6 +3224,42 @@ export default function App() {
             localStorage.setItem('creasync_active_role', 'creator');
             updateActiveUser(creatorUser);
             handleToggleDemoMode(isDemo);
+
+            if (!isDemo && user) {
+              const cDetails = user.creator || user.profileDetails || {};
+              const customCreatorId = cDetails.id || `creator-${user.id.slice(0, 8)}`;
+              const creatorName = creatorUser.profile?.display_name || creatorUser.display_name || 'Creator Studio';
+              const creatorRecord = {
+                id: customCreatorId,
+                userId: user.id,
+                name: creatorName,
+                handle: cDetails.handle || `@${user.email ? user.email.split('@')[0] : 'creator'}`,
+                experience: cDetails.experience || '3+ years in AI visual arts',
+                specialty: cDetails.specialty || 'AI Cinematic Direction',
+                heroWork: cDetails.heroWork || cDetails.hero_work || 'Flagship Studio Showcase',
+                avatar: cDetails.avatar || creatorUser.profile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+                bio: cDetails.bio || `${creatorName} specializes in ${cDetails.specialty || 'AI visual direction'}.`,
+                creativeIdentity: cDetails.creativeIdentity || cDetails.specialty || 'AI Creative Director',
+                location: cDetails.location || 'London / Remote',
+                tools: Array.isArray(cDetails.tools) && cDetails.tools.length ? cDetails.tools : ['Midjourney', 'Runway Gen-3', 'Unreal Engine'],
+                styles: Array.isArray(cDetails.styles) && cDetails.styles.length ? cDetails.styles : ['Cinematic', 'Editorial', 'Hyperreal'],
+                isDemo: false
+              };
+
+              setMarketplaceData(prev => {
+                const existing = (prev.creators || []).find(c => c.id === customCreatorId);
+                if (!existing) {
+                  return {
+                    ...prev,
+                    creators: [creatorRecord, ...(prev.creators || [])],
+                    activeCreatorId: customCreatorId,
+                    isDemoMode: false
+                  };
+                }
+                return { ...prev, activeCreatorId: customCreatorId, isDemoMode: false };
+              });
+            }
+
             executePendingActionOrRoute(creatorUser, 'creator');
           }
         }}
