@@ -92,6 +92,7 @@ const ALLOWED_TABLES = new Set([
   'shortlists',
   'collaborations',
   'invitations',
+  'campaign_applications',
   'deliverables',
   'messages',
   'payments',
@@ -199,8 +200,8 @@ export function createDbMiddleware() {
           }
         }
 
-        // If upserting collaboration or invitation, ensure brand exists
-        if ((table === 'collaborations' || table === 'invitations') && record.brand_id) {
+        // If upserting collaboration, invitation, or campaign_application, ensure brand exists
+        if ((table === 'collaborations' || table === 'invitations' || table === 'campaign_applications') && record.brand_id) {
           const bCheck = await runWithFallback(c => c.from('brands').select('id').eq('id', record.brand_id).maybeSingle());
           if (!bCheck.data) {
             await runWithFallback(c => c.from('brands').upsert({
