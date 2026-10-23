@@ -5,12 +5,13 @@ import {
   Clock, DollarSign, Calendar, Sparkles, Filter, Bookmark, BookmarkCheck,
   Edit3, Trash2, Upload, AlertCircle, FileText, UserCheck, ShieldCheck,
   ArrowUp, ArrowDown, Globe, Lock, Cpu, Play, Minimize2, Wrench, Compass, Layers,
-  Workflow, Video
+  Workflow, Video, Inbox
 } from 'lucide-react';
 import { generateCreatorDNA } from '../intelligence/creatorDNA';
 import { generateCreatorDNA as generateCreatorDNAWithGroq } from '../ai/groqClient';
 import { INITIAL_CREATOR_INVITATIONS, INITIAL_CREATOR_PROJECTS } from '../data/connectionsData';
 import { DEMO_WORKFLOWS, WORKFLOW_SPECIALIZATIONS, createBlankWorkflow } from '../data/workflowsData';
+import { INITIAL_CAMPAIGNS, DEMO_BRANDS } from '../data/marketplaceStore';
 import WorkflowTimeline from '../components/WorkflowTimeline';
 import WorkflowEditorModal from '../components/WorkflowEditorModal';
 import TrustCenter from '../components/TrustCenter';
@@ -19,6 +20,7 @@ import CreatorSkillsManager from '../components/CreatorSkillsManager';
 import ProjectWorkflowEditor from '../components/ProjectWorkflowEditor';
 import { createInitialTrustVerification } from '../data/trustVerificationData';
 import MessagesLoginWall from '../components/MessagesLoginWall';
+import DirectMessagesEmptyState from '../components/DirectMessagesEmptyState';
 import { deduplicateMessages } from '../services/marketplaceBackend';
 import { evaluateCreatorEligibility, ELIGIBILITY_STATUS, ELIGIBILITY_OUTCOMES } from '../intelligence/eligibilityEngine';
 import CreatorHomeFeed from '../components/CreatorHomeFeed';
@@ -28,6 +30,177 @@ function formatInvitationField(...values) {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return 'Not specified in this invitation';
+}
+
+function formatBudgetDisplay(budget) {
+  if (!budget) return 'In Discussion';
+  if (typeof budget === 'number') {
+    return `$${budget.toLocaleString()}`;
+  }
+  const str = String(budget).trim();
+  if (!str.startsWith('$') && !isNaN(Number(str.replace(/,/g, '')))) {
+    return `$${Number(str.replace(/,/g, '')).toLocaleString()}`;
+  }
+  return str;
+}
+
+function getInitials(name) {
+  if (!name || typeof name !== 'string') return 'BP';
+  const clean = name.trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase() || 'BP';
+}
+
+function BrandLogoAvatar({ logoUrl, brandName, initials, size = 48, className = '' }) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [logoUrl]);
+
+  const effectiveInitials = initials || getInitials(brandName);
+
+  if (!logoUrl || hasError) {
+    return (
+      <div
+        className={`inv-brand-avatar-fallback ${className}`}
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          minWidth: `${size}px`,
+          minHeight: `${size}px`
+        }}
+        aria-label={brandName || 'Brand Partner'}
+        title={brandName || 'Brand Partner'}
+      >
+        <span>{effectiveInitials}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={logoUrl}
+      alt={brandName || 'Brand Partner'}
+      className={`inv-brand-avatar ${className}`}
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        minWidth: `${size}px`,
+        minHeight: `${size}px`
+      }}
+      onError={() => setHasError(true)}
+      loading="lazy"
+    />
+  );
+}
+
+function resolveInvitationDetails(inv, campaigns = [], brands = [], opportunities = []) {
+  if (!inv) return null;
+
+  const campaignId = inv.campaignId || inv.campaign_id;
+  const brandId = inv.brandId || inv.brand_id;
+
+  const effectiveCampaigns = (campaigns && campaigns.length > 0) ? campaigns : INITIAL_CAMPAIGNS;
+  const effectiveBrands = (brands && brands.length > 0) ? brands : DEMO_BRANDS;
+
+  // Search in campaigns
+  const matchedCampaign = effectiveCampaigns.find(c =>
+    (campaignId && c.id === campaignId) ||
+    (inv.title && c.title?.toLowerCase() === inv.title.toLowerCase()) ||
+    (inv.campaignTitle && c.title?.toLowerCase() === inv.campaignTitle.toLowerCase())
+  );
+
+  // Search in opportunities
+  const matchedOpportunity = (opportunities || []).find(o =>
+    (campaignId && (o.campaignId === campaignId || o.id === campaignId || o.id === `opp-${campaignId}`)) ||
+    (inv.title && o.title?.toLowerCase() === inv.title.toLowerCase()) ||
+    (inv.campaignTitle && o.title?.toLowerCase() === inv.campaignTitle.toLowerCase())
+  );
+
+  // Search in brands
+  const matchedBrand = effectiveBrands.find(b =>
+    (brandId && b.id === brandId) ||
+    (matchedCampaign?.ownerBrandId && b.id === matchedCampaign.ownerBrandId) ||
+    (matchedCampaign?.brandId && b.id === matchedCampaign.brandId) ||
+    (inv.brandName && b.name?.toLowerCase() === inv.brandName.toLowerCase()) ||
+    (inv.brand && b.name?.toLowerCase() === inv.brand.toLowerCase())
+  );
+
+  // Brand Name
+  const brandName = inv.brandName || inv.brand || inv.brand_name || matchedBrand?.name || matchedCampaign?.brandName || matchedOpportunity?.brand || 'Brand Partner';
+
+  // Brand Logo
+  const brandLogo = inv.brandLogo || inv.brandAvatar || inv.brand_logo || matchedBrand?.logo || matchedBrand?.avatar || matchedCampaign?.brandAvatar || matchedCampaign?.brandLogo || matchedOpportunity?.brandAvatar || null;
+
+  // Campaign Title
+  const campaignTitle = inv.campaignTitle || inv.title || inv.campaign_title || matchedCampaign?.title || matchedOpportunity?.title || 'Creative Commission';
+
+  // Campaign Description / Brief
+  const campaignDescription = matchedCampaign?.description || inv.campaignDescription || inv.description || matchedOpportunity?.description || null;
+
+  // Direct Invitation Message / Quote
+  const message = inv.summary || inv.message || inv.note || null;
+
+  // Budget
+  const rawBudget = inv.budget || inv.agreedBudget || inv.rate || inv.proposedRate || matchedCampaign?.budget || matchedOpportunity?.budget || null;
+  const budget = formatBudgetDisplay(rawBudget);
+  const isBudgetInDiscussion = !rawBudget || budget === 'In Discussion';
+
+  // Timeline
+  const timeline = inv.timeline || matchedCampaign?.timeline || matchedOpportunity?.timeline || null;
+
+  // Deadline
+  const deadline = inv.deadline || inv.timelineDeadline || matchedCampaign?.deadline || matchedOpportunity?.deadline || null;
+
+  // Deliverables
+  let deliverablesList = [];
+  const rawDeliverables = inv.deliverables || inv.deliverablesScope || matchedCampaign?.deliverables || matchedOpportunity?.deliverables || null;
+  if (Array.isArray(rawDeliverables)) {
+    deliverablesList = rawDeliverables.filter(d => typeof d === 'string' && d.trim().length > 0);
+  } else if (typeof rawDeliverables === 'string' && rawDeliverables.trim()) {
+    if (rawDeliverables.includes('•')) {
+      deliverablesList = rawDeliverables.split('•').map(s => s.trim()).filter(Boolean);
+    } else if (rawDeliverables.includes('+')) {
+      deliverablesList = rawDeliverables.split('+').map(s => s.trim()).filter(Boolean);
+    } else if (rawDeliverables.includes(',')) {
+      deliverablesList = rawDeliverables.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      deliverablesList = [rawDeliverables.trim()];
+    }
+  }
+
+  const deliverablesString = deliverablesList.length > 0
+    ? deliverablesList.join(' • ')
+    : (typeof rawDeliverables === 'string' ? rawDeliverables : 'Master Campaign Deliverables');
+
+  // Metadata tags
+  const industry = matchedCampaign?.industry || matchedBrand?.industry || matchedOpportunity?.industry || null;
+  const creativeStyle = matchedCampaign?.creativeStyle || matchedOpportunity?.creativeDirection || null;
+  const brandWebsite = matchedBrand?.website || matchedCampaign?.brandWebsite || null;
+
+  return {
+    ...inv,
+    brandName,
+    brandLogo,
+    brandWebsite,
+    campaignTitle,
+    campaignDescription,
+    message,
+    budget,
+    rawBudget,
+    isBudgetInDiscussion,
+    timeline,
+    deadline,
+    deliverablesList,
+    deliverablesString,
+    industry,
+    creativeStyle,
+    initials: getInitials(brandName)
+  };
 }
 
 export default function CreatorWorkspaceView({
@@ -54,7 +227,9 @@ export default function CreatorWorkspaceView({
   applications = [],
   onSubmitApplication,
   onRespondCounterOffer,
-  onReevaluateApplication
+  onReevaluateApplication,
+  campaigns = [],
+  brands = []
 }) {
   const [activeCreator, setActiveCreator] = useState(creator || {});
   const [activeTab, setActiveTab] = useState(initialTab || 'home'); // 'home' | 'overview' | 'portfolio' | 'workflows' | 'opportunities' | 'invitations' | 'projects' | 'messages' | 'profile' | 'trust'
@@ -244,8 +419,11 @@ export default function CreatorWorkspaceView({
   });
 
   // Messages state
+  const isDemoCreator = !currentUser || currentUser?.email === 'maya.demo@alloy.market';
+
   const [creatorConnections, setCreatorConnections] = useState(() => {
-    return connections.length > 0 ? connections : [
+    if (connections && connections.length > 0) return connections;
+    return isDemoCreator ? [
       {
         id: "conn-maya-skincare",
         brandId: "brand-demo-lumina",
@@ -271,19 +449,30 @@ export default function CreatorWorkspaceView({
           }
         ]
       }
-    ];
+    ] : [];
   });
 
   // Single source of truth: synchronize with connections prop while preserving local demo fallback
   const activeConnectionsList = useMemo(() => {
-    const forMe = (connections || []).filter(c => !c.creatorId || c.creatorId === activeCreator?.id);
-    if (forMe.length > 0) return forMe;
-    if ((connections || []).length > 0) return connections;
-    return creatorConnections;
-  }, [connections, activeCreator?.id, creatorConnections]);
+    if (Array.isArray(connections)) {
+      const forMe = connections.filter(c => !c.creatorId || c.creatorId === activeCreator?.id);
+      if (forMe.length > 0) return forMe;
+      if (!isDemoCreator) return [];
+      if (connections.length > 0) return connections;
+    }
+    return isDemoCreator ? creatorConnections : [];
+  }, [connections, activeCreator?.id, creatorConnections, isDemoCreator]);
+
+  const handleNavigateToExploreBrands = () => {
+    if (typeof onExploreMarketplace === 'function') {
+      onExploreMarketplace();
+    } else {
+      setActiveTab('opportunities');
+    }
+  };
 
   const [selectedConnectionId, setSelectedConnectionId] = useState(() => {
-    const initial = (connections && connections.length > 0) ? connections : creatorConnections;
+    const initial = (connections && connections.length > 0) ? connections : (isDemoCreator ? creatorConnections : []);
     return initial[0]?.id || null;
   });
   const [chatInputText, setChatInputText] = useState('');
@@ -1254,28 +1443,37 @@ export default function CreatorWorkspaceView({
                 </div>
 
                 <div className="activity-items-list">
-                  {invitationsList.filter(i => i.status === 'pending').slice(0, 2).map((inv) => (
-                    <div key={inv.id} className="activity-item-row">
-                      <img src={inv.brandAvatar} alt={inv.brand} className="activity-brand-avatar" />
-                      <div className="activity-item-details">
-                        <span className="activity-brand-name">{inv.brand}</span>
-                        <span className="activity-camp-title">{inv.title}</span>
-                        <div className="activity-meta-pills">
-                          <span>{inv.budget}</span>
-                          <span>{inv.timeline}</span>
+                  {invitationsList.filter(i => i.status === 'pending').slice(0, 2).map((inv) => {
+                    const resolved = resolveInvitationDetails(inv, campaigns, brands, opportunities);
+                    return (
+                      <div key={inv.id} className="activity-item-row">
+                        <BrandLogoAvatar
+                          logoUrl={resolved.brandLogo}
+                          brandName={resolved.brandName}
+                          initials={resolved.initials}
+                          size={38}
+                          className="activity-brand-avatar"
+                        />
+                        <div className="activity-item-details">
+                          <span className="activity-brand-name">{resolved.brandName}</span>
+                          <span className="activity-camp-title">{resolved.campaignTitle}</span>
+                          <div className="activity-meta-pills">
+                            {resolved.budget && <span>{resolved.budget}</span>}
+                            {resolved.timeline && <span>{resolved.timeline}</span>}
+                          </div>
+                        </div>
+                        <div className="activity-quick-actions">
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-xs"
+                            onClick={() => setInvitationToConfirm(inv)}
+                          >
+                            Accept
+                          </button>
                         </div>
                       </div>
-                      <div className="activity-quick-actions">
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-xs"
-                          onClick={() => setInvitationToConfirm(inv)}
-                        >
-                          Accept
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {invitationsList.filter(i => i.status === 'pending').length === 0 && (
                     <p className="empty-subtle">No pending invitations. Active collaborations will appear in Projects.</p>
                   )}
@@ -1966,7 +2164,7 @@ export default function CreatorWorkspaceView({
             {/* Editorial Hero Header & Mode Switcher */}
             <div className="marketplace-editorial-hero">
               <div className="hero-titles">
-                <span className="opp-brand-tag" style={{ color: 'var(--accent-forest)' }}>Alloy Commercial Marketplace</span>
+                <span className="opp-eyebrow-tag">Alloy Commercial Marketplace</span>
                 <h2>Campaign Opportunities & Applications</h2>
                 <p>Discover live commercial briefs published by luxury and tech brands, or manage your ongoing proposals and rate negotiations.</p>
               </div>
@@ -2013,17 +2211,37 @@ export default function CreatorWorkspaceView({
                   {opportunitiesList.map((opp) => {
                     const isSaved = savedOppIds.includes(opp.id);
                     const isClosed = opp.applicationStatus === 'closed' || (opp.remainingSlots !== undefined && opp.remainingSlots <= 0);
-                    const hasApplied = opp.status === 'applied' || myApplications.some(a => a.campaignId === opp.id || a.campaignId === opp.campaignId);
-                    const slotsRemaining = opp.remainingSlots ?? opp.creatorSlots ?? 1;
+                    const appliedApp = myApplications.find(a => a.campaignId === opp.id || a.campaignId === opp.campaignId);
+                    const hasApplied = opp.status === 'applied' || Boolean(appliedApp);
                     const totalSlots = opp.creatorSlots ?? 1;
+                    const slotsRemaining = opp.remainingSlots !== undefined ? opp.remainingSlots : totalSlots;
+                    const brandName = opp.brandName || opp.brand || 'Brand Partner';
+                    const deliverablesList = opp.requirements || opp.deliverables || [];
+                    const categoryLabel = opp.category || opp.industry || opp.format || null;
+                    const hasMeaningfulFit = opp.whyItFits &&
+                      !opp.whyItFits.includes('for creators with relevant visual styles') &&
+                      !opp.whyItFits.includes('Direct opportunity published by');
 
                     return (
                       <div key={opp.id} className="opportunity-card-item">
+                        {/* A. Card Header */}
                         <div className="opp-header-row">
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <span className="opp-brand-tag">{opp.brandName || opp.brand}</span>
-                            <h3 className="opp-campaign-title">{opp.title}</h3>
+                          <div className="opp-brand-meta">
+                            {opp.brandAvatar ? (
+                              <img src={opp.brandAvatar} alt={brandName} className="opp-brand-avatar" />
+                            ) : (
+                              <div className="opp-brand-avatar-fallback">
+                                {brandName.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="opp-brand-text-col">
+                              <span className="opp-brand-name">{brandName}</span>
+                              {categoryLabel && (
+                                <span className="opp-category-badge">{categoryLabel}</span>
+                              )}
+                            </div>
                           </div>
+
                           <button
                             type="button"
                             className={`btn-icon-bookmark ${isSaved ? 'saved' : ''}`}
@@ -2031,83 +2249,133 @@ export default function CreatorWorkspaceView({
                             title={isSaved ? "Saved" : "Save opportunity"}
                             aria-label={isSaved ? "Remove from saved" : "Save opportunity"}
                           >
-                            {isSaved ? <BookmarkCheck size={18} style={{ color: 'var(--accent-gold)' }} /> : <Bookmark size={18} />}
+                            {isSaved ? (
+                              <BookmarkCheck size={18} className="bookmark-icon-saved" />
+                            ) : (
+                              <Bookmark size={18} />
+                            )}
                           </button>
                         </div>
 
-                        {/* Specs Strip */}
-                        <div className="opp-specs-strip">
-                          <span className="spec-chip spec-budget">
-                            <DollarSign size={12} />
-                            <span>{opp.budget}</span>
-                            {opp.isNegotiable !== false ? (
-                              <span style={{ fontSize: '0.68rem', opacity: 0.85 }}>• Negotiable</span>
-                            ) : (
-                              <span style={{ fontSize: '0.68rem', opacity: 0.85 }}>• Fixed</span>
-                            )}
-                          </span>
+                        <h3 className="opp-campaign-title" title={opp.title}>{opp.title}</h3>
 
-                          <span className="spec-chip spec-slots">
-                            <Layers size={12} />
-                            <span>{slotsRemaining} of {totalSlots} slot{totalSlots > 1 ? 's' : ''} open</span>
-                          </span>
-
-                          <span className="spec-chip">
-                            <Clock size={12} />
-                            <span>{opp.timeline}</span>
-                          </span>
-
-                          {opp.deadline && (
-                            <span className="spec-chip">
-                              <Calendar size={12} />
-                              <span>Due {opp.deadline}</span>
+                        {/* B. Budget & Secondary Metadata */}
+                        <div className="opp-meta-container">
+                          <div className="opp-budget-highlight">
+                            <div className="opp-budget-left">
+                              <span className="opp-meta-micro-label">Total Budget</span>
+                              <span className="opp-budget-val">{formatBudgetDisplay(opp.budget)}</span>
+                            </div>
+                            <span className={`opp-negotiable-tag ${opp.isNegotiable !== false ? 'is-negotiable' : 'is-fixed'}`}>
+                              {opp.isNegotiable !== false ? 'Negotiable' : 'Fixed Rate'}
                             </span>
-                          )}
+                          </div>
+
+                          <div className="opp-details-compact-grid">
+                            <div className="opp-detail-cell">
+                              <Layers size={13} className="opp-cell-icon" />
+                              <div className="opp-cell-content">
+                                <span className="opp-cell-label">Slots</span>
+                                <span className="opp-cell-value">{slotsRemaining} of {totalSlots} open</span>
+                              </div>
+                            </div>
+
+                            <div className="opp-detail-cell">
+                              <Clock size={13} className="opp-cell-icon" />
+                              <div className="opp-cell-content">
+                                <span className="opp-cell-label">Duration</span>
+                                <span className="opp-cell-value">{opp.timeline || 'Flexible'}</span>
+                              </div>
+                            </div>
+
+                            <div className="opp-detail-cell">
+                              <Calendar size={13} className="opp-cell-icon" />
+                              <div className="opp-cell-content">
+                                <span className="opp-cell-label">Deadline</span>
+                                <span className="opp-cell-value">{opp.deadline || 'Open-ended'}</span>
+                              </div>
+                            </div>
+
+                            <div className="opp-detail-cell">
+                              <Briefcase size={13} className="opp-cell-icon" />
+                              <div className="opp-cell-content">
+                                <span className="opp-cell-label">Status</span>
+                                <span className="opp-cell-value">{isClosed ? 'Closed' : 'Accepting Bids'}</span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
 
-                        <p className="opp-direction-text">{opp.creativeDirection}</p>
+                        {/* C. Creative Direction */}
+                        <div className="opp-direction-box">
+                          <span className="opp-section-label">Creative Direction</span>
+                          <p className="opp-direction-text">
+                            {opp.creativeDirection || opp.creativeStyle || opp.description || 'Commercial creative direction aligned with verified creator aesthetic.'}
+                          </p>
+                        </div>
 
-                        {/* Key Deliverables Pills */}
-                        {(opp.requirements || opp.deliverables || []).length > 0 && (
-                          <div className="opp-deliverables-wrap">
-                            <span className="box-mini-title">Key Deliverables</span>
-                            <div className="opp-deliverables-pills">
-                              {(opp.requirements || opp.deliverables || []).map((req, rIdx) => (
-                                <span key={rIdx} className="deliverable-pill">{req}</span>
+                        {/* D. Key Deliverables */}
+                        {deliverablesList.length > 0 && (
+                          <div className="opp-deliverables-box">
+                            <span className="opp-section-label">Key Deliverables</span>
+                            <div className="opp-deliverables-list">
+                              {deliverablesList.map((req, rIdx) => (
+                                <span key={rIdx} className="opp-deliverable-item">
+                                  <span className="opp-deliv-dot" />
+                                  <span className="opp-deliv-text">{req}</span>
+                                </span>
                               ))}
                             </div>
                           </div>
                         )}
 
-                        {opp.whyItFits && (
-                          <div className="opp-fit-note">
-                            <Sparkles size={13} style={{ flexShrink: 0 }} />
+                        {/* E. Opportunity Context (genuine recommendation only) */}
+                        {hasMeaningfulFit && (
+                          <div className="opp-relevance-note">
+                            <Sparkles size={12} className="opp-relevance-icon" />
                             <span>{opp.whyItFits}</span>
                           </div>
                         )}
 
+                        {/* F. Card Footer Actions */}
                         <div className="opp-card-actions">
                           <button
                             type="button"
-                            className="btn btn-secondary btn-sm"
+                            className="btn btn-secondary btn-sm opp-btn-action"
                             onClick={() => setSelectedOpportunityForModal(opp)}
-                            style={{ flex: 1 }}
                           >
                             <span>View Brief</span>
                           </button>
 
-                          <button
-                            type="button"
-                            className={`btn ${hasApplied ? 'btn-secondary' : isClosed ? 'btn-subtle' : 'btn-primary'} btn-sm`}
-                            onClick={() => handleOpenApplyModal(opp)}
-                            disabled={hasApplied || isClosed}
-                            style={{ flex: 1.4 }}
-                          >
-                            <span>
-                              {hasApplied ? 'Submitted' : isClosed ? 'Slots Filled' : 'Apply & Submit Bid'}
-                            </span>
-                            {!hasApplied && !isClosed && <ArrowRight size={13} />}
-                          </button>
+                          {hasApplied ? (
+                            <div
+                              className="opp-status-applied-pill"
+                              onClick={() => setOpportunitiesSubView('applications')}
+                              role="button"
+                              tabIndex={0}
+                              title="Click to view proposal in My Applications"
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>{appliedApp?.status === 'accepted' ? 'Accepted & Active' : appliedApp?.status === 'counter_offered' ? 'Counter-Offer' : 'Application Submitted'}</span>
+                            </div>
+                          ) : isClosed ? (
+                            <button
+                              type="button"
+                              className="btn btn-subtle btn-sm opp-btn-action"
+                              disabled
+                            >
+                              <span>Slots Filled</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm opp-btn-action"
+                              onClick={() => handleOpenApplyModal(opp)}
+                            >
+                              <span>Apply & Submit Bid</span>
+                              <ArrowRight size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -2345,80 +2613,193 @@ export default function CreatorWorkspaceView({
               </div>
             </div>
 
-            <div className="invitations-list-container">
-              {invitationsList.map((inv) => (
-                <div key={inv.id} className={`studio-card invitation-item-card ${inv.status}`}>
-                  <div className="inv-top-bar">
-                    <div className="inv-brand-badge-wrap">
-                      <img src={inv.brandAvatar} alt={inv.brand} className="inv-brand-avatar" />
-                      <div>
-                        <span className="inv-brand-label">{inv.brand}</span>
-                        <h3 className="inv-campaign-heading">{inv.title}</h3>
+            {invitationsList.length === 0 ? (
+              <div className="empty-state-card studio-card text-center">
+                <Inbox size={36} className="text-tertiary" />
+                <h3>No brand invitations yet</h3>
+                <p>When brands and creative directors discover your portfolio and commission work, their direct invitations will appear here.</p>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setActiveTab('opportunities')}
+                >
+                  Explore Open Opportunities
+                </button>
+              </div>
+            ) : (
+              <div className="invitations-list-container">
+                {invitationsList.map((inv) => {
+                  const resolved = resolveInvitationDetails(inv, campaigns, brands, opportunities);
+                  return (
+                    <div key={inv.id} className={`studio-card invitation-item-card ${inv.status}`}>
+                      {/* Top Header Row */}
+                      <div className="inv-top-bar">
+                        <div className="inv-brand-badge-wrap">
+                          <BrandLogoAvatar
+                            logoUrl={resolved.brandLogo}
+                            brandName={resolved.brandName}
+                            initials={resolved.initials}
+                            size={52}
+                          />
+                          <div className="inv-title-group">
+                            <div className="inv-brand-meta-line">
+                              <span className="inv-brand-label">{resolved.brandName}</span>
+                              {resolved.industry && (
+                                <span className="inv-meta-dot-tag">
+                                  <span>•</span>
+                                  <span>{resolved.industry}</span>
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="inv-campaign-heading">{resolved.campaignTitle}</h3>
+                          </div>
+                        </div>
+
+                        <div className="inv-header-right">
+                          <span className={`inv-status-pill ${inv.status}`}>
+                            {inv.status === 'pending' && (
+                              <>
+                                <Clock size={13} />
+                                <span>Pending Your Review</span>
+                              </>
+                            )}
+                            {inv.status === 'accepted' && (
+                              <>
+                                <CheckCircle2 size={13} />
+                                <span>Accepted & Active</span>
+                              </>
+                            )}
+                            {inv.status === 'declined' && (
+                              <span>Declined</span>
+                            )}
+                          </span>
+                          {(inv.createdAt || inv.created_at) && (
+                            <span className="inv-date-text">{inv.createdAt || inv.created_at}</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    <span className={`inv-status-pill ${inv.status}`}>
-                      {inv.status === 'pending' && 'Pending Your Review'}
-                      {inv.status === 'accepted' && 'Accepted & Active'}
-                      {inv.status === 'declined' && 'Declined'}
-                    </span>
-                  </div>
+                      {/* Prominent Budget & Production Highlight Strip */}
+                      <div className="inv-highlight-strip">
+                        <div className="inv-metric-cell inv-budget-hero-cell">
+                          <span className="inv-metric-label">
+                            <DollarSign size={13} className="text-mint" />
+                            <span>Agreed / Offered Budget</span>
+                          </span>
+                          <div className="inv-budget-val-row">
+                            <span className="inv-budget-highlight-val">{resolved.budget}</span>
+                            {!resolved.isBudgetInDiscussion && (
+                              <span className="inv-budget-escrow-badge">
+                                <ShieldCheck size={11} />
+                                <span>Escrow Guaranteed</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
-                  <p className="inv-summary-quote">
-                    “{inv.summary}”
-                  </p>
+                        {resolved.timeline && (
+                          <div className="inv-metric-cell">
+                            <span className="inv-metric-label">
+                              <Clock size={13} />
+                              <span>Timeline & Delivery</span>
+                            </span>
+                            <span className="inv-metric-val">{resolved.timeline}</span>
+                          </div>
+                        )}
 
-                  <div className="inv-details-grid">
-                    <div className="inv-detail-box">
-                      <span className="detail-label">Agreed Budget</span>
-                      <span className="detail-value">{inv.budget}</span>
-                    </div>
-                    <div className="inv-detail-box">
-                      <span className="detail-label">Timeline & Delivery</span>
-                      <span className="detail-value">{inv.timeline}</span>
-                    </div>
-                    <div className="inv-detail-box">
-                      <span className="detail-label">Deliverables Required</span>
-                      <span className="detail-value">{inv.deliverables}</span>
-                    </div>
-                  </div>
+                        {resolved.deadline && (
+                          <div className="inv-metric-cell">
+                            <span className="inv-metric-label">
+                              <Calendar size={13} />
+                              <span>Response Deadline</span>
+                            </span>
+                            <span className="inv-metric-val">{resolved.deadline}</span>
+                          </div>
+                        )}
 
-                  {inv.status === 'pending' && (
-                    <div className="inv-actions-row">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => handleDeclineInvitation(inv)}
-                      >
-                        Decline
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => setInvitationToConfirm(inv)}
-                      >
-                        <Check size={15} />
-                        <span>Accept Invitation & Open Studio</span>
-                      </button>
-                    </div>
-                  )}
+                        {resolved.creativeStyle && (
+                          <div className="inv-metric-cell">
+                            <span className="inv-metric-label">
+                              <Sparkles size={13} />
+                              <span>Aesthetic Direction</span>
+                            </span>
+                            <span className="inv-metric-val">{resolved.creativeStyle}</span>
+                          </div>
+                        )}
+                      </div>
 
-                  {inv.status === 'accepted' && (
-                    <div className="inv-accepted-footer">
-                      <CheckCircle2 size={15} className="text-mint" />
-                      <span>Collaboration project active in Projects tab. Direct chat enabled in Messages.</span>
-                      <button
-                        type="button"
-                        className="link-subtle"
-                        onClick={() => setActiveTab('projects')}
-                      >
-                        Go to Project →
-                      </button>
+                      {/* Director Note / Message */}
+                      {resolved.message && (
+                        <div className="inv-message-quote-box">
+                          <p className="inv-summary-quote">“{resolved.message}”</p>
+                        </div>
+                      )}
+
+                      {/* Campaign Brief Description */}
+                      {resolved.campaignDescription && resolved.campaignDescription !== resolved.message && (
+                        <div className="inv-campaign-desc-block">
+                          <span className="inv-desc-heading">Campaign Brief & Objectives</span>
+                          <p className="inv-campaign-desc-text">{resolved.campaignDescription}</p>
+                        </div>
+                      )}
+
+                      {/* Structured Deliverables */}
+                      {resolved.deliverablesList.length > 0 && (
+                        <div className="inv-deliverables-block">
+                          <span className="inv-desc-heading">Required Deliverables</span>
+                          <div className="inv-deliverables-tags-list">
+                            {resolved.deliverablesList.map((deliv, idx) => (
+                              <div key={idx} className="inv-deliverable-chip">
+                                <Layers size={13} className="text-tertiary" />
+                                <span>{deliv}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Card Actions */}
+                      {inv.status === 'pending' && (
+                        <div className="inv-actions-row">
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleDeclineInvitation(inv)}
+                          >
+                            Decline
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setInvitationToConfirm(inv)}
+                          >
+                            <Check size={15} />
+                            <span>Accept Invitation & Open Studio</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {inv.status === 'accepted' && (
+                        <div className="inv-accepted-footer">
+                          <CheckCircle2 size={16} className="text-mint" />
+                          <div className="inv-accepted-copy">
+                            <strong>Active Collaboration in Projects:</strong> Production workspace initialized. Direct messaging enabled.
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-xs"
+                            onClick={() => setActiveTab('projects')}
+                          >
+                            <span>Go to Project</span>
+                            <ArrowRight size={13} />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -2536,91 +2917,115 @@ export default function CreatorWorkspaceView({
                 onOpenEmailLogin={onOpenLogin}
               />
             </div>
+          ) : activeConnectionsList.length === 0 ? (
+            <div className="studio-messages-content fade-in">
+              <DirectMessagesEmptyState
+                role="creator"
+                onExplore={handleNavigateToExploreBrands}
+              />
+            </div>
           ) : (
-          <div className="studio-messages-view">
-            <div className="studio-chat-container studio-card">
-              {/* Left Conversations Sidebar */}
-              <div className="chat-sidebar">
-                <div className="chat-sidebar-header">
-                  <h4>Collaborations ({activeConnectionsList.length})</h4>
-                </div>
-                <div className="chat-threads-list">
-                  {activeConnectionsList.map((conn) => (
-                    <button
-                      key={conn.id}
-                      type="button"
-                      className={`chat-thread-btn ${conn.id === selectedConnectionId ? 'active' : ''}`}
-                      onClick={() => setSelectedConnectionId(conn.id)}
-                    >
-                      <div className="thread-avatar">
-                        <Briefcase size={16} />
-                      </div>
-                      <div className="thread-info">
-                        <span className="thread-brand">{conn.brandName}</span>
-                        <span className="thread-brief">{conn.campaignTitle}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Right Active Conversation Room */}
-              <div className="chat-main-room">
-                <div className="chat-room-header">
-                  <div className="room-brand-meta">
-                    <h4>{activeConnection?.brandName}</h4>
-                    <span className="room-brief-title">{activeConnection?.campaignTitle}</span>
+            <div className="studio-messages-view">
+              <div className="studio-chat-container studio-card">
+                {/* Left Conversations Sidebar */}
+                <div className="chat-sidebar">
+                  <div className="chat-sidebar-header">
+                    <h4>Collaborations ({activeConnectionsList.length})</h4>
                   </div>
-                  <span className="room-status-badge">Connected Room</span>
-                </div>
-
-                <div className="chat-messages-history">
-                  {deduplicateMessages(activeConnection?.messages || []).map((msg) => (
-                    <div key={msg.id} className={`chat-message-bubble ${msg.sender === 'creator' ? 'outgoing' : 'incoming'}`}>
-                      <span className="bubble-sender">{msg.senderName}</span>
-                      <p className="bubble-text">{msg.text}</p>
-                      <span className="bubble-time">{msg.timestamp}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {chatErrorMessage && (
-                  <div style={{ padding: '8px 14px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', fontSize: '0.85rem', borderRadius: '6px', margin: '0 16px 8px' }}>
-                    {chatErrorMessage}
+                  <div className="chat-threads-list">
+                    {activeConnectionsList.map((conn) => (
+                      <button
+                        key={conn.id}
+                        type="button"
+                        className={`chat-thread-btn ${conn.id === selectedConnectionId ? 'active' : ''}`}
+                        onClick={() => setSelectedConnectionId(conn.id)}
+                      >
+                        <div className="thread-avatar">
+                          <Briefcase size={16} />
+                        </div>
+                        <div className="thread-info">
+                          <span className="thread-brand">{conn.brandName}</span>
+                          <span className="thread-brief">{conn.campaignTitle}</span>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                )}
+                </div>
 
-                <form onSubmit={handleSendChatMessage} className="chat-compose-form">
-                  <textarea
-                    className="form-input chat-input"
-                    placeholder={`Message ${activeConnection?.brandName || 'partner'}... (Enter to send, Shift+Enter for newline)`}
-                    value={chatInputText}
-                    onChange={(e) => {
-                      setChatInputText(e.target.value);
-                      if (chatErrorMessage) setChatErrorMessage(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendChatMessage(e);
-                      }
-                    }}
-                    disabled={isSendingChatMessage}
-                    rows={1}
-                    style={{ resize: 'none', minHeight: '38px', padding: '8px 12px', fontFamily: 'inherit' }}
-                  />
-                  <button
-                    type="submit"
-                    className="btn btn-primary btn-sm chat-send-btn"
-                    disabled={!chatInputText.trim() || isSendingChatMessage}
-                  >
-                    <Send size={15} />
-                    <span>{isSendingChatMessage ? 'Sending...' : 'Send'}</span>
-                  </button>
-                </form>
+                {/* Right Active Conversation Room */}
+                <div className="chat-main-room">
+                  {activeConnection ? (
+                    <>
+                      <div className="chat-room-header">
+                        <div className="room-brand-meta">
+                          <h4>{activeConnection?.brandName}</h4>
+                          <span className="room-brief-title">{activeConnection?.campaignTitle}</span>
+                        </div>
+                        <span className="room-status-badge">Connected Room</span>
+                      </div>
+
+                      <div className="chat-messages-history">
+                        {deduplicateMessages(activeConnection?.messages || []).length === 0 ? (
+                          <DirectMessagesEmptyState
+                            type="empty-thread"
+                            partnerName={activeConnection.brandName}
+                            role="creator"
+                          />
+                        ) : (
+                          deduplicateMessages(activeConnection?.messages || []).map((msg) => (
+                            <div key={msg.id} className={`chat-message-bubble ${msg.sender === 'creator' ? 'outgoing' : 'incoming'}`}>
+                              <span className="bubble-sender">{msg.senderName}</span>
+                              <p className="bubble-text">{msg.text}</p>
+                              <span className="bubble-time">{msg.timestamp}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {chatErrorMessage && (
+                        <div style={{ padding: '8px 14px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', fontSize: '0.85rem', borderRadius: '6px', margin: '0 16px 8px' }}>
+                          {chatErrorMessage}
+                        </div>
+                      )}
+
+                      <form onSubmit={handleSendChatMessage} className="chat-compose-form">
+                        <textarea
+                          className="form-input chat-input"
+                          placeholder={`Message ${activeConnection?.brandName || 'partner'}... (Enter to send, Shift+Enter for newline)`}
+                          value={chatInputText}
+                          onChange={(e) => {
+                            setChatInputText(e.target.value);
+                            if (chatErrorMessage) setChatErrorMessage(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendChatMessage(e);
+                            }
+                          }}
+                          disabled={isSendingChatMessage}
+                          rows={1}
+                          style={{ resize: 'none', minHeight: '38px', padding: '8px 12px', fontFamily: 'inherit' }}
+                        />
+                        <button
+                          type="submit"
+                          className="btn btn-primary btn-sm chat-send-btn"
+                          disabled={!chatInputText.trim() || isSendingChatMessage}
+                        >
+                          <Send size={15} />
+                          <span>{isSendingChatMessage ? 'Sending...' : 'Send'}</span>
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <DirectMessagesEmptyState
+                      type="no-selection"
+                      role="creator"
+                    />
+                  )}
+                </div>
               </div>
             </div>
-          </div>
           )
         )}
 
@@ -3563,31 +3968,53 @@ export default function CreatorWorkspaceView({
             </div>
 
             <div className="invitation-consent-body">
-              <div className="consent-counterparty-box">
-                <span className="consent-brand-name">
-                  {formatInvitationField(invitationToConfirm.brand, invitationToConfirm.brandName)}
-                </span>
-                <span className="consent-campaign-title">
-                  {formatInvitationField(invitationToConfirm.title)}
-                </span>
-              </div>
+              {(() => {
+                const resolvedConfirm = resolveInvitationDetails(invitationToConfirm, campaigns, brands, opportunities);
+                return (
+                  <>
+                    <div className="consent-counterparty-box">
+                      <BrandLogoAvatar
+                        logoUrl={resolvedConfirm.brandLogo}
+                        brandName={resolvedConfirm.brandName}
+                        initials={resolvedConfirm.initials}
+                        size={40}
+                      />
+                      <div className="consent-counterparty-info">
+                        <span className="consent-brand-name">
+                          {resolvedConfirm.brandName}
+                        </span>
+                        <span className="consent-campaign-title">
+                          {resolvedConfirm.campaignTitle}
+                        </span>
+                      </div>
+                    </div>
 
-              <div className="consent-terms-list">
-                <div className="consent-term-row">
-                  <span className="consent-term-label">Budget / Compensation</span>
-                  <span className="consent-term-value">{formatInvitationField(invitationToConfirm.budget)}</span>
-                </div>
+                    <div className="consent-terms-list">
+                      <div className="consent-term-row">
+                        <span className="consent-term-label">Budget / Compensation</span>
+                        <span className="consent-term-value">{resolvedConfirm.budget}</span>
+                      </div>
 
-                <div className="consent-term-row">
-                  <span className="consent-term-label">Timeline / Delivery</span>
-                  <span className="consent-term-value">{formatInvitationField(invitationToConfirm.timeline)}</span>
-                </div>
+                      <div className="consent-term-row">
+                        <span className="consent-term-label">Timeline / Delivery</span>
+                        <span className="consent-term-value">{resolvedConfirm.timeline || 'Flexible'}</span>
+                      </div>
 
-                <div className="consent-term-row">
-                  <span className="consent-term-label">Required Deliverables</span>
-                  <span className="consent-term-value">{formatInvitationField(invitationToConfirm.deliverables)}</span>
-                </div>
-              </div>
+                      {resolvedConfirm.deadline && (
+                        <div className="consent-term-row">
+                          <span className="consent-term-label">Deadline</span>
+                          <span className="consent-term-value">{resolvedConfirm.deadline}</span>
+                        </div>
+                      )}
+
+                      <div className="consent-term-row">
+                        <span className="consent-term-label">Required Deliverables</span>
+                        <span className="consent-term-value">{resolvedConfirm.deliverablesString}</span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               <p className="consent-review-notice">
                 Once accepted, a collaboration project is created in your Projects tab. By confirming,

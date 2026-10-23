@@ -119,7 +119,9 @@ export const INITIAL_CREATOR_INVITATIONS = [
   {
     id: "inv-lumina-01",
     campaignId: "camp-summer-skincare",
+    campaignTitle: "Summer Skincare & Radiant Hydration Launch",
     brand: "Lumina Botanica",
+    brandName: "Lumina Botanica",
     brandAvatar: "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=120&q=80",
     title: "Summer Skincare & Radiant Hydration Launch",
     budget: "$7,500",
@@ -132,7 +134,9 @@ export const INITIAL_CREATOR_INVITATIONS = [
   {
     id: "inv-vanguard-02",
     campaignId: "camp-vanguard-chrono",
+    campaignTitle: "Titanium Kinetic Chrono Motion Series",
     brand: "Vanguard Horology",
+    brandName: "Vanguard Horology",
     brandAvatar: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=120&q=80",
     title: "Titanium Kinetic Chrono Motion Series",
     budget: "$12,000",
