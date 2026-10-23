@@ -4,10 +4,10 @@
 // 6. Collaborations | 7. Deliverables | 8. Messages | 9. Brand Profile & Settings
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
+import {
   Plus, Search, SlidersHorizontal, Heart, Bookmark, BookmarkCheck,
-  Sparkles, CheckCircle2, MessageSquare, ArrowRight, Eye, Send, 
-  Clock, DollarSign, Calendar, HelpCircle, Layers, Film, Zap, 
+  Sparkles, CheckCircle2, MessageSquare, ArrowRight, Eye, EyeOff, Send,
+  Clock, DollarSign, Calendar, HelpCircle, Layers, Film, Zap,
   RotateCcw, Check, ExternalLink, ChevronRight, AlertCircle, FileText,
   Trash2, Filter, Upload, CheckCircle, Share2, Edit3, Compass,
   ChevronDown, Copy, Shield, ShieldAlert, ShieldCheck, X, Building, Globe, CheckSquare,
@@ -60,6 +60,9 @@ export default function BrandWorkspaceView({
   onUpdateCampaign,
   onDuplicateCampaign,
   onDeleteCampaign,
+  applications = [],
+  onAcceptApplication,
+  onProposeCounterOffer,
   creators = [],
   shortlists = {},
   onToggleShortlist,
@@ -79,11 +82,23 @@ export default function BrandWorkspaceView({
   onOpenTrustCenter,
   currentUser = null,
   onLoginSuccess,
-  onOpenLogin
+  onOpenLogin,
+  onNavigate,
+  onExploreMarketplace
 }) {
   // Navigation Tabs:
   // 'overview' | 'campaigns' | 'discover' | 'shortlists' | 'invitations' | 'collaborations' | 'deliverables' | 'messages' | 'brand-settings'
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+
+  const handleNavigateToDiscover = () => {
+    if (typeof onExploreMarketplace === 'function') {
+      onExploreMarketplace();
+    } else if (typeof onNavigate === 'function') {
+      onNavigate('discover');
+    } else {
+      window.location.hash = 'discover';
+    }
+  };
 
   useEffect(() => {
     if (initialTab) {
@@ -114,6 +129,12 @@ export default function BrandWorkspaceView({
   // --- Campaign Modal States ---
   const [isCampaignDetailOpen, setIsCampaignDetailOpen] = useState(false);
   const [detailCampaign, setDetailCampaign] = useState(null);
+  const [counterOfferAppId, setCounterOfferAppId] = useState(null);
+  const [counterOfferForm, setCounterOfferForm] = useState({
+    proposedRate: '',
+    proposedTimeline: '',
+    note: ''
+  });
 
   // --- Campaign Funding Modal State (Razorpay Test Mode) ---
   const [fundingCampaign, setFundingCampaign] = useState(null);
@@ -244,7 +265,7 @@ export default function BrandWorkspaceView({
 
     if (campaignSearch.trim()) {
       const q = campaignSearch.toLowerCase();
-      list = list.filter(c => 
+      list = list.filter(c =>
         (c.title || '').toLowerCase().includes(q) ||
         (c.description || '').toLowerCase().includes(q) ||
         (c.objective || '').toLowerCase().includes(q)
@@ -392,8 +413,13 @@ export default function BrandWorkspaceView({
       timeline: '3 Weeks',
       deadline: 'Nov 30, 2026',
       targetAudience: 'Aesthetic-conscious consumers',
-      visibility: 'published',
-      status: 'Active'
+      visibility: 'private', // Private by default
+      applicationStatus: 'closed',
+      isAcceptingApplications: false,
+      creatorSlots: 1,
+      isOpenEnded: false,
+      isNegotiable: true,
+      status: 'Draft'
     });
     setAiBriefPrompt('');
     setIsCreateEditModalOpen(true);
@@ -415,7 +441,12 @@ export default function BrandWorkspaceView({
       timeline: camp.timeline || '',
       deadline: camp.deadline || '',
       targetAudience: camp.targetAudience || '',
-      visibility: camp.visibility || 'published',
+      visibility: camp.visibility || 'private',
+      applicationStatus: camp.applicationStatus || (camp.visibility === 'published' ? 'open' : 'closed'),
+      isAcceptingApplications: camp.isAcceptingApplications ?? (camp.visibility === 'published'),
+      creatorSlots: camp.creatorSlots ?? 1,
+      isOpenEnded: camp.isOpenEnded ?? false,
+      isNegotiable: camp.isNegotiable !== false,
       status: camp.status || 'Active'
     });
     setIsCreateEditModalOpen(true);
@@ -424,14 +455,22 @@ export default function BrandWorkspaceView({
   const handleSaveCampaignForm = (e, forcedVisibility = null) => {
     if (e) e.preventDefault();
     const vis = forcedVisibility || campaignFormData.visibility;
-    const stat = vis === 'draft' ? 'Draft' : (campaignFormData.status === 'Draft' ? 'Active' : campaignFormData.status);
+    const stat = vis === 'draft' || vis === 'private' ? (campaignFormData.status === 'Active' ? 'Active' : 'Draft') : 'Active';
+    const isPublished = vis === 'published';
 
     const payload = {
       ...campaignFormData,
       visibility: vis,
       status: stat,
-      deliverables: campaignFormData.deliverables.split(',').map(s => s.trim()).filter(Boolean),
-      platforms: campaignFormData.platforms.split(',').map(s => s.trim()).filter(Boolean)
+      isAcceptingApplications: isPublished ? (campaignFormData.applicationStatus !== 'closed') : false,
+      applicationStatus: isPublished ? (campaignFormData.applicationStatus || 'open') : 'closed',
+      creatorSlots: Number(campaignFormData.creatorSlots) || 1,
+      deliverables: typeof campaignFormData.deliverables === 'string'
+        ? campaignFormData.deliverables.split(',').map(s => s.trim()).filter(Boolean)
+        : campaignFormData.deliverables,
+      platforms: typeof campaignFormData.platforms === 'string'
+        ? campaignFormData.platforms.split(',').map(s => s.trim()).filter(Boolean)
+        : campaignFormData.platforms
     };
 
     if (editingCampaignId) {
@@ -474,16 +513,33 @@ export default function BrandWorkspaceView({
     }
   };
 
-  // Toggle Campaign Pause / Resume or Publish
+  // Toggle Campaign Marketplace Publication
   const handleToggleCampaignState = (camp) => {
     if (!onUpdateCampaign) return;
-    if (camp.visibility === 'paused') {
-      onUpdateCampaign(camp.id, { visibility: 'published', status: 'Active' });
-    } else if (camp.visibility === 'published') {
-      onUpdateCampaign(camp.id, { visibility: 'paused', status: 'Paused' });
-    } else if (camp.visibility === 'draft') {
-      onUpdateCampaign(camp.id, { visibility: 'published', status: 'Active' });
+    if (camp.visibility === 'published') {
+      onUpdateCampaign(camp.id, {
+        visibility: 'private',
+        isAcceptingApplications: false,
+        applicationStatus: 'closed'
+      });
+    } else {
+      onUpdateCampaign(camp.id, {
+        visibility: 'published',
+        status: 'Active',
+        isAcceptingApplications: true,
+        applicationStatus: 'open'
+      });
     }
+  };
+
+  // Toggle Application Acceptance (Open vs Closed)
+  const handleToggleApplicationStatus = (camp) => {
+    if (!onUpdateCampaign) return;
+    const isNowOpen = camp.applicationStatus === 'closed';
+    onUpdateCampaign(camp.id, {
+      applicationStatus: isNowOpen ? 'open' : 'closed',
+      isAcceptingApplications: isNowOpen
+    });
   };
 
   const handleOpenDetailModal = (camp) => {
@@ -574,23 +630,23 @@ export default function BrandWorkspaceView({
   return (
     <div className="brand-workspace-view">
       <div className="page-container">
-        
+
         {/* ========================================================
             TOP BAR: BRAND SWITCHER & WORKSPACE STATUS
             ======================================================== */}
         <div className="workspace-top-header studio-card">
           <div className="brand-switcher-wrap">
-            <div 
+            <div
               className="brand-active-pill"
               onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
               tabIndex={0}
               role="button"
               id="brand-switcher-trigger"
             >
-              <img 
-                src={currentBrand?.logo || "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=80&q=80"} 
+              <img
+                src={currentBrand?.logo || "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=80&q=80"}
                 alt={currentBrand?.name}
-                className="brand-avatar-mini" 
+                className="brand-avatar-mini"
               />
               <div className="brand-title-meta">
                 <span className="brand-display-name">{currentBrand?.name || 'My Brand Workspace'}</span>
@@ -673,7 +729,7 @@ export default function BrandWorkspaceView({
                   <Plus size={14} />
                   <span>Create New Brand Workspace</span>
                 </button>
-                
+
                 {!isDemoMode && (
                   <button
                     type="button"
@@ -692,8 +748,8 @@ export default function BrandWorkspaceView({
           </div>
 
           <div className="header-quick-actions">
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="btn btn-primary btn-sm"
               onClick={() => handleOpenCreateCampaign('scratch')}
               id="top-create-campaign-btn"
@@ -709,8 +765,8 @@ export default function BrandWorkspaceView({
             ======================================================== */}
         <div className="workspace-subnav-bar">
           <div className="subnav-tabs-scroll">
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
               onClick={() => setActiveTab('overview')}
               id="tab-btn-overview"
@@ -718,8 +774,8 @@ export default function BrandWorkspaceView({
               Overview
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'campaigns' ? 'active' : ''}`}
               onClick={() => setActiveTab('campaigns')}
               id="tab-btn-campaigns"
@@ -728,8 +784,8 @@ export default function BrandWorkspaceView({
               <span className="tab-count-pill">{campaigns.length}</span>
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'discover' ? 'active' : ''}`}
               onClick={() => setActiveTab('discover')}
               id="tab-btn-discover"
@@ -738,8 +794,8 @@ export default function BrandWorkspaceView({
               <span>Discover Creators</span>
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'shortlists' ? 'active' : ''}`}
               onClick={() => setActiveTab('shortlists')}
               id="tab-btn-shortlists"
@@ -750,8 +806,8 @@ export default function BrandWorkspaceView({
               )}
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'invitations' ? 'active' : ''}`}
               onClick={() => setActiveTab('invitations')}
               id="tab-btn-invitations"
@@ -762,8 +818,8 @@ export default function BrandWorkspaceView({
               )}
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'collaborations' ? 'active' : ''}`}
               onClick={() => setActiveTab('collaborations')}
               id="tab-btn-collaborations"
@@ -772,8 +828,8 @@ export default function BrandWorkspaceView({
               <span className="tab-count-pill">{projects.length}</span>
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'deliverables' ? 'active' : ''}`}
               onClick={() => setActiveTab('deliverables')}
               id="tab-btn-deliverables"
@@ -784,8 +840,8 @@ export default function BrandWorkspaceView({
               )}
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'messages' ? 'active' : ''}`}
               onClick={() => setActiveTab('messages')}
               id="tab-btn-messages"
@@ -794,8 +850,8 @@ export default function BrandWorkspaceView({
               <span>Messages</span>
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`workspace-tab-btn ${activeTab === 'brand-settings' ? 'active' : ''}`}
               onClick={() => setActiveTab('brand-settings')}
               id="tab-btn-settings"
@@ -821,7 +877,7 @@ export default function BrandWorkspaceView({
             ======================================================== */}
         {activeTab === 'overview' && (
           <div className="studio-overview-content fade-in">
-            
+
             {/* If 0 campaigns: Polish First-Visit Experience */}
             {campaigns.length === 0 ? (
               <div className="empty-first-brand-card studio-card text-center">
@@ -843,11 +899,23 @@ export default function BrandWorkspaceView({
                     <span className="btn btn-secondary btn-sm">Start Campaign</span>
                   </div>
 
-                  <div className="first-choice-box highlighted" onClick={() => handleOpenCreateCampaign('ai')}>
+                  <div 
+                    className="first-choice-box highlighted" 
+                    onClick={handleNavigateToDiscover}
+                    id="btn-structure-brief-ai"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleNavigateToDiscover();
+                      }
+                    }}
+                  >
                     <div className="choice-icon"><Sparkles size={20} className="text-lavender" /></div>
                     <h3>Structure with Alloy Brief AI</h3>
                     <p>Write what you want in plain words. Groq AI structures deliverables and targets.</p>
-                    <span className="btn btn-primary btn-sm">Describe Brief</span>
+                    <span className="btn btn-primary btn-sm" onClick={handleNavigateToDiscover}>Describe Brief</span>
                   </div>
 
                   {isDemoMode ? (
@@ -936,16 +1004,16 @@ export default function BrandWorkspaceView({
                           </div>
                         </div>
                         <div className="attention-actions">
-                          <button 
-                            type="button" 
+                          <button
+                            type="button"
                             className="btn btn-secondary btn-sm"
                             onClick={() => handleOpenDetailModal(camp)}
                           >
                             <span>Inspect Brief</span>
                           </button>
                           {camp.status === 'Draft' && (
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               className="btn btn-primary btn-sm"
                               onClick={() => handleToggleCampaignState(camp)}
                             >
@@ -1014,8 +1082,8 @@ export default function BrandWorkspaceView({
                           </p>
 
                           <div className="creator-card-actions">
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               className="btn btn-ghost btn-sm"
                               onClick={() => {
                                 setWhyModalCreator(creator);
@@ -1025,8 +1093,8 @@ export default function BrandWorkspaceView({
                               <HelpCircle size={13} />
                               <span>Why Fit</span>
                             </button>
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               className="btn btn-secondary btn-sm"
                               onClick={() => {
                                 setInviteModalCreator(creator);
@@ -1049,8 +1117,8 @@ export default function BrandWorkspaceView({
                     <div className="question-header">
                       <span className="question-number">04</span>
                       <h2 className="question-text">Recent Sent Invitations</h2>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn btn-ghost btn-sm"
                         onClick={() => setActiveTab('invitations')}
                       >
@@ -1092,8 +1160,8 @@ export default function BrandWorkspaceView({
                         <h3>Creator Submissions Waiting for Review</h3>
                         <p>You have {overviewMetrics.deliverablesAwaitingReview} deliverable package submitted by creative partners ready for master evaluation.</p>
                       </div>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn btn-primary btn-sm"
                         onClick={() => setActiveTab('deliverables')}
                       >
@@ -1117,7 +1185,7 @@ export default function BrandWorkspaceView({
             <div className="campaigns-toolbar studio-card">
               <div className="toolbar-search-wrap">
                 <Search size={15} className="search-icon" />
-                <input 
+                <input
                   type="text"
                   placeholder="Search campaigns by name, objective, or brief…"
                   value={campaignSearch}
@@ -1141,7 +1209,7 @@ export default function BrandWorkspaceView({
               </div>
 
               <div className="toolbar-actions-right">
-                <select 
+                <select
                   className="sort-select"
                   value={campaignSort}
                   onChange={(e) => setCampaignSort(e.target.value)}
@@ -1150,8 +1218,8 @@ export default function BrandWorkspaceView({
                   <option value="budget">Sort: Budget</option>
                   <option value="alpha">Sort: Title (A-Z)</option>
                 </select>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-primary btn-sm"
                   onClick={() => handleOpenCreateCampaign('scratch')}
                   id="new-campaign-btn-tab"
@@ -1168,8 +1236,8 @@ export default function BrandWorkspaceView({
                 <FileText size={32} className="text-tertiary" />
                 <h3>No campaigns found</h3>
                 <p>No campaigns match your current filters. Create a new campaign or clear your search.</p>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={() => { setCampaignSearch(''); setCampaignStatusFilter('all'); }}
                 >
@@ -1181,10 +1249,10 @@ export default function BrandWorkspaceView({
                 {filteredCampaigns.map(camp => (
                   <div key={camp.id} className="campaign-manage-card studio-card">
                     <div className="camp-card-cover-wrap">
-                      <img 
-                        src={camp.coverImage || "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80"} 
+                      <img
+                        src={camp.coverImage || "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80"}
                         alt={camp.title}
-                        className="camp-card-cover" 
+                        className="camp-card-cover"
                       />
                       <div className="camp-card-badges">
                         <span className={`status-pill ${camp.status.toLowerCase()}`}>
@@ -1230,7 +1298,7 @@ export default function BrandWorkspaceView({
 
                     <div className="camp-card-footer">
                       <span className="camp-card-updated">Updated {camp.updatedAt || camp.createdAt}</span>
-                      
+
                       <div className="camp-card-actions">
                         <button
                           type="button"
@@ -1263,8 +1331,8 @@ export default function BrandWorkspaceView({
                           <Eye size={13} />
                           <span>View</span>
                         </button>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="btn btn-secondary btn-xs"
                           onClick={() => handleOpenEditCampaign(camp)}
                           title="Edit Campaign"
@@ -1272,16 +1340,16 @@ export default function BrandWorkspaceView({
                           <Edit3 size={13} />
                           <span>Edit</span>
                         </button>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="btn btn-ghost btn-xs"
                           onClick={() => onDuplicateCampaign && onDuplicateCampaign(camp.id)}
                           title="Duplicate Campaign"
                         >
                           <Copy size={13} />
                         </button>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="btn btn-ghost btn-xs text-danger"
                           onClick={() => setDeletingCampaign(camp)}
                           title="Delete Campaign"
@@ -1353,7 +1421,7 @@ export default function BrandWorkspaceView({
             <div className="discover-toolbar studio-card">
               <div className="toolbar-search-wrap">
                 <Search size={15} className="search-icon" />
-                <input 
+                <input
                   type="text"
                   placeholder="Semantic search: 'liquid caustics', 'luxury 3D watch', '35mm grain'…"
                   value={discoverSearch}
@@ -1387,7 +1455,7 @@ export default function BrandWorkspaceView({
                     alignItems: 'center',
                     gap: '5px'
                   }}
-                  title="Review Brand Trust & Verification Status"
+                  title="Review Brand Trust and Verification Status"
                 >
                   <ShieldCheck size={12} color="#059669" />
                   <span>Brand Trust Centre</span>
@@ -1546,7 +1614,7 @@ export default function BrandWorkspaceView({
               {campaigns.length > 0 && (
                 <div className="shortlist-camp-select-wrap">
                   <span className="select-lbl">For Campaign:</span>
-                  <select 
+                  <select
                     className="camp-select-dropdown"
                     value={shortlistCampaignFilter}
                     onChange={(e) => setShortlistCampaignFilter(e.target.value)}
@@ -1565,8 +1633,8 @@ export default function BrandWorkspaceView({
                 <Bookmark size={32} className="text-tertiary" />
                 <h3>No creators shortlisted</h3>
                 <p>You haven’t saved any creators to this shortlist yet.</p>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-primary btn-sm"
                   onClick={() => setActiveTab('discover')}
                 >
@@ -1587,16 +1655,16 @@ export default function BrandWorkspaceView({
                     </div>
 
                     <div className="market-preview-image-wrap">
-                      <img 
-                        src={creator.heroWork || creator.projects?.[0]?.image} 
+                      <img
+                        src={creator.heroWork || creator.projects?.[0]?.image}
                         alt={creator.name}
-                        className="market-preview-img" 
+                        className="market-preview-img"
                       />
                     </div>
 
                     <div className="market-card-actions">
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn btn-primary btn-xs"
                         onClick={() => {
                           setInviteModalCreator(creator);
@@ -1607,8 +1675,8 @@ export default function BrandWorkspaceView({
                         <span>Send Invitation</span>
                       </button>
 
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn btn-ghost btn-xs text-danger"
                         onClick={() => {
                           const targetCampId = shortlistCampaignFilter === 'all' ? (inspectedCampaign?.id || campaigns[0]?.id) : shortlistCampaignFilter;
@@ -1652,8 +1720,8 @@ export default function BrandWorkspaceView({
                 <Send size={32} className="text-tertiary" />
                 <h3>No invitations found</h3>
                 <p>You haven’t sent any invitations matching this filter.</p>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-primary btn-sm"
                   onClick={() => setActiveTab('discover')}
                 >
@@ -1673,7 +1741,7 @@ export default function BrandWorkspaceView({
                         </div>
                         <span className="inv-campaign-link">Campaign: <strong>{inv.campaignTitle || inv.title}</strong></span>
                         <p className="inv-summary-quote">“{inv.summary}”</p>
-                        
+
                         <div className="inv-terms-row">
                           <span><strong>Budget:</strong> {inv.budget}</span>
                           <span>•</span>
@@ -1687,8 +1755,8 @@ export default function BrandWorkspaceView({
                     <div className="inv-card-actions">
                       <span className="inv-time-text">{inv.createdAt}</span>
                       {inv.status === 'accepted' && (
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="btn btn-primary btn-sm"
                           onClick={() => setActiveTab('collaborations')}
                         >
@@ -1768,8 +1836,8 @@ export default function BrandWorkspaceView({
 
                     <div className="proj-actions-footer">
                       {proj.status === 'submitted' ? (
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="btn btn-primary btn-sm"
                           onClick={() => {
                             setReviewModalProject(proj);
@@ -1780,8 +1848,8 @@ export default function BrandWorkspaceView({
                           <span>Review Submission</span>
                         </button>
                       ) : (
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="btn btn-secondary btn-sm"
                           onClick={() => {
                             setSelectedConnectionId(connections.find(c => c.creatorId === proj.creatorId)?.id || connections[0]?.id);
@@ -1869,8 +1937,8 @@ export default function BrandWorkspaceView({
                     <div className="deliverable-action-row">
                       {proj.status === 'submitted' && (
                         <>
-                          <button 
-                            type="button" 
+                          <button
+                            type="button"
                             className="btn btn-secondary btn-sm"
                             onClick={() => {
                               setReviewModalProject(proj);
@@ -1882,8 +1950,8 @@ export default function BrandWorkspaceView({
                             <span>Request Revision</span>
                           </button>
 
-                          <button 
-                            type="button" 
+                          <button
+                            type="button"
                             className="btn btn-primary btn-sm"
                             onClick={() => {
                               setReviewModalProject(proj);
@@ -1936,8 +2004,8 @@ export default function BrandWorkspaceView({
                     <div className="empty-threads-msg">No conversations opened yet.</div>
                   ) : (
                     connections.map(conn => (
-                      <div 
-                        key={conn.id} 
+                      <div
+                        key={conn.id}
                         className={`thread-item ${conn.id === selectedConnectionId ? 'active' : ''}`}
                         onClick={() => setSelectedConnectionId(conn.id)}
                       >
@@ -1985,7 +2053,7 @@ export default function BrandWorkspaceView({
                     )}
 
                     <form onSubmit={handleSendMessageSubmit} className="chat-input-bar">
-                      <textarea 
+                      <textarea
                         placeholder="Write a message to creative partner… (Enter to send, Shift+Enter for newline)"
                         value={chatInputText}
                         onChange={(e) => {
@@ -2003,8 +2071,8 @@ export default function BrandWorkspaceView({
                         className="chat-text-input"
                         style={{ resize: 'none', minHeight: '38px', padding: '8px 12px', fontFamily: 'inherit' }}
                       />
-                      <button 
-                        type="submit" 
+                      <button
+                        type="submit"
                         className="btn btn-primary btn-sm"
                         disabled={!chatInputText.trim() || isSendingMessage}
                       >
@@ -2031,7 +2099,7 @@ export default function BrandWorkspaceView({
         {activeTab === 'brand-settings' && (
           <div className="studio-settings-content fade-in">
             <div className="settings-split-grid">
-              
+
               {/* Form 1: Brand Profile Information */}
               <div className="settings-card studio-card">
                 <div className="card-header-with-badge">
@@ -2051,8 +2119,8 @@ export default function BrandWorkspaceView({
                 <form onSubmit={handleSaveBrandProfile} className="settings-form">
                   <div className="form-group">
                     <label>Brand Name</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={brandProfileForm.name}
                       onChange={(e) => setBrandProfileForm({ ...brandProfileForm, name: e.target.value })}
                       required
@@ -2062,16 +2130,16 @@ export default function BrandWorkspaceView({
                   <div className="form-group-row">
                     <div className="form-group">
                       <label>Industry</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={brandProfileForm.industry}
                         onChange={(e) => setBrandProfileForm({ ...brandProfileForm, industry: e.target.value })}
                       />
                     </div>
                     <div className="form-group">
                       <label>Website</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={brandProfileForm.website}
                         onChange={(e) => setBrandProfileForm({ ...brandProfileForm, website: e.target.value })}
                       />
@@ -2080,7 +2148,7 @@ export default function BrandWorkspaceView({
 
                   <div className="form-group">
                     <label>Brand Description & Mission</label>
-                    <textarea 
+                    <textarea
                       rows={3}
                       value={brandProfileForm.description}
                       onChange={(e) => setBrandProfileForm({ ...brandProfileForm, description: e.target.value })}
@@ -2089,8 +2157,8 @@ export default function BrandWorkspaceView({
 
                   <div className="form-group">
                     <label>Aesthetic Preference & Tone</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={brandProfileForm.aesthetic}
                       onChange={(e) => setBrandProfileForm({ ...brandProfileForm, aesthetic: e.target.value })}
                     />
@@ -2098,8 +2166,8 @@ export default function BrandWorkspaceView({
 
                   <div className="form-group">
                     <label>Preferred Channels (comma separated)</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={brandProfileForm.preferredPlatforms}
                       onChange={(e) => setBrandProfileForm({ ...brandProfileForm, preferredPlatforms: e.target.value })}
                     />
@@ -2144,8 +2212,8 @@ export default function BrandWorkspaceView({
                 </div>
 
                 <div className="settings-actions-group">
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="btn btn-secondary btn-block"
                     onClick={() => setIsCreateBrandModalOpen(true)}
                   >
@@ -2153,8 +2221,8 @@ export default function BrandWorkspaceView({
                     <span>Create Separate Brand Identity</span>
                   </button>
 
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="btn btn-ghost btn-block text-danger"
                     onClick={() => {
                       if (confirm("Reset local storage back to demo seeds? Any custom campaigns will be reset.")) {
@@ -2197,21 +2265,60 @@ export default function BrandWorkspaceView({
       {isCampaignDetailOpen && detailCampaign && (
         <div className="modal-overlay" onClick={() => setIsCampaignDetailOpen(false)}>
           <div className="modal-content campaign-detail-sheet" onClick={(e) => e.stopPropagation()}>
-            <button 
-              type="button" 
-              className="modal-close-btn" 
+            <button
+              type="button"
+              className="modal-close-btn"
               onClick={() => setIsCampaignDetailOpen(false)}
             >
               <X size={18} />
             </button>
 
             <div className="camp-detail-header">
-              <div className="badges-row">
+              <div className="badges-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
                 <span className={`status-pill ${detailCampaign.status.toLowerCase()}`}>{detailCampaign.status}</span>
-                <span className={`visibility-pill ${detailCampaign.visibility}`}>{detailCampaign.visibility}</span>
+                <span className={`visibility-pill ${detailCampaign.visibility}`}>
+                  {detailCampaign.visibility === 'published' ? 'Marketplace Live' : 'Private'}
+                </span>
+                <span className="badge badge-subtle">
+                  {detailCampaign.applicationStatus === 'closed' ? 'Applications Closed' : 'Accepting Applications'}
+                </span>
+                <span className="badge" style={{ background: 'var(--accent-lavender-light)', color: 'var(--accent-lavender-deep)' }}>
+                  {detailCampaign.acceptedApplicationsCount || 0} / {detailCampaign.creatorSlots || 1} Slots Filled
+                </span>
+                <span className="badge badge-subtle">
+                  {detailCampaign.isNegotiable !== false ? 'Budget Negotiable' : 'Fixed Budget'}
+                </span>
               </div>
-              <h2 className="detail-headline font-editorial">{detailCampaign.title}</h2>
-              <p className="detail-subhead">{detailCampaign.objective} • {detailCampaign.industry}</p>
+              <h2 className="detail-headline font-editorial" style={{ marginTop: '10px', marginBottom: '6px' }}>{detailCampaign.title}</h2>
+              <p className="detail-subhead" style={{ color: 'var(--text-secondary)' }}>{detailCampaign.objective} • {detailCampaign.industry}</p>
+
+              {/* Quick Marketplace Controls */}
+              <div className="brand-campaign-control-bar">
+                <div className="brand-control-status-group">
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>Marketplace Visibility:</span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    {detailCampaign.visibility === 'published' ? 'Live & Discoverable in Creator Marketplace' : 'Private (Only invited creators can participate)'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => handleToggleCampaignState(detailCampaign)}
+                  >
+                    <Globe size={13} />
+                    <span>{detailCampaign.visibility === 'published' ? 'Make Private' : 'Publish to Marketplace'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => handleToggleApplicationStatus(detailCampaign)}
+                  >
+                    <Layers size={13} />
+                    <span>{detailCampaign.applicationStatus === 'closed' ? 'Open Applications' : 'Close Applications'}</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="camp-detail-body">
@@ -2233,12 +2340,14 @@ export default function BrandWorkspaceView({
                 </div>
                 <div className="spec-box">
                   <span className="spec-lbl">Deadline</span>
-                  <span className="spec-val">{detailCampaign.deadline || detailCampaign.timeline || 'Flexible'}</span>
+                  <span className="spec-val">
+                    {detailCampaign.isOpenEnded ? 'Open-ended' : (detailCampaign.deadline || detailCampaign.timeline || 'Flexible')}
+                  </span>
                 </div>
                 <div className="spec-box">
-                  <span className="spec-lbl">Platforms</span>
+                  <span className="spec-lbl">Slots Remaining</span>
                   <span className="spec-val">
-                    {Array.isArray(detailCampaign.platforms) ? detailCampaign.platforms.join(', ') : detailCampaign.platforms}
+                    {detailCampaign.remainingSlots !== undefined ? detailCampaign.remainingSlots : Math.max(0, (detailCampaign.creatorSlots || 1) - (detailCampaign.acceptedApplicationsCount || 0))}
                   </span>
                 </div>
                 {detailCampaign.fundedAmountRupees > 0 && (
@@ -2247,6 +2356,287 @@ export default function BrandWorkspaceView({
                     <span className="spec-val" style={{ color: '#059669', fontWeight: 700 }}>
                       ₹{Number(detailCampaign.fundedAmountRupees).toLocaleString('en-IN')} INR
                     </span>
+                  </div>
+                )}
+              </div>
+
+              {/* CREATOR APPLICATIONS & PROPOSALS SECTION */}
+              <div className="detail-section" style={{ marginTop: '28px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: '1.25rem', letterSpacing: '-0.01em' }}>
+                      Creator Proposals ({applications.filter(a => a.campaignId === detailCampaign.id && !a.isHeld).length})
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
+                      Private proposals isolated from competing creators
+                    </p>
+                  </div>
+                  {detailCampaign.visibility === 'published' && (
+                    <span className="badge badge-subtle" style={{ fontSize: '0.74rem' }}>
+                      Slot Capacity: {detailCampaign.remainingSlots !== undefined ? detailCampaign.remainingSlots : Math.max(0, (detailCampaign.creatorSlots || 1) - (detailCampaign.acceptedApplicationsCount || 0))} open
+                    </span>
+                  )}
+                </div>
+
+                {applications.filter(a => a.campaignId === detailCampaign.id && !a.isHeld).length === 0 ? (
+                  <div style={{
+                    padding: '32px 24px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px dashed var(--border-medium)',
+                    background: 'var(--bg-card-subtle)',
+                    textAlign: 'center',
+                    color: 'var(--text-tertiary)',
+                    fontSize: '0.88rem'
+                  }}>
+                    {detailCampaign.visibility !== 'published' ? (
+                      <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                        This campaign is currently <strong>Private</strong>. Publish it to the Creator Marketplace to discover and receive creator applications.
+                      </p>
+                    ) : (
+                      <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                        No creator proposals received yet for this campaign. Verified creators will submit bids directly.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {applications
+                      .filter(a => a.campaignId === detailCampaign.id && !a.isHeld)
+                      .map(app => {
+                        const isCountering = counterOfferAppId === app.id;
+                        const remaining = detailCampaign.remainingSlots !== undefined
+                          ? detailCampaign.remainingSlots
+                          : Math.max(0, (detailCampaign.creatorSlots || 1) - (detailCampaign.acceptedApplicationsCount || 0));
+
+                        return (
+                          <div
+                            key={app.id}
+                            className="brand-application-card"
+                          >
+                            <div className="brand-app-creator-header">
+                              <div className="brand-app-creator-info">
+                                <img
+                                  src={app.creatorAvatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"}
+                                  alt={app.creatorName}
+                                  className="brand-app-avatar"
+                                />
+                                <div className="brand-app-name-block">
+                                  <h4>{app.creatorName}</h4>
+                                  <span>
+                                    {app.creatorRole || 'AI Creative Partner'} • Submitted {new Date(app.createdAt).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div>
+                                <span className="badge" style={{
+                                  fontSize: '0.74rem',
+                                  padding: '5px 10px',
+                                  borderRadius: 'var(--radius-pill)',
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.04em',
+                                  fontWeight: 600,
+                                  background: app.status === 'accepted' ? 'var(--accent-mint-light)' :
+                                              app.status === 'counter_offered' ? 'var(--accent-yellow-light)' :
+                                              'var(--accent-lavender-light)',
+                                  color: app.status === 'accepted' ? 'var(--accent-mint)' :
+                                         app.status === 'counter_offered' ? 'var(--accent-yellow-deep)' :
+                                         'var(--accent-lavender-deep)',
+                                  border: `1px solid ${
+                                    app.status === 'accepted' ? 'var(--accent-mint-border)' :
+                                    app.status === 'counter_offered' ? 'var(--accent-yellow-border)' :
+                                    'var(--accent-lavender-border)'
+                                  }`
+                                }}>
+                                  {app.status === 'pending_review' ? 'Review Pending' :
+                                   app.status === 'counter_offered' ? 'Counter-Offer Sent' :
+                                   app.status === 'accepted' ? 'Accepted & Active' : app.status}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Proposed Terms */}
+                            <div className="brand-app-terms-row">
+                              <div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', display: 'block', marginBottom: '2px' }}>
+                                  Proposed Rate
+                                </span>
+                                <strong style={{ fontSize: '1.05rem', color: 'var(--accent-forest)' }}>{app.proposedPrice}</strong>
+                              </div>
+                              <div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', display: 'block', marginBottom: '2px' }}>
+                                  Delivery Timeline
+                                </span>
+                                <strong style={{ fontSize: '1.05rem', color: 'var(--text-primary)' }}>{app.deliveryTimeline || 'Standard'}</strong>
+                              </div>
+                              {app.counterOffer && (
+                                <div>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-yellow-deep)', display: 'block', marginBottom: '2px' }}>
+                                    Your Counter-Offer
+                                  </span>
+                                  <strong style={{ fontSize: '1.05rem', color: 'var(--accent-yellow-deep)' }}>
+                                    {app.counterOffer.proposedRate} ({app.counterOffer.status})
+                                  </strong>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Pitch Text */}
+                            {app.pitchText && (
+                              <div className="app-proposal-quote">
+                                “{app.pitchText}”
+                              </div>
+                            )}
+
+                            {/* Attached Evidence Projects */}
+                            {(app.attachedProjectIds || []).length > 0 && (
+                              <div className="brand-app-evidence-spotlight">
+                                <span style={{ fontSize: '0.78rem', color: 'var(--accent-bronze)', fontWeight: 600 }}>
+                                  Verification Evidence:
+                                </span>
+                                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                  {app.attachedProjectIds.length} portfolio project(s) attached and verified against campaign brief criteria.
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Actions Row */}
+                            {app.status === 'pending_review' && (
+                              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={remaining <= 0}
+                                  onClick={() => {
+                                    if (onAcceptApplication) onAcceptApplication(app.id, detailCampaign.id);
+                                  }}
+                                  title={remaining <= 0 ? 'All campaign slots filled' : 'Accept proposal and start collaboration'}
+                                >
+                                  <CheckCircle2 size={13} />
+                                  <span>{remaining <= 0 ? 'All Slots Filled' : 'Accept Proposal'}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => {
+                                    if (isCountering) {
+                                      setCounterOfferAppId(null);
+                                    } else {
+                                      setCounterOfferAppId(app.id);
+                                      setCounterOfferForm({
+                                        proposedRate: app.proposedPrice || '',
+                                        proposedTimeline: app.deliveryTimeline || '',
+                                        note: ''
+                                      });
+                                    }
+                                  }}
+                                >
+                                  <span>{isCountering ? 'Cancel' : 'Propose Counter-Offer'}</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Message Creator — opens the canonical conversation for accepted applications */}
+                            {app.status === 'accepted' && (
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                                <button
+                                  type="button"
+                                  id={`message-creator-btn-${app.id}`}
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => {
+                                    const connId = `conn-${app.campaignId}-${app.creatorId}`;
+                                    const matchingConn = (connections || []).find(c => c.id === connId || (c.campaignId === app.campaignId && c.creatorId === app.creatorId));
+                                    if (matchingConn) {
+                                      setSelectedConnectionId(matchingConn.id);
+                                    } else {
+                                      setSelectedConnectionId(connId);
+                                    }
+                                    setIsCampaignDetailOpen(false);
+                                    setActiveTab('messages');
+                                  }}
+                                >
+                                  <MessageSquare size={13} />
+                                  <span>Message Creator</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Inline Counter Offer Form */}
+                            {isCountering && (
+                              <div style={{
+                                padding: '16px 18px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'var(--bg-card-subtle)',
+                                border: '1px solid var(--accent-gold)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '12px',
+                                marginTop: '8px'
+                              }}>
+                                <h5 style={{ margin: 0, fontSize: '0.88rem', color: 'var(--accent-bronze)', fontWeight: 600 }}>
+                                  Propose Counter-Offer to {app.creatorName}
+                                </h5>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                  <div>
+                                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-tertiary)', display: 'block', marginBottom: '4px' }}>Counter Rate</label>
+                                    <input
+                                      type="text"
+                                      className="form-input"
+                                      value={counterOfferForm.proposedRate}
+                                      onChange={(e) => setCounterOfferForm(prev => ({ ...prev, proposedRate: e.target.value }))}
+                                      placeholder="$4,500"
+                                      required
+                                    />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-tertiary)', display: 'block', marginBottom: '4px' }}>Counter Timeline</label>
+                                    <input
+                                      type="text"
+                                      className="form-input"
+                                      value={counterOfferForm.proposedTimeline}
+                                      onChange={(e) => setCounterOfferForm(prev => ({ ...prev, proposedTimeline: e.target.value }))}
+                                      placeholder="10 Days"
+                                      required
+                                    />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-tertiary)', display: 'block', marginBottom: '4px' }}>Terms / Scope Adjustment Note</label>
+                                  <textarea
+                                    className="form-textarea"
+                                    rows={2}
+                                    value={counterOfferForm.note}
+                                    onChange={(e) => setCounterOfferForm(prev => ({ ...prev, note: e.target.value }))}
+                                    placeholder="Explain proposed rate adjustment or revised milestone schedule..."
+                                  />
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-xs"
+                                    onClick={() => setCounterOfferAppId(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-xs"
+                                    onClick={() => {
+                                      if (onProposeCounterOffer) {
+                                        onProposeCounterOffer(app.id, counterOfferForm);
+                                        setCounterOfferAppId(null);
+                                      }
+                                    }}
+                                  >
+                                    <span>Send Counter-Offer</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -2297,8 +2687,8 @@ export default function BrandWorkspaceView({
                   <span>Edit Campaign</span>
                 </button>
 
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-primary btn-sm"
                   onClick={() => {
                     handleToggleCampaignState(detailCampaign);
@@ -2319,9 +2709,9 @@ export default function BrandWorkspaceView({
       {isCreateEditModalOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateEditModalOpen(false)}>
           <div className="modal-content campaign-create-sheet" onClick={(e) => e.stopPropagation()}>
-            <button 
-              type="button" 
-              className="modal-close-btn" 
+            <button
+              type="button"
+              className="modal-close-btn"
               onClick={() => setIsCreateEditModalOpen(false)}
             >
               <X size={18} />
@@ -2343,15 +2733,15 @@ export default function BrandWorkspaceView({
                   <Sparkles size={16} className="text-lavender" />
                   <span>Structure with Alloy Brief AI (Powered by Groq)</span>
                 </div>
-                <textarea 
+                <textarea
                   rows={2}
                   placeholder="e.g. 'Launching a minimal titanium watch. Need 3D exploded motion passes and zero-gravity loops for YouTube and Instagram...'"
                   value={aiBriefPrompt}
                   onChange={(e) => setAiBriefPrompt(e.target.value)}
                   className="ai-brief-textarea"
                 />
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary btn-xs"
                   onClick={handleGenerateBriefWithGroq}
                   disabled={isAiBriefGenerating || !aiBriefPrompt.trim()}
@@ -2364,8 +2754,8 @@ export default function BrandWorkspaceView({
             <form onSubmit={handleSaveCampaignForm} className="campaign-form-grid">
               <div className="form-group full-width">
                 <label>Campaign Title *</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={campaignFormData.title}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, title: e.target.value })}
                   placeholder="e.g. Summer Skincare & Radiant Hydration Launch"
@@ -2375,7 +2765,7 @@ export default function BrandWorkspaceView({
 
               <div className="form-group">
                 <label>Campaign Objective</label>
-                <select 
+                <select
                   value={campaignFormData.objective}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, objective: e.target.value })}
                 >
@@ -2389,8 +2779,8 @@ export default function BrandWorkspaceView({
 
               <div className="form-group">
                 <label>Product or Service</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={campaignFormData.productOrService}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, productOrService: e.target.value })}
                   placeholder="e.g. Barrier Restoration Serum"
@@ -2399,7 +2789,7 @@ export default function BrandWorkspaceView({
 
               <div className="form-group full-width">
                 <label>Brief Description & Creative Direction *</label>
-                <textarea 
+                <textarea
                   rows={3}
                   value={campaignFormData.description}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, description: e.target.value })}
@@ -2410,8 +2800,8 @@ export default function BrandWorkspaceView({
 
               <div className="form-group full-width">
                 <label>Deliverables (comma separated) *</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={campaignFormData.deliverables}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, deliverables: e.target.value })}
                   placeholder="e.g. 3x 4K Master Stills, 2x 9:16 Vertical Loops"
@@ -2421,8 +2811,8 @@ export default function BrandWorkspaceView({
 
               <div className="form-group">
                 <label>Budget (Optional)</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={campaignFormData.budget}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, budget: e.target.value })}
                   placeholder="e.g. $5,000 – $10,000"
@@ -2430,19 +2820,66 @@ export default function BrandWorkspaceView({
               </div>
 
               <div className="form-group">
-                <label>Timeline or Deadline (Optional)</label>
-                <input 
-                  type="text" 
-                  value={campaignFormData.deadline}
-                  onChange={(e) => setCampaignFormData({ ...campaignFormData, deadline: e.target.value })}
-                  placeholder="e.g. Nov 30, 2026 or 3 Weeks"
+                <label>Budget Negotiability</label>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginTop: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                    <input
+                      type="radio"
+                      name="isNegotiable"
+                      checked={campaignFormData.isNegotiable !== false}
+                      onChange={() => setCampaignFormData(prev => ({ ...prev, isNegotiable: true }))}
+                    />
+                    <span>Negotiable (Creators can propose custom rates)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                    <input
+                      type="radio"
+                      name="isNegotiable"
+                      checked={campaignFormData.isNegotiable === false}
+                      onChange={() => setCampaignFormData(prev => ({ ...prev, isNegotiable: false }))}
+                    />
+                    <span>Fixed Budget (Hard cap, non-negotiable)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Creator Slots Needed (Default: 1)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={campaignFormData.creatorSlots || 1}
+                  onChange={(e) => setCampaignFormData({ ...campaignFormData, creatorSlots: Math.max(1, parseInt(e.target.value) || 1) })}
                 />
               </div>
 
               <div className="form-group">
+                <label>Timeline or Deadline</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!campaignFormData.isOpenEnded}
+                      onChange={(e) => setCampaignFormData(prev => ({ ...prev, isOpenEnded: e.target.checked }))}
+                    />
+                    <span>Open-ended (No hard deadline)</span>
+                  </label>
+                  {!campaignFormData.isOpenEnded && (
+                    <input
+                      type="text"
+                      value={campaignFormData.deadline}
+                      onChange={(e) => setCampaignFormData({ ...campaignFormData, deadline: e.target.value })}
+                      placeholder="e.g. Nov 30, 2026 or 3 Weeks"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="form-group">
                 <label>Target Platforms</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={campaignFormData.platforms}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, platforms: e.target.value })}
                   placeholder="e.g. Instagram, TikTok, Digital OOH"
@@ -2451,34 +2888,34 @@ export default function BrandWorkspaceView({
 
               <div className="form-group">
                 <label>Visibility Mode</label>
-                <select 
+                <select
                   value={campaignFormData.visibility}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, visibility: e.target.value })}
                 >
-                  <option value="published">Published Opportunity (Visible to creators)</option>
-                  <option value="draft">Private Draft (Visible only to this brand)</option>
+                  <option value="private">Private (Only invited creators can view & collaborate)</option>
+                  <option value="published">Published to Marketplace (Creators discover & apply)</option>
                 </select>
               </div>
 
               <div className="form-footer-actions full-width">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary"
                   onClick={() => setIsCreateEditModalOpen(false)}
                 >
                   Cancel
                 </button>
 
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary"
                   onClick={(e) => handleSaveCampaignForm(e, 'draft')}
                 >
                   Save as Draft
                 </button>
 
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn btn-primary"
                 >
                   {editingCampaignId ? 'Update Campaign' : 'Save & Publish Campaign'}
@@ -2506,15 +2943,15 @@ export default function BrandWorkspaceView({
               Are you sure you want to delete “<strong>{deletingCampaign.title}</strong>”? This action cannot be undone.
             </p>
             <div className="confirm-actions-row">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-secondary"
                 onClick={() => setDeletingCampaign(null)}
               >
                 Cancel
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-primary bg-danger"
                 onClick={() => {
                   if (onDeleteCampaign) onDeleteCampaign(deletingCampaign.id);
@@ -2543,9 +2980,9 @@ export default function BrandWorkspaceView({
             <form onSubmit={handleCreateBrandSubmit} className="brand-create-form">
               <div className="form-group">
                 <label>Brand Name *</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Solis Studio" 
+                <input
+                  type="text"
+                  placeholder="e.g. Solis Studio"
                   value={newBrandForm.name}
                   onChange={(e) => setNewBrandForm({ ...newBrandForm, name: e.target.value })}
                   required
@@ -2554,7 +2991,7 @@ export default function BrandWorkspaceView({
 
               <div className="form-group">
                 <label>Industry</label>
-                <select 
+                <select
                   value={newBrandForm.industry}
                   onChange={(e) => setNewBrandForm({ ...newBrandForm, industry: e.target.value })}
                 >
@@ -2568,9 +3005,9 @@ export default function BrandWorkspaceView({
 
               <div className="form-group">
                 <label>Website</label>
-                <input 
-                  type="text" 
-                  placeholder="https://solis.studio" 
+                <input
+                  type="text"
+                  placeholder="https://solis.studio"
                   value={newBrandForm.website}
                   onChange={(e) => setNewBrandForm({ ...newBrandForm, website: e.target.value })}
                 />
@@ -2578,9 +3015,9 @@ export default function BrandWorkspaceView({
 
               <div className="form-group">
                 <label>Aesthetic Direction</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Minimalist, Luminous, Sun-Drenched" 
+                <input
+                  type="text"
+                  placeholder="e.g. Minimalist, Luminous, Sun-Drenched"
                   value={newBrandForm.aesthetic}
                   onChange={(e) => setNewBrandForm({ ...newBrandForm, aesthetic: e.target.value })}
                 />

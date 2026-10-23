@@ -474,6 +474,7 @@ export function getInitialMarketplaceState() {
     invitations: INITIAL_BRAND_INVITATIONS,
     connections: INITIAL_BRAND_CONNECTIONS,
     opportunities: INITIAL_CREATOR_OPPORTUNITIES,
+    applications: [],
     shortlists: {
       "camp-summer-skincare": ["elena-rostova", "zora-vance", "maya-chen"],
       "camp-vanguard-chrono": ["kai-sorenson", "alex-rivera"],
@@ -778,8 +779,33 @@ export function createCampaignRecord(campaignData, brand) {
   const brandAvatar = brand?.logo || campaignData.brandAvatar || "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=200&q=80";
   const brandWebsite = brand?.website || campaignData.brandWebsite || "brand.co";
 
-  const visibility = campaignData.visibility || (campaignData.status === 'Draft' ? 'draft' : 'published');
+  // Rule: Campaigns are private by default unless explicitly published
+  const visibility = campaignData.visibility === 'published' ? 'published' : (campaignData.visibility || 'private');
   const status = campaignData.status || (visibility === 'draft' ? 'Draft' : 'Active');
+
+  // Application availability & deadline controls
+  const isAcceptingApplications = campaignData.isAcceptingApplications !== undefined
+    ? Boolean(campaignData.isAcceptingApplications)
+    : (campaignData.applicationStatus === 'closed' ? false : (visibility === 'published'));
+  const applicationStatus = isAcceptingApplications ? 'open' : 'closed';
+
+  // Configurable creator slots (defaults to 1)
+  const creatorSlots = Math.max(1, parseInt(campaignData.creatorSlots ?? campaignData.slots ?? 1, 10) || 1);
+  const acceptedApplicationsCount = Math.max(0, parseInt(campaignData.acceptedApplicationsCount ?? 0, 10) || 0);
+  const remainingSlots = Math.max(0, creatorSlots - acceptedApplicationsCount);
+
+  // Application deadline vs Open-ended
+  const isOpenEnded = Boolean(
+    campaignData.isOpenEnded !== undefined
+      ? campaignData.isOpenEnded
+      : (!campaignData.deadline || campaignData.deadline === 'Open-ended' || campaignData.deadline === 'TBD' || campaignData.deadline === 'Flexible')
+  );
+  const deadline = isOpenEnded ? 'Open-ended' : (campaignData.deadline || campaignData.timeline || 'Open-ended');
+
+  // Budget negotiability
+  const isNegotiable = campaignData.isNegotiable !== undefined
+    ? Boolean(campaignData.isNegotiable)
+    : (campaignData.negotiable ?? true);
 
   // Normalize deliverables
   let deliverables = campaignData.deliverables || [];
@@ -822,13 +848,21 @@ export function createCampaignRecord(campaignData, brand) {
     contentFormats: campaignData.contentFormats || ["4K Stills Suite"],
     budget: campaignData.budget || "In Discussion",
     currency: campaignData.currency || "USD",
-    timeline: campaignData.timeline || campaignData.deadline || "Flexible",
-    deadline: campaignData.deadline || campaignData.timeline || "TBD",
+    isNegotiable,
+    timeline: campaignData.timeline || deadline,
+    deadline,
+    isOpenEnded,
+    creatorSlots,
+    acceptedApplicationsCount,
+    remainingSlots,
+    isAcceptingApplications,
+    applicationStatus,
     targetAudience: campaignData.targetAudience || campaignData.audience || "Modern consumers",
     coverImage: campaignData.coverImage || brand?.coverImage || "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=1200&q=85",
     shortlist: campaignData.shortlist || [],
     status,
     visibility,
+    isMarketplacePublished: visibility === 'published',
     createdAt: "Just now",
     updatedAt: "Just now",
     isDemo: !!brand?.isDemo
@@ -1118,25 +1152,57 @@ export function getBrandScopedData(state, brandId, isDemoMode = false) {
  */
 export function getPublicCreatorOpportunities(state) {
   const publishedCampaignOpps = (state.campaigns || [])
-    .filter(c => (c.visibility === 'published' || c.status === 'Active') && c.visibility !== 'draft' && c.visibility !== 'archived')
+    .filter(c => {
+      // Must be explicitly published
+      if (c.visibility !== 'published') return false;
+      // Cannot be archived or draft
+      if (c.status === 'Archived' || c.status === 'Draft' || c.visibility === 'draft') return false;
+      // Cannot have applications explicitly closed
+      if (c.isAcceptingApplications === false || c.applicationStatus === 'closed') return false;
+      // If deadline specified and passed, exclude (unless open-ended)
+      if (!c.isOpenEnded && c.deadline && c.deadline !== 'Open-ended' && c.deadline !== 'TBD' && c.deadline !== 'Flexible') {
+        const deadlineDate = new Date(c.deadline);
+        if (!isNaN(deadlineDate.getTime()) && deadlineDate.getTime() < Date.now()) {
+          return false;
+        }
+      }
+      // If all slots are filled, exclude from public open opportunities
+      if (typeof c.remainingSlots === 'number' && c.remainingSlots <= 0) {
+        return false;
+      }
+      return true;
+    })
     .map(c => ({
       id: `opp-${c.id}`,
       campaignId: c.id,
       brand: c.brandName,
+      brandId: c.ownerBrandId || c.brandId,
+      brandAvatar: c.brandAvatar,
       title: c.title,
       budget: c.budget || 'In Discussion',
-      timeline: c.timeline || c.deadline || 'Standard Production',
+      currency: c.currency || 'USD',
+      isNegotiable: c.isNegotiable ?? true,
+      timeline: c.timeline || 'Standard Production',
+      deadline: c.deadline || 'Open-ended',
+      isOpenEnded: c.isOpenEnded ?? true,
+      creatorSlots: c.creatorSlots || 1,
+      remainingSlots: c.remainingSlots !== undefined ? c.remainingSlots : (c.creatorSlots || 1),
       creativeDirection: c.creativeStyle || c.description,
+      description: c.description || c.creativeDirection || '',
+      deliverables: Array.isArray(c.deliverables) ? c.deliverables : [c.deliverables || 'Production Assets'],
       requirements: Array.isArray(c.deliverables) ? c.deliverables : [c.deliverables || 'Production Assets'],
+      platforms: Array.isArray(c.platforms) ? c.platforms : [c.platforms || 'Instagram'],
+      industry: c.industry || 'Creative & Digital',
       whyItFits: `Direct opportunity published by ${c.brandName} for creators with relevant visual styles.`,
       status: 'new'
     }));
 
-  // Combine with initial opportunities, deduplicating by campaignId
-  const initialOpps = state.opportunities || INITIAL_CREATOR_OPPORTUNITIES;
+  // Initial opportunities only include those that are public/demo
+  const initialOpps = (state.opportunities || INITIAL_CREATOR_OPPORTUNITIES).filter(o => o.visibility !== 'private');
   const campaignIdsSeen = new Set(publishedCampaignOpps.map(o => o.campaignId));
 
   const additionalOpps = initialOpps.filter(o => !campaignIdsSeen.has(o.campaignId));
+
   return [...publishedCampaignOpps, ...additionalOpps];
 }
 
