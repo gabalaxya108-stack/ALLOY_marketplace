@@ -1,52 +1,90 @@
 // src/components/ProjectModal.jsx
-// Complete Single-Page Work Showcase & Case Study Experience
-// Displays all information from high-res media display to comprehensive production specs.
-// Strictly excludes any 'Invite this Creator' button.
+// Alloy — Portfolio Project Social Post & Case Study Experience
+// Instagram-Inspired Two-Panel Social Layout with Complete Uncropped Media & Creator Interaction
 
 import React, { useState, useMemo } from 'react';
-import { X, ArrowRight, Sparkles, Layers, Maximize2, Minimize2, Play, Volume2, VolumeX, Eye, CheckCircle2, Sliders, Palette, Cpu, Film, GitCommit, ChevronLeft, ChevronRight, ShieldCheck, Briefcase, Plus, FolderPlus, ArrowUpRight, Edit3, Loader2 } from 'lucide-react';
-import WorkflowTimeline from './WorkflowTimeline';
+import {
+  X,
+  ArrowRight,
+  ArrowUpRight,
+  Sparkles,
+  Maximize2,
+  Minimize2,
+  Play,
+  CheckCircle2,
+  ShieldCheck,
+  Briefcase,
+  Layers,
+  MessageSquare,
+  Send,
+  Lock,
+  ChevronDown,
+  ChevronUp,
+  Sliders,
+  FolderPlus
+} from 'lucide-react';
+import './ProjectModal.css';
 import ProjectWorkflowTimeline from './ProjectWorkflowTimeline';
 import ProjectWorkflowEditor from './ProjectWorkflowEditor';
 import { DEMO_WORKFLOWS } from '../data/workflowsData';
-import { createDefaultWorkflowStages } from '../data/creatorSkillsData';
 
-export default function ProjectModal({ 
-  project, 
-  creator, 
-  onClose, 
+const FALLBACK_AVATAR = "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80";
+
+export default function ProjectModal({
+  project,
+  creator,
+  onClose,
   onViewCreatorProfile,
   onCreateWorkspace,
-  onOpenCreatorStudio,
   onSaveWorkflow,
-  isCreatorOwner = true
+  isCreatorOwner = false,
+  currentUser = null,
+  currentCreator = null,
+  connections = [],
+  onOpenConversation = null,
+  onOpenLogin = null
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
-  // Workflow builder modal states
-  const [isWorkflowEditorOpen, setIsWorkflowEditorOpen] = useState(false);
-  const [localWorkflowData, setLocalWorkflowData] = useState(() => {
-    return {
-      title: project?.workflowTitle || project?.productionWorkflow?.title || '',
-      overview: project?.workflowOverview || project?.productionWorkflow?.overview || '',
-      steps: (project?.workflowStages && project.workflowStages.length > 0)
-        ? project.workflowStages
-        : []
-    };
+  // Comments state (Priority 3)
+  const [comments, setComments] = useState(() => {
+    return Array.isArray(project?.comments) ? [...project.comments] : [];
   });
-  const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
-  const [saveWorkflowFeedback, setSaveWorkflowFeedback] = useState(null); // { type: 'success' | 'error', message: string }
+  const [newCommentText, setNewCommentText] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [commentFeedback, setCommentFeedback] = useState(null);
 
-  const resolvedCreator = creator || {
-    name: 'AI Creator',
-    creativeIdentity: 'Visual Worldbuilder & Director',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-    tools: ['Midjourney v6', 'Runway Gen-3'],
-    capabilities: ['Generative Stills', 'Visual Direction']
-  };
+  // DM Request state (Priority 4)
+  const [dmRequestStatus, setDmRequestStatus] = useState('idle'); // 'idle' | 'sending' | 'sent'
+  const [dmFeedbackMessage, setDmFeedbackMessage] = useState(null);
+
+  // Workflow builder / stages accordion state
+  const [showWorkflowDetails, setShowWorkflowDetails] = useState(false);
+  const [isWorkflowEditorOpen, setIsWorkflowEditorOpen] = useState(false);
+  const [localWorkflowData, setLocalWorkflowData] = useState(() => ({
+    title: project?.workflowTitle || project?.productionWorkflow?.title || '',
+    overview: project?.workflowOverview || project?.productionWorkflow?.overview || '',
+    steps: (project?.workflowStages && project.workflowStages.length > 0)
+      ? project.workflowStages
+      : []
+  }));
+  const [saveWorkflowFeedback, setSaveWorkflowFeedback] = useState(null);
+
+  // Resolve author identity accurately without defaulting to logged-in user
+  const resolvedCreator = useMemo(() => {
+    if (creator && creator.name) return creator;
+    if (project?.creator && project.creator.name) return project.creator;
+    return {
+      id: project?.creatorId || 'unknown-creator',
+      name: project?.creatorName || 'Featured AI Director',
+      creativeIdentity: 'Visual Worldbuilder & Generative Director',
+      avatar: FALLBACK_AVATAR,
+      tools: ['Midjourney v6.1', 'Runway Gen-3'],
+      capabilities: ['Visual Direction', 'Generative Stills']
+    };
+  }, [creator, project]);
 
   // Compile full media list supporting multiple attached images & videos
   const mediaList = useMemo(() => {
@@ -71,7 +109,7 @@ export default function ProjectModal({
         url: project.video || project.videoPreview || resolvedCreator.videoPreview,
         type: 'video',
         mediaType: 'video',
-        name: `${project.title} (Motion Pass)`,
+        name: `${project.title} (Motion Loop)`,
         isCover: false
       });
     }
@@ -79,144 +117,238 @@ export default function ProjectModal({
   }, [project, resolvedCreator]);
 
   if (!project) return null;
+
   const activeMedia = mediaList[activeMediaIndex] || mediaList[0] || null;
   const isCurrentVideo = activeMedia ? (
-    activeMedia.type === 'video' || 
-    activeMedia.mediaType === 'video' || 
+    activeMedia.type === 'video' ||
+    activeMedia.mediaType === 'video' ||
     activeMedia.mimeType?.startsWith('video/')
   ) : false;
   const currentMediaUrl = activeMedia ? activeMedia.url : project.image;
-
   const hasVideo = !!(project.video || project.videoPreview || (project.category === 'AI Video' && resolvedCreator.videoPreview) || isCurrentVideo);
   const videoSrc = isCurrentVideo ? currentMediaUrl : (project.video || project.videoPreview || resolvedCreator.videoPreview);
-
-  const roleText = project.role || resolvedCreator.creativeIdentity || "Lead Visual Artist";
-  const clientText = project.clientType || "Commercial & Editorial";
-  const styleText = project.creativeStyle || project.style || (resolvedCreator.styles ? resolvedCreator.styles[0] : "Cinematic & Editorial");
-  const toolsText = project.tools || (Array.isArray(resolvedCreator.tools) ? resolvedCreator.tools.join(', ') : "Midjourney v6, Runway Gen-3");
-  const formatText = project.format || (project.category === 'AI Video' ? '4K Video Master Loop' : 'High-Resolution 4K Key Art Stills');
-  const platformText = project.platform || "Campaign OOH, Social & Digital";
-  const tagsList = project.capabilities || resolvedCreator.capabilities || ['Generative Cinema', 'Visual Direction'];
 
   // Resolve associated creative workflow if linked
   const allWorkflows = (resolvedCreator.workflows && resolvedCreator.workflows.length > 0)
     ? resolvedCreator.workflows
     : DEMO_WORKFLOWS.filter(w => w.creatorId === resolvedCreator.id);
-  const associatedWorkflow = allWorkflows.find(w => 
+  const associatedWorkflow = allWorkflows.find(w =>
     (w.linkedProjectId && w.linkedProjectId === project.id) ||
     (project.workflowId && w.id === project.workflowId)
   );
 
+  const workflowStagesList = (localWorkflowData?.steps && localWorkflowData.steps.length > 0)
+    ? localWorkflowData.steps
+    : ((project.workflowStages && project.workflowStages.length > 0)
+        ? project.workflowStages
+        : (associatedWorkflow?.steps ? associatedWorkflow.steps.map((st, i) => ({
+            id: st.id || `st-${i}`,
+            order: i + 1,
+            stageNumber: i + 1,
+            stepName: st.title || st.stepName,
+            description: st.description,
+            tools: st.tools || [],
+            notes: st.notes || st.processNotes || st.humanInvolvementNotes
+          })) : []));
+
+  // Determine if the viewer is the creator author
+  const isViewerTheAuthor = Boolean(
+    (currentCreator && resolvedCreator && currentCreator.id === resolvedCreator.id) ||
+    isCreatorOwner
+  );
+
+  // --- Priority 3: Comment Submission Handler ---
+  const handleCommentSubmit = (e) => {
+    e.preventDefault();
+    const trimmed = newCommentText.trim();
+    if (!trimmed) return;
+
+    if (!currentUser && !currentCreator) {
+      if (onOpenLogin) {
+        onOpenLogin();
+      }
+      return;
+    }
+
+    if (isSubmittingComment) return;
+    setIsSubmittingComment(true);
+
+    const authorName = currentUser?.display_name ||
+      currentUser?.user_metadata?.full_name ||
+      currentCreator?.name ||
+      (currentUser?.email ? currentUser.email.split('@')[0] : 'Community Creator');
+
+    const authorAvatar = currentUser?.avatar_url ||
+      currentCreator?.avatar ||
+      FALLBACK_AVATAR;
+
+    const newComment = {
+      id: `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      authorId: currentCreator?.id || currentUser?.id || 'anon',
+      authorName,
+      authorAvatar,
+      text: trimmed,
+      timestamp: 'Just now',
+      isSessionOnly: true
+    };
+
+    setComments(prev => [...prev, newComment]);
+    setNewCommentText('');
+    setIsSubmittingComment(false);
+    setCommentFeedback('Comment posted for this active session. (Database persistence pending backend migration).');
+    setTimeout(() => setCommentFeedback(null), 5000);
+  };
+
+  // --- Priority 4: Request-to-DM Interaction Handler ---
+  const handleDmRequest = () => {
+    // 1. Prevent accidental self-messaging
+    if (isViewerTheAuthor) {
+      setDmFeedbackMessage({
+        type: 'info',
+        text: 'This is your own project.'
+      });
+      setTimeout(() => setDmFeedbackMessage(null), 4000);
+      return;
+    }
+
+    // 2. Authentication check
+    if (!currentUser && !currentCreator) {
+      if (onOpenLogin) {
+        onOpenLogin();
+      }
+      return;
+    }
+
+    // 3. Duplicate request guard
+    if (dmRequestStatus === 'sending' || dmRequestStatus === 'sent') {
+      setDmFeedbackMessage({
+        type: 'info',
+        text: `Message request already pending for ${resolvedCreator.name}.`
+      });
+      setTimeout(() => setDmFeedbackMessage(null), 4000);
+      return;
+    }
+
+    // 4. Inspect existing connection
+    const existingConn = (connections || []).find(c =>
+      c.creatorId === resolvedCreator.id ||
+      c.creator_id === resolvedCreator.id ||
+      c.id === `conn-${resolvedCreator.id}`
+    );
+
+    if (existingConn && onOpenConversation) {
+      onClose();
+      onOpenConversation(existingConn);
+      return;
+    }
+
+    // 5. Initiation feedback (Transparently noting peer messaging state)
+    setDmRequestStatus('sending');
+    setTimeout(() => {
+      setDmRequestStatus('sent');
+      setDmFeedbackMessage({
+        type: 'success',
+        text: `DM request sent to ${resolvedCreator.name}. (Note: Direct peer-to-peer creator messaging is awaiting backend conversation support).`
+      });
+      setTimeout(() => setDmFeedbackMessage(null), 6000);
+    }, 400);
+  };
+
   return (
-    <div className={`modal-overlay ${isExpanded ? 'modal-expanded-overlay' : ''}`} onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="project-modal-headline">
-      <div 
-        className={`modal-content project-case-study-modal ${isExpanded ? 'expanded-case-study' : ''}`}
+    <div
+      className="project-social-modal-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="social-modal-title"
+    >
+      <div
+        className={`project-social-modal ${isExpanded ? 'expanded-mode' : ''}`}
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: isExpanded ? '96vw' : '880px', maxHeight: '92vh', overflowY: 'auto', padding: '0', borderRadius: '22px', border: '1px solid rgba(226, 232, 240, 0.85)', background: 'var(--bg-card, #FFFFFF)' }}
       >
-        {/* Top Floating Controls */}
-        <div className="project-modal-top-bar-controls" style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 20, display: 'flex', gap: '8px' }}>
-          <button 
-            type="button" 
-            className="modal-icon-control-btn"
-            onClick={() => setIsExpanded(!isExpanded)}
-            title={isExpanded ? "Collapse View" : "Expand Media"}
-            aria-label={isExpanded ? "Collapse" : "Expand"}
-            style={{ background: 'rgba(20, 19, 18, 0.75)', backdropFilter: 'blur(8px)', color: '#FFFFFF', border: '1px solid rgba(255, 255, 255, 0.25)', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-          >
-            {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
+        {/* ========================================================
+            1. LEFT PANEL: VISUAL MEDIA STAGE (UNCLIPPED ARTWORK)
+            ======================================================== */}
+        <section className="project-social-media-panel" aria-label="Project Visual Showcase">
+          {/* Floating Badges */}
+          <div className="project-social-media-badges">
+            <span className="social-badge-pill">
+              <Sparkles size={11} aria-hidden="true" />
+              <span>{project.category || 'AI Visuals'}</span>
+            </span>
+            {project.featured && (
+              <span className="social-badge-pill featured">
+                ★ Featured Work
+              </span>
+            )}
+            {hasVideo && (
+              <span className="social-badge-pill">
+                • 4K Video Loop
+              </span>
+            )}
+          </div>
 
-          <button 
-            type="button" 
-            className="modal-close-btn" 
-            onClick={onClose}
-            aria-label="Close modal"
-            style={{ background: 'rgba(20, 19, 18, 0.75)', backdropFilter: 'blur(8px)', color: '#FFFFFF', border: '1px solid rgba(255, 255, 255, 0.25)', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-          >
-            <X size={18} />
-          </button>
-        </div>
+          {/* Floating Controls */}
+          <div className="project-social-floating-controls">
+            <button
+              type="button"
+              className="social-icon-btn"
+              onClick={() => setIsExpanded(!isExpanded)}
+              title={isExpanded ? "Collapse View" : "Expand Media View"}
+              aria-label={isExpanded ? "Collapse" : "Expand"}
+            >
+              {isExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+            <button
+              type="button"
+              className="social-icon-btn"
+              onClick={onClose}
+              aria-label="Close modal"
+              title="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
 
-        {/* 1. Large Cinematic Media Dominating the Top View */}
-        <div className={`project-modal-hero-media ${isExpanded ? 'media-full-expand' : ''}`} style={{ margin: 0, borderRadius: '21px 21px 0 0', position: 'relative', width: '100%', maxHeight: isExpanded ? '65vh' : '460px', background: '#121110', overflow: 'hidden' }}>
-          {isCurrentVideo || (hasVideo && isPlayingVideo) ? (
-            <div className="project-video-player-wrap" style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000' }}>
-              <video 
+          {/* Media Viewport */}
+          <div className="project-social-media-viewport">
+            {isCurrentVideo || (hasVideo && isPlayingVideo) ? (
+              <video
                 key={videoSrc}
                 src={videoSrc}
                 autoPlay
                 controls
                 playsInline
                 loop
-                muted={isMuted}
-                className="project-modal-video"
-                style={{ width: '100%', maxHeight: isExpanded ? '65vh' : '460px', objectFit: 'contain', display: 'block' }}
+                className="project-social-video"
               />
-            </div>
-          ) : (
-            <div className="project-image-hero-wrap" style={{ width: '100%', height: '100%', position: 'relative' }}>
-              <img 
-                src={currentMediaUrl} 
-                alt={project.title} 
-                className="project-modal-img"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            ) : (
+              <img
+                src={currentMediaUrl}
+                alt={project.title}
+                className="project-social-img"
                 onError={(e) => {
                   e.currentTarget.src = "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=85";
                 }}
               />
-              {hasVideo && (
-                <button 
-                  type="button" 
-                  className="project-play-video-cta"
-                  onClick={() => setIsPlayingVideo(true)}
-                  style={{ position: 'absolute', bottom: '20px', left: '20px', background: 'rgba(20, 19, 18, 0.85)', backdropFilter: 'blur(10px)', color: '#FFFFFF', border: '1px solid rgba(255, 255, 255, 0.3)', padding: '10px 20px', borderRadius: '100px', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.86rem', fontWeight: 600, cursor: 'pointer', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }}
-                >
-                  <Play size={16} fill="#FFFFFF" />
-                  <span>Play Cinematic Motion Preview</span>
-                </button>
-              )}
-            </div>
-          )}
+            )}
 
-          {/* Badges on Media */}
-          <div style={{ position: 'absolute', top: '16px', left: '16px', display: 'flex', gap: '8px', zIndex: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.76rem', padding: '5px 12px', borderRadius: '100px', background: 'rgba(20, 19, 18, 0.8)', backdropFilter: 'blur(8px)', color: '#FFFFFF', fontWeight: 600, border: '1px solid rgba(255, 255, 255, 0.2)' }}>
-              {project.category || 'Visual Art'}
-            </span>
-            {project.featured && (
-              <span style={{ fontSize: '0.76rem', padding: '5px 12px', borderRadius: '100px', background: 'rgba(245, 158, 11, 0.95)', color: '#FFFFFF', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                ★ Featured Work
-              </span>
-            )}
-            {project.visibility && (
-              <span style={{ fontSize: '0.76rem', padding: '5px 12px', borderRadius: '100px', background: project.visibility === 'private' ? 'rgba(239, 68, 68, 0.9)' : 'rgba(16, 185, 129, 0.9)', color: '#FFFFFF', fontWeight: 600 }}>
-                {project.visibility === 'private' ? 'Private Draft' : 'Published'}
-              </span>
-            )}
-            {hasVideo && (
-              <span style={{ fontSize: '0.76rem', padding: '5px 12px', borderRadius: '100px', background: 'rgba(20, 19, 18, 0.8)', backdropFilter: 'blur(8px)', color: '#FFFFFF', fontWeight: 600, border: '1px solid rgba(255, 255, 255, 0.2)' }}>
-                • 4K Video Loop
-              </span>
+            {/* Video preview button if not playing */}
+            {hasVideo && !isPlayingVideo && !isCurrentVideo && (
+              <button
+                type="button"
+                className="social-play-motion-btn"
+                onClick={() => setIsPlayingVideo(true)}
+              >
+                <Play size={14} fill="#FFFFFF" aria-hidden="true" />
+                <span>Play Motion Preview</span>
+              </button>
             )}
           </div>
-        </div>
 
-        {/* Multi-Format Gallery Selector Strip */}
-        {mediaList.length > 1 && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '12px 24px',
-            background: 'var(--bg-secondary, #F8FAFC)',
-            borderBottom: '1px solid var(--border-subtle, #E2E8F0)',
-            overflowX: 'auto'
-          }}>
-            <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', fontWeight: 700, flexShrink: 0 }}>
-              Project Media ({mediaList.length}):
-            </span>
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '2px 0' }}>
+          {/* Multi-Asset Gallery Selector Strip */}
+          {mediaList.length > 1 && (
+            <div className="project-social-thumbs-bar" role="tablist" aria-label="Media Assets">
               {mediaList.map((asset, idx) => {
                 const isVid = asset.type === 'video' || asset.mediaType === 'video' || asset.mimeType?.startsWith('video/');
                 const isActive = activeMediaIndex === idx;
@@ -224,95 +356,299 @@ export default function ProjectModal({
                   <button
                     key={asset.id || idx}
                     type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    className={`social-thumb-item ${isActive ? 'active' : ''}`}
                     onClick={() => {
                       setActiveMediaIndex(idx);
                       setIsPlayingVideo(isVid);
                     }}
-                    style={{
-                      width: '64px',
-                      height: '46px',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      border: isActive ? '2px solid var(--accent-primary, #EB6E4B)' : '1px solid var(--border-medium, #CBD5E1)',
-                      position: 'relative',
-                      cursor: 'pointer',
-                      padding: 0,
-                      background: '#0F172A',
-                      flexShrink: 0,
-                      boxShadow: isActive ? '0 0 0 2px rgba(235, 110, 75, 0.2)' : 'none',
-                      transition: 'transform 0.15s ease'
-                    }}
                     title={asset.name || `Asset ${idx + 1}`}
                   >
                     {isVid ? (
-                      <video src={asset.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <video src={asset.url} />
                     ) : (
-                      <img src={asset.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    )}
-                    {isVid && (
-                      <span style={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(0,0,0,0.3)',
-                        color: '#FFFFFF'
-                      }}>
-                        <Play size={12} fill="#FFFFFF" />
-                      </span>
+                      <img src={asset.url} alt="" />
                     )}
                   </button>
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </section>
 
-        {/* 2. Comprehensive Details Body */}
-        <div className="project-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          
-          {/* Header Row: Title, Creator Attribution, and Actions */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-            <div className="project-modal-header-col" style={{ flex: 1, minWidth: '220px' }}>
-              <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent-primary, #EB6E4B)', fontWeight: 700 }}>
-                Case Study & Portfolio Showcase
-              </span>
-              <h2 id="project-modal-headline" className="font-editorial" style={{ fontSize: '1.9rem', fontWeight: 700, lineHeight: 1.25, margin: '6px 0 10px', color: 'var(--text-primary)' }}>
-                {project.title}
-              </h2>
-
-              {/* Creator Attribution Pill */}
-              <div 
-                className="project-modal-creator-pill"
-                onClick={() => {
+        {/* ========================================================
+            2. RIGHT PANEL: EDITORIAL SOCIAL POST COLUMN
+            ======================================================== */}
+        <section className="project-social-details-panel" aria-label="Project Narrative and Community">
+          {/* A. Author Identity Header */}
+          <header className="project-social-author-header">
+            <div
+              className="social-author-info-group"
+              onClick={() => {
+                if (onViewCreatorProfile && resolvedCreator.id) {
+                  onClose();
+                  onViewCreatorProfile(resolvedCreator.id);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
                   if (onViewCreatorProfile && resolvedCreator.id) {
                     onClose();
                     onViewCreatorProfile(resolvedCreator.id);
                   }
-                }}
-                style={{ cursor: onViewCreatorProfile && resolvedCreator.id ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '4px 14px 4px 4px', borderRadius: '100px', background: 'var(--bg-secondary, #F4EFEA)', border: '1px solid var(--border-light, #E2E8F0)' }}
-              >
-                <img 
-                  src={resolvedCreator.avatar} 
-                  alt={resolvedCreator.name} 
-                  style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }}
-                />
-                <div style={{ fontSize: '0.84rem' }}>
-                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{resolvedCreator.name}</span>
-                  {resolvedCreator.creativeIdentity && (
-                    <span style={{ color: 'var(--text-secondary)' }}> • {resolvedCreator.creativeIdentity}</span>
-                  )}
-                </div>
+                }
+              }}
+              aria-label={`View ${resolvedCreator.name}'s profile`}
+            >
+              <img
+                src={resolvedCreator.avatar || FALLBACK_AVATAR}
+                alt=""
+                className="social-author-avatar"
+                onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
+              />
+              <div className="social-author-text">
+                <span className="social-author-name">
+                  {resolvedCreator.name}
+                  <ShieldCheck size={14} style={{ color: 'var(--accent-forest, #214C35)' }} aria-label="Verified Creator" />
+                </span>
+                <span className="social-author-role">
+                  {resolvedCreator.creativeIdentity || resolvedCreator.specialty || resolvedCreator.handle || 'AI Director'}
+                </span>
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-social-profile"
+              onClick={() => {
+                if (onViewCreatorProfile && resolvedCreator.id) {
+                  onClose();
+                  onViewCreatorProfile(resolvedCreator.id);
+                }
+              }}
+              title={`View ${resolvedCreator.name}'s profile`}
+            >
+              <span>View Profile</span>
+              <ArrowUpRight size={13} aria-hidden="true" />
+            </button>
+          </header>
+
+          {/* B. Scrollable Stream Body */}
+          <div className="project-social-scroll-stream">
+            {/* Project Narrative & Caption */}
+            <div className="project-social-narrative">
+              <span className="project-social-category-tag">
+                {project.category || 'AI Visual Direction'}
+              </span>
+              <h2 id="social-modal-title" className="project-social-title">
+                {project.title}
+              </h2>
+
+              {project.description && (
+                <p className="project-social-caption">
+                  {project.description}
+                </p>
+              )}
+
+              {project.creativeDirection && (
+                <blockquote className="project-social-quote">
+                  “{project.creativeDirection}”
+                </blockquote>
+              )}
+
+              {/* Production Specifications Strip */}
+              <div className="project-social-specs-strip" aria-label="Production Details">
+                {project.tools && (
+                  <span className="social-spec-tag tool">
+                    <Layers size={11} aria-hidden="true" />
+                    <span>{project.tools}</span>
+                  </span>
+                )}
+                {project.role && (
+                  <span className="social-spec-tag">
+                    Role: {project.role}
+                  </span>
+                )}
+                {project.clientType && (
+                  <span className="social-spec-tag">
+                    Scope: {project.clientType}
+                  </span>
+                )}
+                {project.format && (
+                  <span className="social-spec-tag">
+                    Format: {project.format}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="social-divider" aria-hidden="true" />
+
+            {/* Workflow Timeline Section (Expandable Accordion) */}
+            {workflowStagesList.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  className="project-workflow-accordion-toggle"
+                  onClick={() => setShowWorkflowDetails(!showWorkflowDetails)}
+                  aria-expanded={showWorkflowDetails}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <Sliders size={14} style={{ color: 'var(--accent-gold, #C7A47B)' }} />
+                    <span>Production Node Graph ({workflowStagesList.length} Stages)</span>
+                  </span>
+                  {showWorkflowDetails ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                </button>
+
+                {showWorkflowDetails && (
+                  <div style={{ marginTop: '12px', animation: 'projectFadeIn 0.2s ease-out' }}>
+                    <ProjectWorkflowTimeline
+                      workflowStages={workflowStagesList}
+                      workflowTitle={localWorkflowData?.title || project.workflowTitle || ''}
+                      workflowOverview={localWorkflowData?.overview || project.workflowOverview || ''}
+                      projectTitle={project.title}
+                      canCreateWorkflow={isViewerTheAuthor}
+                      onCreateWorkflow={() => isViewerTheAuthor && setIsWorkflowEditorOpen(true)}
+                      onEditWorkflow={isViewerTheAuthor ? () => setIsWorkflowEditorOpen(true) : null}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* C. Community Comments Section (Priority 3) */}
+            <section className="project-social-comments-section" aria-label="Community Comments">
+              <div className="comments-header-row">
+                <span className="comments-header-title">
+                  <MessageSquare size={14} style={{ color: 'var(--accent-forest, #214C35)' }} aria-hidden="true" />
+                  <span>Comments</span>
+                  <span className="comments-count-badge">{comments.length}</span>
+                </span>
+                <span className="comment-persistence-note">Session feedback</span>
+              </div>
+
+              {/* Comments Stream */}
+              <div className="comments-list" role="feed" aria-label="Comments feed">
+                {comments.length === 0 ? (
+                  <div className="comments-empty-notice">
+                    No comments yet. Be the first creator to share thoughts or creative feedback on this piece.
+                  </div>
+                ) : (
+                  comments.map((comm) => (
+                    <article key={comm.id} className="comment-item">
+                      <img
+                        src={comm.authorAvatar || FALLBACK_AVATAR}
+                        alt=""
+                        className="comment-avatar"
+                        onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
+                      />
+                      <div className="comment-content">
+                        <div className="comment-author-row">
+                          <span className="comment-author-name">{comm.authorName}</span>
+                          <span className="comment-timestamp">• {comm.timestamp}</span>
+                        </div>
+                        <p className="comment-text">{comm.text}</p>
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+
+              {/* Comment Composer */}
+              <form className="comment-composer-form" onSubmit={handleCommentSubmit}>
+                <div className="comment-input-row">
+                  <img
+                    src={currentUser?.avatar_url || currentCreator?.avatar || FALLBACK_AVATAR}
+                    alt=""
+                    className="composer-user-avatar"
+                    onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
+                  />
+                  <input
+                    type="text"
+                    className="comment-text-input"
+                    placeholder={
+                      currentUser || currentCreator
+                        ? "Add creative feedback or leave a note..."
+                        : "Sign in to join the discussion..."
+                    }
+                    value={newCommentText}
+                    onChange={(e) => setNewCommentText(e.target.value)}
+                    disabled={isSubmittingComment}
+                    aria-label="Add a comment"
+                  />
+                  <button
+                    type="submit"
+                    className="btn-comment-submit"
+                    disabled={!newCommentText.trim() || isSubmittingComment}
+                    title="Post comment"
+                  >
+                    <span>Post</span>
+                  </button>
+                </div>
+                {commentFeedback && (
+                  <span className="comment-persistence-note" role="status" style={{ color: '#059669' }}>
+                    {commentFeedback}
+                  </span>
+                )}
+              </form>
+            </section>
+          </div>
+
+          {/* D. Sticky Actions Footer (Priority 4 & Workspace Initiation) */}
+          <footer className="project-social-actions-footer">
+            {/* Feedback notifications */}
+            {dmFeedbackMessage && (
+              <div className={`social-feedback-alert ${dmFeedbackMessage.type}`} role="status">
+                {dmFeedbackMessage.type === 'success' ? (
+                  <CheckCircle2 size={13} aria-hidden="true" />
+                ) : (
+                  <ShieldCheck size={13} aria-hidden="true" />
+                )}
+                <span>{dmFeedbackMessage.text}</span>
+              </div>
+            )}
+
+            <div className="social-actions-row">
+              {/* Message Creator / Request to DM Action (Priority 4) */}
+              <button
+                type="button"
+                className={`btn-social-dm ${dmRequestStatus === 'sent' ? 'requested' : ''}`}
+                onClick={handleDmRequest}
+                disabled={isViewerTheAuthor || dmRequestStatus === 'sending'}
+                title={
+                  isViewerTheAuthor
+                    ? "You are the author of this project"
+                    : dmRequestStatus === 'sent'
+                    ? "Request pending"
+                    : `Send direct message request to ${resolvedCreator.name}`
+                }
+              >
+                {isViewerTheAuthor ? (
+                  <>
+                    <Lock size={14} aria-hidden="true" />
+                    <span>Your Project</span>
+                  </>
+                ) : dmRequestStatus === 'sent' ? (
+                  <>
+                    <CheckCircle2 size={14} aria-hidden="true" />
+                    <span>Request Pending</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={14} aria-hidden="true" />
+                    <span>Message Creator</span>
+                  </>
+                )}
+              </button>
+
+              {/* Create Workspace Collaboration Callout */}
               {onCreateWorkspace && (
-                <button 
-                  type="button" 
-                  className="btn btn-primary btn-sm"
+                <button
+                  type="button"
+                  className="btn-social-workspace"
                   onClick={() => {
                     onClose();
                     onCreateWorkspace({
@@ -322,484 +658,33 @@ export default function ProjectModal({
                       suggestedAesthetic: project.creativeStyle || project.style || 'Cinematic & Editorial'
                     });
                   }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    background: 'linear-gradient(135deg, #7C3AED 0%, #6366F1 100%)',
-                    borderColor: 'transparent',
-                    color: '#FFFFFF',
-                    boxShadow: '0 2px 8px rgba(124, 58, 237, 0.25)'
-                  }}
-                  title="Create a dedicated collaboration workspace for this project"
+                  title="Launch dedicated collaboration workspace"
                 >
-                  <FolderPlus size={15} />
+                  <FolderPlus size={14} aria-hidden="true" />
                   <span>Create Workspace</span>
                 </button>
               )}
-
-              {onViewCreatorProfile && resolvedCreator.id && (
-                <button 
-                  type="button" 
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    onClose();
-                    onViewCreatorProfile(resolvedCreator.id);
-                  }}
-                  title="View creator public portfolio"
-                >
-                  <span>View Full Profile</span>
-                  <ArrowRight size={14} />
-                </button>
-              )}
-
-              <button 
-                type="button" 
-                className="btn btn-secondary btn-sm"
-                onClick={onClose}
-              >
-                Close
-              </button>
             </div>
-          </div>
-
-          {/* Quick Workspace Callout Option Strip */}
-          {onCreateWorkspace && (
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.05) 0%, rgba(99, 102, 241, 0.08) 100%)',
-              border: '1px solid rgba(124, 58, 237, 0.2)',
-              borderRadius: '14px',
-              padding: '14px 20px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '12px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  background: 'rgba(124, 58, 237, 0.12)',
-                  color: '#7C3AED',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}>
-                  <Briefcase size={16} />
-                </span>
-                <div>
-                  <div style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    Inspired by this work? Spin up a dedicated project workspace.
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                    Collaborate directly with <strong>{resolvedCreator.name}</strong>, coordinate deliverables, and track AI workflow milestones.
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => {
-                  onClose();
-                  onCreateWorkspace({
-                    project,
-                    creator: resolvedCreator,
-                    suggestedName: `${project.title} Production Workspace`,
-                    suggestedAesthetic: project.creativeStyle || project.style || 'Cinematic & Editorial'
-                  });
-                }}
-                style={{
-                  color: '#6D28D9',
-                  borderColor: 'rgba(124, 58, 237, 0.3)',
-                  background: '#FFFFFF',
-                  fontWeight: 600,
-                  fontSize: '0.8rem',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px'
-                }}
-              >
-                <span>Launch Workspace</span>
-                <ArrowUpRight size={13} />
-              </button>
-            </div>
-          )}
-
-          {/* 3. Concept & Brief Overview Callout Block */}
-          <div style={{ background: 'linear-gradient(135deg, rgba(253, 247, 237, 0.85) 0%, rgba(246, 240, 232, 0.6) 100%)', border: '1px solid rgba(235, 110, 75, 0.25)', borderRadius: '16px', padding: '22px 26px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-primary, #EB6E4B)' }}>
-              <Sparkles size={16} />
-              <span>Brief Description & Creative Concept</span>
-            </div>
-            <p style={{ margin: 0, fontSize: '1.02rem', lineHeight: 1.65, color: 'var(--text-primary)', fontWeight: 400 }}>
-              {project.description}
-            </p>
-          </div>
-
-          {/* 4. Creative Direction & Artistry (if present) */}
-          {project.creativeDirection && (
-            <div style={{ padding: '20px 24px', background: 'var(--bg-card-subtle, #F8F9FA)', border: '1px solid var(--border-light, #E2E8F0)', borderRadius: '14px' }}>
-              <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary, #64748B)', fontWeight: 700, display: 'block', marginBottom: '6px' }}>
-                Creative Direction & Lighting Choreography
-              </span>
-              <p style={{ margin: 0, fontSize: '0.94rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-                {project.creativeDirection}
-              </p>
-            </div>
-          )}
-
-          {/* 5. Production Specifications Grid */}
-          <div>
-            <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary, #64748B)', fontWeight: 700, display: 'block', marginBottom: '12px' }}>
-              Production Details & Specifications
-            </span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
-              <div style={{ background: 'var(--bg-card-subtle, #F8F9FA)', border: '1px solid var(--border-light, #E2E8F0)', borderRadius: '12px', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary, #64748B)' }}>
-                  Role / Craft
-                </span>
-                <span style={{ fontSize: '0.94rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {roleText}
-                </span>
-              </div>
-
-              <div style={{ background: 'var(--bg-card-subtle, #F8F9FA)', border: '1px solid var(--border-light, #E2E8F0)', borderRadius: '12px', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary, #64748B)' }}>
-                  Client / Scope
-                </span>
-                <span style={{ fontSize: '0.94rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {clientText}
-                </span>
-              </div>
-
-              <div style={{ background: 'var(--bg-card-subtle, #F8F9FA)', border: '1px solid var(--border-light, #E2E8F0)', borderRadius: '12px', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary, #64748B)' }}>
-                  Creative Style
-                </span>
-                <span style={{ fontSize: '0.94rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {styleText}
-                </span>
-              </div>
-
-              <div style={{ background: 'var(--bg-card-subtle, #F8F9FA)', border: '1px solid var(--border-light, #E2E8F0)', borderRadius: '12px', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary, #64748B)' }}>
-                  Tools & Pipeline
-                </span>
-                <span style={{ fontSize: '0.94rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {toolsText}
-                </span>
-              </div>
-
-              <div style={{ background: 'var(--bg-card-subtle, #F8F9FA)', border: '1px solid var(--border-light, #E2E8F0)', borderRadius: '12px', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary, #64748B)' }}>
-                  Asset Deliverable Format
-                </span>
-                <span style={{ fontSize: '0.94rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {formatText}
-                </span>
-              </div>
-
-              <div style={{ background: 'var(--bg-card-subtle, #F8F9FA)', border: '1px solid var(--border-light, #E2E8F0)', borderRadius: '12px', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary, #64748B)' }}>
-                  Target Distribution
-                </span>
-                <span style={{ fontSize: '0.94rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {platformText}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Individual AI Production Workflow belonging to this Project */}
-          <div style={{ marginTop: '6px' }}>
-            {saveWorkflowFeedback && (
-              <div style={{
-                marginBottom: '12px',
-                padding: '10px 14px',
-                borderRadius: '10px',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: saveWorkflowFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                border: `1px solid ${saveWorkflowFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                color: saveWorkflowFeedback.type === 'success' ? '#059669' : '#DC2626'
-              }}>
-                {saveWorkflowFeedback.type === 'success' ? <CheckCircle2 size={15} /> : <ShieldCheck size={15} />}
-                <span>{saveWorkflowFeedback.message}</span>
-              </div>
-            )}
-
-            <ProjectWorkflowTimeline
-              workflowStages={(localWorkflowData?.steps && localWorkflowData.steps.length > 0)
-                ? localWorkflowData.steps
-                : ((project.workflowStages && project.workflowStages.length > 0)
-                    ? project.workflowStages
-                    : (associatedWorkflow?.steps ? associatedWorkflow.steps.map((st, i) => ({
-                        id: st.id || `st-${i}`,
-                        order: i + 1,
-                        stageNumber: i + 1,
-                        stepName: st.title || st.stepName,
-                        description: st.description,
-                        tools: st.tools || [],
-                        notes: st.notes || st.processNotes || st.humanInvolvementNotes
-                      })) : []))}
-              workflowTitle={localWorkflowData?.title || project.workflowTitle || ''}
-              workflowOverview={localWorkflowData?.overview || project.workflowOverview || ''}
-              projectTitle={project.title}
-              canCreateWorkflow={isCreatorOwner}
-              onCreateWorkflow={() => {
-                if (!isCreatorOwner) {
-                  // Non-owner (e.g. brand) safeguard
-                  setSaveWorkflowFeedback({
-                    type: 'error',
-                    message: 'Only the creator who produced this piece can author its official production workflow. Use "Create Workspace" above to propose a collaboration.'
-                  });
-                  setTimeout(() => setSaveWorkflowFeedback(null), 5000);
-                  return;
-                }
-                // Open empty structured editor for this specific project
-                setIsWorkflowEditorOpen(true);
-              }}
-              onEditWorkflow={isCreatorOwner ? () => setIsWorkflowEditorOpen(true) : null}
-            />
-          </div>
-
-          {/* Workflow Creation & Editing Modal Backdrop */}
-          {isWorkflowEditorOpen && (
-            <div 
-              style={{
-                position: 'fixed',
-                inset: 0,
-                background: 'rgba(15, 23, 42, 0.7)',
-                backdropFilter: 'blur(6px)',
-                zIndex: 100,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '20px'
-              }}
-              onClick={() => setIsWorkflowEditorOpen(false)}
-            >
-              <div 
-                style={{
-                  background: '#FFFFFF',
-                  borderRadius: '20px',
-                  maxWidth: '780px',
-                  width: '100%',
-                  maxHeight: '90vh',
-                  overflowY: 'auto',
-                  padding: '28px',
-                  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-                  border: '1px solid var(--border-light, #E2E8F0)'
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                  <div>
-                    <span style={{
-                      fontSize: '0.74rem',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em',
-                      color: 'var(--accent-lavender-deep, #7C3AED)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}>
-                      <Layers size={13} />
-                      Individual AI Production Workflow
-                    </span>
-                    <h3 style={{ margin: '4px 0 2px', fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Document Workflow for: {project.title}
-                    </h3>
-                    <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
-                      Detail your step-by-step generative pipeline, models, and craft methodology.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsWorkflowEditorOpen(false)}
-                    style={{
-                      background: 'rgba(0,0,0,0.05)',
-                      border: 'none',
-                      borderRadius: '50%',
-                      width: '32px',
-                      height: '32px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      color: '#64748B'
-                    }}
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-
-                {/* Pre-fill Summary Tags */}
-                <div style={{
-                  background: 'var(--bg-secondary, #FAF8F5)',
-                  borderRadius: '12px',
-                  padding: '10px 14px',
-                  marginBottom: '16px',
-                  fontSize: '0.8rem',
-                  color: 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '12px'
-                }}>
-                  <span><strong>Project ID:</strong> {project.id}</span>
-                  {project.creativeStyle && <span><strong>Style:</strong> {project.creativeStyle}</span>}
-                  {project.tools && <span><strong>Declared Tools:</strong> {project.tools}</span>}
-                  {project.format && <span><strong>Format:</strong> {project.format}</span>}
-                </div>
-
-                {/* Reusable Stage Editor Component */}
-                <ProjectWorkflowEditor
-                  workflowData={localWorkflowData}
-                  workflowStages={localWorkflowData?.steps || []}
-                  workflowTitle={localWorkflowData?.title || ''}
-                  workflowOverview={localWorkflowData?.overview || ''}
-                  projectId={project.id}
-                  projectTitle={project.title}
-                  onChange={(updatedData) => setLocalWorkflowData(updatedData)}
-                  isSaving={isSavingWorkflow}
-                  onCancel={() => setIsWorkflowEditorOpen(false)}
-                  onSave={async (savedData, steps) => {
-                    setIsSavingWorkflow(true);
-                    try {
-                      if (onSaveWorkflow) {
-                        await onSaveWorkflow(project.id, savedData);
-                      }
-                      setLocalWorkflowData(savedData);
-                      setSaveWorkflowFeedback({
-                        type: 'success',
-                        message: `Workflow successfully saved with ${steps.length} production ${steps.length === 1 ? 'step' : 'steps'}.`
-                      });
-                      setIsWorkflowEditorOpen(false);
-                      setTimeout(() => setSaveWorkflowFeedback(null), 4000);
-                    } catch (saveErr) {
-                      console.error('Failed to save project workflow:', saveErr);
-                      setSaveWorkflowFeedback({
-                        type: 'error',
-                        message: `Failed to persist workflow: ${saveErr.message || 'Network error'}`
-                      });
-                    } finally {
-                      setIsSavingWorkflow(false);
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Relevant Technical Skills Demonstrated */}
-          {resolvedCreator.technicalSkills && resolvedCreator.technicalSkills.length > 0 && (
-            <div style={{
-              background: 'rgba(240, 253, 250, 0.6)',
-              border: '1px solid rgba(6, 182, 212, 0.25)',
-              borderRadius: '14px',
-              padding: '16px 20px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                <Cpu size={14} style={{ color: '#0891B2' }} />
-                <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: '#0E7490', fontWeight: 700 }}>
-                  Relevant Technical Skills & AI Disciplines
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {resolvedCreator.technicalSkills.map((ts, i) => (
-                  <span key={i} style={{
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    background: '#FFFFFF',
-                    border: '1px solid rgba(6, 182, 212, 0.3)',
-                    color: '#0F766E'
-                  }}>
-                    {ts}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Commercial Usage & Licensing Disclosures */}
-          <div style={{
-            background: 'var(--bg-card-subtle, #F8FAFC)',
-            border: '1px solid var(--border-light, #E2E8F0)',
-            borderRadius: '14px',
-            padding: '16px 20px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: '12px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ShieldCheck size={18} style={{ color: '#059669', flexShrink: 0 }} />
-              <div>
-                <div style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Commercial Usage & Generative Rights Clearance
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  Tools utilized ({toolsText}) declared under commercial licensing terms for brand deliverables.
-                </div>
-              </div>
-            </div>
-            <span style={{
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              padding: '3px 10px',
-              borderRadius: '100px',
-              background: 'rgba(16, 185, 129, 0.12)',
-              color: '#059669'
-            }}>
-              Commercial Clearance Declared
-            </span>
-          </div>
-
-          {/* 6. Verified Capabilities & Craft Tags */}
-          {tagsList && tagsList.length > 0 && (
-            <div>
-              <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary, #64748B)', fontWeight: 700, display: 'block', marginBottom: '8px' }}>
-                Verified Craft Capabilities & Tags
-              </span>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {tagsList.map((tag, i) => (
-                  <span key={i} className="skill-chip" style={{ fontSize: '0.8rem', padding: '5px 12px' }}>
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Modal Footer Note & Bottom Close */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '18px', borderTop: '1px solid var(--border-light, #E2E8F0)', marginTop: '8px' }}>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
-              Provenance: <strong>Verified Commercial & Creative Work</strong>
-            </span>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary btn-md"
-              onClick={onClose}
-            >
-              Close Showcase
-            </button>
-          </div>
-        </div>
+          </footer>
+        </section>
       </div>
+
+      {/* Structured Workflow Builder Modal for Creator Author */}
+      {isWorkflowEditorOpen && (
+        <ProjectWorkflowEditor
+          isOpen={isWorkflowEditorOpen}
+          onClose={() => setIsWorkflowEditorOpen(false)}
+          initialData={localWorkflowData}
+          projectTitle={project.title}
+          onSave={async (data) => {
+            setLocalWorkflowData(data);
+            if (onSaveWorkflow) {
+              await onSaveWorkflow(project.id, data);
+            }
+            setIsWorkflowEditorOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

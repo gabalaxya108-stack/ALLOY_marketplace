@@ -21,6 +21,7 @@ import { createInitialTrustVerification } from '../data/trustVerificationData';
 import MessagesLoginWall from '../components/MessagesLoginWall';
 import { deduplicateMessages } from '../services/marketplaceBackend';
 import { evaluateCreatorEligibility, ELIGIBILITY_STATUS, ELIGIBILITY_OUTCOMES } from '../intelligence/eligibilityEngine';
+import CreatorHomeFeed from '../components/CreatorHomeFeed';
 
 function formatInvitationField(...values) {
   for (const value of values) {
@@ -34,6 +35,7 @@ export default function CreatorWorkspaceView({
   currentUser,
   onUpdateCreator,
   onViewPublicProfile,
+  onViewCreatorProfile,
   onExploreMarketplace,
   connections = [],
   onOpenConversation,
@@ -46,7 +48,7 @@ export default function CreatorWorkspaceView({
   onSubmitDeliverables: propOnSubmitDeliverables,
   onSendMessage: propOnSendMessage,
   onSelectProject: propOnSelectProject,
-  initialTab = 'overview',
+  initialTab = 'home',
   onLoginSuccess,
   onOpenLogin,
   applications = [],
@@ -55,7 +57,7 @@ export default function CreatorWorkspaceView({
   onReevaluateApplication
 }) {
   const [activeCreator, setActiveCreator] = useState(creator || {});
-  const [activeTab, setActiveTab] = useState(initialTab || 'overview'); // 'overview' | 'portfolio' | 'opportunities' | 'invitations' | 'projects' | 'messages' | 'profile' | 'trust'
+  const [activeTab, setActiveTab] = useState(initialTab || 'home'); // 'home' | 'overview' | 'portfolio' | 'workflows' | 'opportunities' | 'invitations' | 'projects' | 'messages' | 'profile' | 'trust'
 
   useEffect(() => {
     if (initialTab) {
@@ -79,9 +81,9 @@ export default function CreatorWorkspaceView({
   const [isAddProjectModalOpen, setIsAddProjectModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
 
-  const handleOpenProject = (proj) => {
+  const handleOpenProject = (proj, projectCreator = null) => {
     if (propOnSelectProject) {
-      propOnSelectProject(proj, activeCreator || creator);
+      propOnSelectProject(proj, projectCreator || activeCreator || creator);
     }
   };
 
@@ -874,6 +876,17 @@ export default function CreatorWorkspaceView({
           <button
             type="button"
             role="tab"
+            aria-selected={activeTab === 'home'}
+            className={`studio-tab-btn ${activeTab === 'home' ? 'active' : ''}`}
+            onClick={() => setActiveTab('home')}
+          >
+            <Compass size={14} style={{ marginRight: '4px' }} />
+            <span>Home</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'overview'}
             className={`studio-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
             onClick={() => setActiveTab('overview')}
@@ -968,6 +981,29 @@ export default function CreatorWorkspaceView({
             <span className="tab-count-pill highlight">Verified</span>
           </button>
         </div>
+
+        {/* ========================================================
+            TAB 0: CREATOR HOME FEED (Community Dispatches & Brand Opportunities)
+            ======================================================== */}
+        {activeTab === 'home' && (
+          <div className="studio-feed-view fade-in">
+            <CreatorHomeFeed
+              creator={activeCreator}
+              opportunities={opportunitiesList}
+              myApplications={myApplications}
+              collaborations={projectsCollaborations}
+              onApply={(opp) => handleOpenApplyModal(opp)}
+              onViewDetails={(opp) => setSelectedOpportunityForModal(opp)}
+              onOpenProject={(proj, projectCreator) => handleOpenProject(proj, projectCreator)}
+              onViewCreatorProfile={(creatorId) => onViewCreatorProfile ? onViewCreatorProfile(creatorId) : (onViewPublicProfile && onViewPublicProfile())}
+              onGoToOpportunities={() => setActiveTab('opportunities')}
+              onGoToApplications={() => {
+                setActiveTab('opportunities');
+                setOpportunitiesSubView('applications');
+              }}
+            />
+          </div>
+        )}
 
         {/* ========================================================
             TAB 1: OVERVIEW
