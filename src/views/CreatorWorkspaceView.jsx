@@ -480,7 +480,7 @@ export default function CreatorWorkspaceView({
 
     const mediaList = projectForm.media || [];
     const coverItem = mediaList.find(m => m.isCover) || mediaList[0];
-    const videoItem = mediaList.find(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/'));
+    const videoItem = mediaList.find(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || ''));
 
     const finalImage = coverItem ? coverItem.url : (projectForm.image || '');
     const finalVideo = videoItem ? videoItem.url : (projectForm.video || null);
@@ -518,9 +518,23 @@ export default function CreatorWorkspaceView({
       updatedList = [newProj, ...projectsList];
     }
 
+    const allPortfolioImages = updatedList.map(p => p.image).filter(Boolean);
+    const allPortfolioVideos = updatedList.map(p => p.video).filter(Boolean);
+    const allPortfolioMedia = updatedList.flatMap(p => p.media || []);
+
+    const updatedCreator = {
+      ...activeCreator,
+      projects: updatedList,
+      portfolioMedia: allPortfolioMedia,
+      portfolioImages: allPortfolioImages,
+      portfolioVideos: allPortfolioVideos,
+      heroWork: activeCreator.heroWork || allPortfolioImages[0] || '',
+      videoPreview: activeCreator.videoPreview || allPortfolioVideos[0] || null
+    };
+
     setProjectsList(updatedList);
     if (onUpdateCreator) {
-      onUpdateCreator({ ...activeCreator, projects: updatedList });
+      onUpdateCreator(updatedCreator);
     }
 
     setIsAddProjectModalOpen(false);
@@ -533,7 +547,16 @@ export default function CreatorWorkspaceView({
     const updatedList = projectsList.filter(p => p.id !== projId);
     setProjectsList(updatedList);
     if (onUpdateCreator) {
-      onUpdateCreator({ ...activeCreator, projects: updatedList });
+      const allPortfolioImages = updatedList.map(p => p.image).filter(Boolean);
+      const allPortfolioVideos = updatedList.map(p => p.video).filter(Boolean);
+      const allPortfolioMedia = updatedList.flatMap(p => p.media || []);
+      onUpdateCreator({
+        ...activeCreator,
+        projects: updatedList,
+        portfolioMedia: allPortfolioMedia,
+        portfolioImages: allPortfolioImages,
+        portfolioVideos: allPortfolioVideos
+      });
     }
   };
 

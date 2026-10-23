@@ -412,14 +412,48 @@ function stageFormatFilter(mandatoryFormats, candidatePool) {
     const creatorTags = normalizeTokenArray(creator?.categoryTags);
     const creatorCaps = normalizeTokenArray(creator?.capabilities);
     const creatorSpecialty = normalizeToken(creator?.specialty);
-    const projectFormats = (creator?.projects || []).map(p => normalizeToken(p.format || p.aspect || p.category));
+    const projects = Array.isArray(creator?.projects) && creator.projects.length > 0
+      ? creator.projects
+      : (Array.isArray(creator?.portfolio_projects) && creator.portfolio_projects.length > 0
+        ? creator.portfolio_projects
+        : (Array.isArray(creator?.portfolio) ? creator.portfolio : []));
+    const projectFormats = projects.map(p => normalizeToken(p.format || p.aspect || p.category));
+
+    // Inspect actual uploaded media assets for verified format proof
+    const hasUploadedVideo = Boolean(
+      creator?.videoPreview ||
+      (Array.isArray(creator?.portfolioVideos) && creator.portfolioVideos.length > 0) ||
+      (Array.isArray(creator?.portfolio_videos) && creator.portfolio_videos.length > 0) ||
+      projects.some(p => Boolean(p.video) || (p.media || []).some(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || ''))) ||
+      (Array.isArray(creator?.portfolio_media) && creator.portfolio_media.some(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || '')))
+    );
+
+    const hasUploadedStill = Boolean(
+      creator?.heroWork ||
+      (Array.isArray(creator?.portfolioImages) && creator.portfolioImages.length > 0) ||
+      (Array.isArray(creator?.portfolio_images) && creator.portfolio_images.length > 0) ||
+      projects.some(p => Boolean(p.image) || (p.media || []).some(m => m.mediaType === 'image' || m.mimeType?.startsWith('image/'))) ||
+      (Array.isArray(creator?.portfolio_media) && creator.portfolio_media.some(m => m.mediaType === 'image' || m.mimeType?.startsWith('image/')))
+    );
+
+    const hasVerticalAspect = Boolean(
+      projects.some(p => {
+        const aspect = (p.aspect || '').toLowerCase();
+        const fmt = (p.format || '').toLowerCase();
+        return aspect.includes('9:16') || aspect.includes('portrait') || aspect.includes('vertical') ||
+               fmt.includes('9:16') || fmt.includes('portrait') || fmt.includes('vertical') ||
+               (p.media || []).some(m => (m.aspect || '').includes('9:16') || (m.aspect || '').includes('portrait'));
+      })
+    );
 
     const hasSpecialty = creatorSpecialty && creatorSpecialty !== 'unspecified' && creatorSpecialty !== 'unknown';
     const hasFormatEvidence = Boolean(
       hasSpecialty ||
       creatorTags.length > 0 ||
       creatorCaps.length > 0 ||
-      projectFormats.length > 0
+      projectFormats.length > 0 ||
+      hasUploadedVideo ||
+      hasUploadedStill
     );
 
     if (!hasFormatEvidence) {
@@ -435,22 +469,27 @@ function stageFormatFilter(mandatoryFormats, candidatePool) {
       let isSupported = false;
 
       if (reqFormat.includes('video') || reqFormat.includes('motion') || reqFormat.includes('loop') || reqFormat.includes('reel') || reqFormat.includes('film') || reqFormat.includes('cinema')) {
-        isSupported = creatorTags.some(t => t.includes('video') || t.includes('motion') || t.includes('film') || t.includes('cinema')) ||
+        isSupported = hasUploadedVideo ||
+                      creatorTags.some(t => t.includes('video') || t.includes('motion') || t.includes('film') || t.includes('cinema')) ||
                       (hasSpecialty && (creatorSpecialty.includes('video') || creatorSpecialty.includes('motion') || creatorSpecialty.includes('film') || creatorSpecialty.includes('cinema'))) ||
                       creatorCaps.some(c => c.includes('video') || c.includes('motion') || c.includes('film') || c.includes('cinema')) ||
                       projectFormats.some(f => f.includes('video') || f.includes('motion') || f.includes('film') || f.includes('cinema'));
-      } else if (reqFormat.includes('still') || reqFormat.includes('photo') || reqFormat.includes('key art')) {
-        isSupported = creatorTags.some(t => t.includes('photo') || t.includes('product')) ||
-                      (hasSpecialty && (creatorSpecialty.includes('photo') || creatorSpecialty.includes('product'))) ||
+      } else if (reqFormat.includes('still') || reqFormat.includes('photo') || reqFormat.includes('key art') || reqFormat.includes('image')) {
+        isSupported = hasUploadedStill ||
+                      creatorTags.some(t => t.includes('photo') || t.includes('product') || t.includes('image')) ||
+                      (hasSpecialty && (creatorSpecialty.includes('photo') || creatorSpecialty.includes('product') || creatorSpecialty.includes('image'))) ||
                       creatorCaps.some(c => c.includes('photo') || c.includes('still')) ||
-                      projectFormats.some(f => f.includes('photo') || f.includes('still') || f.includes('portrait') || f.includes('landscape'));
+                      projectFormats.some(f => f.includes('photo') || f.includes('still') || f.includes('portrait') || f.includes('landscape') || f.includes('image'));
       } else if (reqFormat.includes('3d') || reqFormat.includes('spatial') || reqFormat.includes('cgi') || reqFormat.includes('render')) {
         isSupported = creatorTags.some(t => t.includes('3d')) ||
                       (hasSpecialty && creatorSpecialty.includes('3d')) ||
                       creatorCaps.some(c => c.includes('3d')) ||
                       projectFormats.some(f => f.includes('3d') || f.includes('render'));
       } else if (reqFormat.includes('9:16') || reqFormat.includes('vertical') || reqFormat.includes('portrait')) {
-        isSupported = hasExplicitVerticalEvidence(creator);
+        isSupported = hasExplicitVerticalEvidence(creator) ||
+                      hasVerticalAspect ||
+                      projectFormats.some(f => f.includes('portrait') || f.includes('vertical') || f.includes('9:16')) ||
+                      creatorTags.some(t => t.includes('social') || t.includes('video'));
       } else {
         // Generic format match in tags, capabilities, or projects
         isSupported = creatorTags.some(t => t.includes(reqFormat)) ||
@@ -473,7 +512,7 @@ function stageFormatFilter(mandatoryFormats, candidatePool) {
         code: 'FORMAT_UNSUPPORTED',
         reason: `Deliverable format requirement not satisfied: ${missingFormats.join(', ')}. Creator specializes in ${creator.specialty || 'other formats'}.`,
         missingFields: missingFormats,
-        availableData: { specialty: creator.specialty, tags: creator.categoryTags, capabilities: creator.capabilities },
+        availableData: { specialty: creator.specialty, tags: creator.categoryTags, capabilities: creator.capabilities, hasUploadedVideo, hasUploadedStill },
         requiredFields: mandatoryFormats
       });
     }
@@ -523,8 +562,14 @@ function stageLicensingVerificationFilter(mandatoryConfig, candidatePool) {
   let unknownCount = 0;
 
   for (const creator of candidatePool) {
-    const projects = creator.projects || [];
-    const hasEnoughProjects = projects.length >= minProjects;
+    const projects = Array.isArray(creator.projects) && creator.projects.length > 0
+      ? creator.projects
+      : (Array.isArray(creator.portfolio_projects) && creator.portfolio_projects.length > 0
+        ? creator.portfolio_projects
+        : (Array.isArray(creator.portfolio) ? creator.portfolio : []));
+    const totalMediaAssets = (creator.portfolio_images?.length || 0) + (creator.portfolio_videos?.length || 0) + (creator.portfolio_media?.length || 0);
+    const effectiveProjectCount = Math.max(projects.length, Math.ceil(totalMediaAssets / 2));
+    const hasEnoughProjects = projects.length >= minProjects || (totalMediaAssets > 0 && effectiveProjectCount >= minProjects);
 
     // Distinguish commercial-project client experience from enterprise licensing verification
     const hasCommercialClientWork = projects.some(p => Boolean(p.clientType && p.clientType.trim() !== ''));

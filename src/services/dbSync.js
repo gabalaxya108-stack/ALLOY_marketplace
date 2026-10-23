@@ -171,6 +171,81 @@ export async function deleteCampaignFromDb(campaignId) {
 export async function syncCreatorToDb(creator, userId = null) {
   if (!creator || !creator.id) return null;
 
+  // Resolve projects from creator.projects, creator.portfolio, or creator.portfolio_projects
+  const projects = Array.isArray(creator.projects) && creator.projects.length > 0
+    ? creator.projects
+    : (Array.isArray(creator.portfolio) && creator.portfolio.length > 0
+      ? creator.portfolio
+      : (Array.isArray(creator.portfolio_projects) ? creator.portfolio_projects : []));
+
+  // Aggregate all uploaded images and videos from portfolio items
+  const portfolioImages = [];
+  const portfolioVideos = [];
+  const portfolioMedia = [];
+
+  // Add creator top-level visual items if present
+  if (creator.heroWork || creator.hero_work) {
+    portfolioImages.push(creator.heroWork || creator.hero_work);
+  }
+  if (creator.videoPreview || creator.video_preview) {
+    portfolioVideos.push(creator.videoPreview || creator.video_preview);
+  }
+
+  // Iterate projects to harvest images, videos, and media assets
+  projects.forEach(p => {
+    if (p.image && !portfolioImages.includes(p.image)) {
+      portfolioImages.push(p.image);
+    }
+    if (p.video && !portfolioVideos.includes(p.video)) {
+      portfolioVideos.push(p.video);
+    }
+    if (Array.isArray(p.media)) {
+      p.media.forEach(m => {
+        if (!portfolioMedia.some(existing => existing.id === m.id || (m.url && existing.url === m.url))) {
+          portfolioMedia.push(m);
+        }
+        if (m.url) {
+          const isVid = m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url);
+          if (isVid && !portfolioVideos.includes(m.url)) {
+            portfolioVideos.push(m.url);
+          } else if (!isVid && !portfolioImages.includes(m.url)) {
+            portfolioImages.push(m.url);
+          }
+        }
+      });
+    }
+  });
+
+  // Include any extra media directly on creator
+  const extraMedia = Array.isArray(creator.portfolio_media)
+    ? creator.portfolio_media
+    : (Array.isArray(creator.portfolioMedia) ? creator.portfolioMedia : []);
+  extraMedia.forEach(m => {
+    if (!portfolioMedia.some(existing => existing.id === m.id || (m.url && existing.url === m.url))) {
+      portfolioMedia.push(m);
+    }
+    if (m.url) {
+      const isVid = m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url);
+      if (isVid && !portfolioVideos.includes(m.url)) {
+        portfolioVideos.push(m.url);
+      } else if (!isVid && !portfolioImages.includes(m.url)) {
+        portfolioImages.push(m.url);
+      }
+    }
+  });
+
+  // Harvest project styles to enrich creator styles if applicable
+  const existingStyles = new Set(creator.styles || []);
+  projects.forEach(p => {
+    const pStyle = p.creativeStyle || p.creative_style;
+    if (pStyle && typeof pStyle === 'string') {
+      pStyle.split(/[,|/]/).map(s => s.trim()).filter(Boolean).forEach(s => existingStyles.add(s));
+    }
+  });
+
+  const heroWork = creator.heroWork || creator.hero_work || portfolioImages[0] || (projects[0]?.image) || '';
+  const videoPreview = creator.videoPreview || creator.video_preview || portfolioVideos[0] || (projects.find(p => p.video)?.video) || null;
+
   const payload = {
     id: creator.id,
     name: creator.name || 'AI Creator',
@@ -183,10 +258,10 @@ export async function syncCreatorToDb(creator, userId = null) {
     status_badge: creator.statusBadge || creator.status_badge || 'Available now',
     turnaround: creator.turnaround || '48h concept frames',
     experience: creator.experience || '3+ years generative art',
-    hero_work: creator.heroWork || creator.hero_work || creator.projects?.[0]?.image || '',
-    video_preview: creator.videoPreview || creator.video_preview || null,
+    hero_work: heroWork,
+    video_preview: videoPreview,
     avatar: creator.avatar || '',
-    styles: creator.styles || [],
+    styles: Array.from(existingStyles),
     industries: creator.industries || [],
     capabilities: creator.capabilities || [],
     tools: creator.tools || [],
@@ -196,6 +271,10 @@ export async function syncCreatorToDb(creator, userId = null) {
     creative_skills: creator.creativeSkills || creator.creative_skills || [],
     commercial_licensing_verified: Boolean(creator.commercialLicensingVerified ?? true),
     trust_verification: creator.trustVerification || creator.trust_verification || {},
+    portfolio_media: portfolioMedia,
+    portfolio_images: portfolioImages,
+    portfolio_videos: portfolioVideos,
+    portfolio_projects: projects,
     status: creator.status || 'Published',
     visibility: creator.visibility || 'published',
     is_demo: Boolean(creator.isDemo ?? true),
@@ -209,8 +288,8 @@ export async function syncCreatorToDb(creator, userId = null) {
   const res = await upsertRecord('creator_profiles', payload);
 
   // Synchronize creator's attached projects if present
-  if (Array.isArray(creator.projects) && creator.projects.length > 0) {
-    for (const proj of creator.projects) {
+  if (Array.isArray(projects) && projects.length > 0) {
+    for (const proj of projects) {
       await syncProjectToDb(creator.id, proj);
     }
   }
@@ -222,7 +301,7 @@ export async function syncCreatorToDb(creator, userId = null) {
     }
   }
 
-  return res;
+  return res || payload;
 }
 
 // ============================================================================
@@ -230,6 +309,36 @@ export async function syncCreatorToDb(creator, userId = null) {
 // ============================================================================
 export async function syncProjectToDb(creatorId, project) {
   if (!creatorId || !project || !project.id) return null;
+
+  // Resolve cover image and video from media if missing
+  const mediaList = Array.isArray(project.media) ? [...project.media] : [];
+  const coverItem = mediaList.find(m => m.isCover) || mediaList[0];
+  const videoItem = mediaList.find(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || ''));
+
+  const finalImage = project.image || coverItem?.url || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=85';
+  const finalVideo = project.video || videoItem?.url || null;
+
+  // Ensure media array is non-empty if image or video exists
+  if (mediaList.length === 0) {
+    if (finalImage) {
+      mediaList.push({
+        id: `media-${project.id}-img`,
+        url: finalImage,
+        mediaType: 'image',
+        name: `${project.title || 'Project'} Cover`,
+        isCover: true
+      });
+    }
+    if (finalVideo) {
+      mediaList.push({
+        id: `media-${project.id}-vid`,
+        url: finalVideo,
+        mediaType: 'video',
+        name: `${project.title || 'Project'} Video Reel`,
+        isCover: !finalImage
+      });
+    }
+  }
 
   const payload = {
     id: project.id,
@@ -240,14 +349,14 @@ export async function syncProjectToDb(creatorId, project) {
     creative_style: project.creativeStyle || project.creative_style || '',
     tools: typeof project.tools === 'string' ? project.tools : (Array.isArray(project.tools) ? project.tools.join(', ') : ''),
     format: project.format || '4K Stills Suite',
-    image: project.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=85',
-    video: project.video || null,
+    image: finalImage,
+    video: finalVideo,
     aspect: project.aspect || '16:9',
     role: project.role || 'Lead Visual Artist',
     client_type: project.clientType || project.client_type || '',
     creative_direction: project.creativeDirection || project.creative_direction || '',
     capabilities: project.capabilities || [],
-    media: project.media || [],
+    media: mediaList,
     workflow_id: project.workflowId || project.workflow_id || null,
     workflow_stages: project.workflowStages || project.workflow_stages || [],
     production_workflow: project.productionWorkflow || project.production_workflow || {},
@@ -257,7 +366,8 @@ export async function syncProjectToDb(creatorId, project) {
     updated_at: new Date().toISOString()
   };
 
-  return upsertRecord('portfolio_projects', payload);
+  const res = await upsertRecord('portfolio_projects', payload);
+  return res || payload;
 }
 
 export async function deleteProjectFromDb(creatorId, projectId) {

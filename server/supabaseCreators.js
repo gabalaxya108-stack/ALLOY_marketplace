@@ -12,6 +12,19 @@ export function getSupabaseConfig() {
 }
 
 function normalizeCreator(row) {
+  const rawProjects = (Array.isArray(row.projects) && row.projects.length > 0)
+    ? row.projects
+    : (Array.isArray(row.portfolio_projects) && row.portfolio_projects.length > 0
+      ? row.portfolio_projects
+      : (Array.isArray(row.portfolio) ? row.portfolio : []));
+
+  const portfolioMedia = Array.isArray(row.portfolio_media) ? row.portfolio_media : [];
+  const portfolioImages = Array.isArray(row.portfolio_images) ? row.portfolio_images : [];
+  const portfolioVideos = Array.isArray(row.portfolio_videos) ? row.portfolio_videos : [];
+
+  const heroWork = row.hero_work || portfolioImages[0] || rawProjects[0]?.image || '';
+  const videoPreview = row.video_preview || portfolioVideos[0] || rawProjects.find(p => p.video)?.video || null;
+
   return {
     id: row.id,
     userId: row.user_id,
@@ -25,8 +38,8 @@ function normalizeCreator(row) {
     statusBadge: row.status_badge,
     turnaround: row.turnaround,
     experience: row.experience,
-    heroWork: row.hero_work,
-    videoPreview: row.video_preview,
+    heroWork,
+    videoPreview,
     avatar: row.avatar,
     styles: row.styles || [],
     industries: row.industries || [],
@@ -34,6 +47,9 @@ function normalizeCreator(row) {
     tools: row.tools || [],
     platforms: row.platforms || [],
     categoryTags: row.category_tags || [],
+    portfolioMedia,
+    portfolioImages,
+    portfolioVideos,
     status: row.status,
     visibility: row.visibility,
     isDemo: Boolean(row.is_demo),
@@ -43,28 +59,28 @@ function normalizeCreator(row) {
       ? Boolean(row.commercial_licensing_verified) 
       : (row.commercialLicensingVerified !== undefined ? Boolean(row.commercialLicensingVerified) : undefined),
     trustVerification: row.trust_verification || row.trustVerification || null,
-    projects: (row.projects || []).map(project => ({
+    projects: rawProjects.map(project => ({
       id: project.id,
       title: project.title,
       description: project.description,
       category: project.category,
-      creativeStyle: project.creative_style,
+      creativeStyle: project.creative_style || project.creativeStyle,
       tools: project.tools,
       format: project.format,
       image: project.image,
       video: project.video,
       aspect: project.aspect,
       role: project.role,
-      clientType: project.client_type,
-      creativeDirection: project.creative_direction,
+      clientType: project.client_type || project.clientType,
+      creativeDirection: project.creative_direction || project.creativeDirection,
       capabilities: project.capabilities || [],
       media: project.media || [],
-      workflowId: project.workflow_id,
+      workflowId: project.workflow_id || project.workflowId,
       visibility: project.visibility,
       featured: Boolean(project.featured),
-      displayOrder: project.display_order,
-      createdAt: project.created_at,
-      updatedAt: project.updated_at
+      displayOrder: project.display_order ?? project.displayOrder,
+      createdAt: project.created_at || project.createdAt,
+      updatedAt: project.updated_at || project.updatedAt
     })),
     creativeDNA: row.creative_dna?.[0] ? {
       traits: row.creative_dna[0].traits || [],
@@ -115,8 +131,8 @@ export async function fetchSupabaseCreators() {
       creative_dna(*),
       workflows:creator_workflows(*)
     `)
-    .eq('visibility', 'published')
-    .eq('status', 'Published');
+    .in('visibility', ['published', 'Published'])
+    .in('status', ['published', 'Published']);
 
   if (error) {
     throw new Error(`Supabase creator query failed: ${error.message}`);

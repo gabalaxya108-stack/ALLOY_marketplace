@@ -844,6 +844,427 @@ async function handleLoginPasskey(req, res, body) {
   });
 }
 
+// Managed system/demo credentials with in-memory persistence for dynamic password changes
+const MANAGED_CREDENTIALS = {
+  'lumina.demo@alloy.market': {
+    password: 'AlloyDemo2026!',
+    role: 'brand',
+    displayName: 'Lumina Botanica'
+  },
+  'maya.demo@alloy.market': {
+    password: 'AlloyDemo2026!',
+    role: 'creator',
+    displayName: 'Maya Chen'
+  },
+  'admin@alloy.market': {
+    password: process.env.ALLOY_ADMIN_PASSKEY || 'alloyadminmarketplace-2026',
+    role: 'super_admin',
+    displayName: 'ALLOY Super Administrator'
+  },
+  'judge@alloy.market': {
+    password: process.env.VITE_JUDGE_PASSWORD || 'JudgeAlloy2026!',
+    role: 'super_admin',
+    displayName: 'Designated Judge'
+  }
+};
+
+// Handler: Strict Login Verification against Supabase Database & Managed Credentials
+// - If user not found in DB -> 404 ACCOUNT_NOT_FOUND (prompts creation of new account / fresh start)
+// - If user found in DB but wrong password -> 401 INVALID_PASSWORD (prompts reset password)
+// - If correct -> returns verified user and workspace isolation details
+async function handleLoginVerify(req, res, body) {
+  const email = (body.email || '').trim().toLowerCase();
+  const password = body.password || '';
+  const requestedRole = body.role || 'brand';
+
+  if (!email || !email.includes('@')) {
+    return sendJson(res, 400, {
+      ok: false,
+      error: 'INVALID_EMAIL',
+      message: 'Please provide a valid email address.'
+    });
+  }
+
+  if (!password) {
+    return sendJson(res, 400, {
+      ok: false,
+      error: 'MISSING_PASSWORD',
+      message: 'Password is required to sign in.'
+    });
+  }
+
+  const serviceClient = getServiceClient();
+  let existingUser = null;
+  let userProfile = null;
+
+  // 1. Inspect Supabase Cloud Database
+  if (serviceClient) {
+    try {
+      const { data: usersData } = await serviceClient.auth.admin.listUsers();
+      existingUser = (usersData?.users || []).find(u => u.email?.toLowerCase() === email);
+
+      if (existingUser) {
+        const { data: prof } = await serviceClient
+          .from('profiles')
+          .select('*')
+          .eq('id', existingUser.id)
+          .maybeSingle();
+        userProfile = prof;
+      } else {
+        const { data: profByEmail } = await serviceClient
+          .from('profiles')
+          .select('*')
+          .eq('email', email)
+          .maybeSingle();
+        if (profByEmail) {
+          userProfile = profByEmail;
+          existingUser = { id: profByEmail.id, email: profByEmail.email, user_metadata: profByEmail };
+        }
+      }
+    } catch (e) {
+      console.warn('[handleLoginVerify] DB user query note:', e.message);
+    }
+  }
+
+  // 2. Inspect Managed System/Demo Accounts
+  const managedAccount = MANAGED_CREDENTIALS[email];
+
+  // 3. User does NOT exist in database and NOT in managed accounts -> REJECT!
+  if (!existingUser && !managedAccount && !userProfile) {
+    return sendJson(res, 404, {
+      ok: false,
+      error: 'ACCOUNT_NOT_FOUND',
+      message: 'Account not found in our database. Please create an account first to get started.'
+    });
+  }
+
+  // 4. User DOES exist in DB! Verify the password strictly.
+  let isPasswordValid = false;
+
+  // Check managed credentials first
+  if (managedAccount && managedAccount.password === password) {
+    isPasswordValid = true;
+  }
+
+  // Check Supabase authentication
+  if (!isPasswordValid && existingUser) {
+    const anonClient = getVerificationClient();
+    if (anonClient) {
+      try {
+        const { data: signInData, error: signInErr } = await anonClient.auth.signInWithPassword({
+          email,
+          password
+        });
+        if (!signInErr && signInData?.user) {
+          isPasswordValid = true;
+        }
+      } catch (authErr) {
+        console.warn('[handleLoginVerify] Supabase password check note:', authErr.message);
+      }
+    }
+  }
+
+  // If password does not match DB -> REJECT! Do NOT allow entry!
+  if (!isPasswordValid) {
+    return sendJson(res, 401, {
+      ok: false,
+      error: 'INVALID_PASSWORD',
+      message: 'Incorrect password for this account. Please try again or reset your password.'
+    });
+  }
+
+  // 5. Password matches! Synthesize profile and grant access
+  const resolvedRole = userProfile?.role
+    || existingUser?.user_metadata?.role
+    || managedAccount?.role
+    || requestedRole;
+
+  const resolvedName = userProfile?.display_name
+    || existingUser?.user_metadata?.full_name
+    || existingUser?.user_metadata?.display_name
+    || managedAccount?.displayName
+    || email.split('@')[0];
+
+  const userId = existingUser?.id || (managedAccount ? `demo-${managedAccount.role}` : `usr-${email.replace(/[^a-zA-Z0-9]/g, '-')}`);
+
+  return sendJson(res, 200, {
+    ok: true,
+    user: {
+      id: userId,
+      email,
+      role: resolvedRole,
+      display_name: resolvedName,
+      profile: {
+        id: userId,
+        email,
+        role: resolvedRole,
+        display_name: resolvedName
+      }
+    }
+  });
+}
+
+// Handler: Direct and Hassle-free Password Reset & DB Configuration
+// Updates password in Supabase Auth, profiles, and managed credentials without external email hurdles
+async function handleResetPassword(req, res, body) {
+  const email = (body.email || '').trim().toLowerCase();
+  const newPassword = body.newPassword || body.password || '';
+
+  if (!email || !email.includes('@')) {
+    return sendJson(res, 400, {
+      ok: false,
+      error: 'INVALID_EMAIL',
+      message: 'Please provide a valid email address.'
+    });
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    return sendJson(res, 400, {
+      ok: false,
+      error: 'INVALID_PASSWORD',
+      message: 'New password must be at least 6 characters.'
+    });
+  }
+
+  const serviceClient = getServiceClient();
+  let existingUser = null;
+  let userProfile = null;
+
+  if (serviceClient) {
+    try {
+      const { data: usersData } = await serviceClient.auth.admin.listUsers();
+      existingUser = (usersData?.users || []).find(u => u.email?.toLowerCase() === email);
+
+      const { data: prof } = await serviceClient
+        .from('profiles')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+      userProfile = prof;
+    } catch (e) {
+      console.warn('[handleResetPassword] DB check note:', e.message);
+    }
+  }
+
+  const managedAccount = MANAGED_CREDENTIALS[email];
+
+  // If user does not exist in DB -> Cannot reset non-existent account
+  if (!existingUser && !managedAccount && !userProfile) {
+    return sendJson(res, 404, {
+      ok: false,
+      error: 'ACCOUNT_NOT_FOUND',
+      message: 'No account found with this email in our database. Please create an account first.'
+    });
+  }
+
+  // Update password in Supabase Auth admin
+  let updatedInSupabase = false;
+  if (serviceClient && existingUser) {
+    try {
+      await serviceClient.auth.admin.updateUserById(existingUser.id, {
+        password: newPassword,
+        email_confirm: true
+      });
+      updatedInSupabase = true;
+    } catch (updateErr) {
+      console.warn('[handleResetPassword] Supabase update note:', updateErr.message);
+    }
+  }
+
+  // Update in managed credentials store
+  if (managedAccount) {
+    managedAccount.password = newPassword;
+  }
+
+  // Record audit activity in activity_logs
+  if (serviceClient) {
+    try {
+      const userId = existingUser?.id || userProfile?.id || `usr-${email.replace(/[^a-zA-Z0-9]/g, '-')}`;
+      await serviceClient.from('activity_logs').insert({
+        id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        user_id: userId,
+        actor_role: userProfile?.role || 'user',
+        actor_name: userProfile?.display_name || email.split('@')[0],
+        action_type: 'PASSWORD_RESET',
+        entity_type: 'user',
+        entity_id: userId,
+        metadata: { email, source: 'direct_forgot_password' },
+        created_at: new Date().toISOString()
+      });
+    } catch (logErr) {}
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    message: 'Password updated successfully in database! You can now log in with your new password.',
+    email
+  });
+}
+
+// Handler: Fresh-Start Account Registration (Strict check: fails if account already exists)
+async function handleRegister(req, res, body) {
+  const email = (body.email || '').trim().toLowerCase();
+  const password = body.password || '';
+  const role = body.role === 'creator' ? 'creator' : 'brand';
+  const displayName = body.displayName || body.name || email.split('@')[0];
+
+  if (!email || !email.includes('@')) {
+    return sendJson(res, 400, {
+      ok: false,
+      error: 'INVALID_EMAIL',
+      message: 'Please provide a valid email address.'
+    });
+  }
+
+  if (!password || password.length < 6) {
+    return sendJson(res, 400, {
+      ok: false,
+      error: 'INVALID_PASSWORD',
+      message: 'Password must be at least 6 characters.'
+    });
+  }
+
+  const serviceClient = getServiceClient();
+  if (!serviceClient) {
+    return sendJson(res, 503, { ok: false, error: 'Database service unavailable' });
+  }
+
+  try {
+    const { data: usersData } = await serviceClient.auth.admin.listUsers();
+    const existing = (usersData?.users || []).find(u => u.email?.toLowerCase() === email);
+
+    if (existing || MANAGED_CREDENTIALS[email]) {
+      return sendJson(res, 409, {
+        ok: false,
+        error: 'ACCOUNT_EXISTS',
+        message: 'An account with this email already exists in our database. Please sign in or reset your password.'
+      });
+    }
+
+    const { data: newUser, error: createErr } = await serviceClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        role,
+        intended_role: role,
+        full_name: displayName,
+        display_name: displayName
+      }
+    });
+
+    if (createErr) throw createErr;
+    const userId = newUser.user.id;
+
+    // Upsert public.profiles
+    await serviceClient.from('profiles').upsert({
+      id: userId,
+      email,
+      role,
+      display_name: displayName,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    // Isolated fresh start: provision brand or creator record
+    if (role === 'creator') {
+      const handle = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}_${userId.slice(0, 4)}`;
+      await serviceClient.from('creator_profiles').upsert({
+        id: `creator-${userId.slice(0, 8)}`,
+        user_id: userId,
+        name: displayName,
+        handle,
+        status: 'Published',
+        visibility: 'published',
+        is_demo: false,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    } else {
+      const emailKey = email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
+      const brandId = `brand-${emailKey}`;
+      await serviceClient.from('brands').upsert({
+        id: brandId,
+        user_id: userId,
+        name: displayName,
+        is_demo: false,
+        industry: 'Creative & Digital',
+        description: `${displayName} private studio workspace.`,
+        aesthetic: 'Modern & Editorial',
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    }
+
+    // Log registration
+    try {
+      await serviceClient.from('activity_logs').insert({
+        id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        user_id: userId,
+        actor_role: role,
+        actor_name: displayName,
+        action_type: 'USER_SIGNUP',
+        entity_type: 'user',
+        entity_id: userId,
+        metadata: { email, role, source: 'fresh_start_registration' },
+        created_at: new Date().toISOString()
+      });
+    } catch (logErr) {}
+
+    return sendJson(res, 201, {
+      ok: true,
+      user: {
+        id: userId,
+        email,
+        role,
+        display_name: displayName,
+        profile: {
+          id: userId,
+          email,
+          role,
+          display_name: displayName
+        }
+      }
+    });
+  } catch (err) {
+    console.error('[handleRegister Error]:', err.message);
+    return sendJson(res, 500, { ok: false, error: err.message });
+  }
+}
+
+// Handler: Check if account exists in database
+async function handleCheckAccount(req, res, body) {
+  const email = (body.email || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) {
+    return sendJson(res, 400, { ok: false, error: 'Valid email required' });
+  }
+
+  const serviceClient = getServiceClient();
+  let exists = false;
+  let role = null;
+
+  if (MANAGED_CREDENTIALS[email]) {
+    exists = true;
+    role = MANAGED_CREDENTIALS[email].role;
+  }
+
+  if (!exists && serviceClient) {
+    try {
+      const { data: usersData } = await serviceClient.auth.admin.listUsers();
+      const user = (usersData?.users || []).find(u => u.email?.toLowerCase() === email);
+      if (user) {
+        exists = true;
+        role = user.user_metadata?.role || 'brand';
+      } else {
+        const { data: prof } = await serviceClient.from('profiles').select('role').eq('email', email).maybeSingle();
+        if (prof) {
+          exists = true;
+          role = prof.role;
+        }
+      }
+    } catch (e) {}
+  }
+
+  return sendJson(res, 200, { ok: true, exists, role });
+}
+
 // Handler: Direct Account Registration & Login (Bypasses email rate limits and guarantees Supabase Editor persistence)
 async function handleRegisterOrLogin(req, res, body) {
   const email = (body.email || '').trim().toLowerCase();
@@ -981,6 +1402,10 @@ export function createAdminMiddleware() {
       }
 
       // Public / Auth Routing
+      if (url === '/api/auth/login-verify') return handleLoginVerify(req, res, body);
+      if (url === '/api/auth/reset-password') return handleResetPassword(req, res, body);
+      if (url === '/api/auth/register') return handleRegister(req, res, body);
+      if (url === '/api/auth/check-account') return handleCheckAccount(req, res, body);
       if (url === '/api/auth/register-or-login') return handleRegisterOrLogin(req, res, body);
       if (url === '/api/admin/login-passkey') return handleLoginPasskey(req, res, body);
 
