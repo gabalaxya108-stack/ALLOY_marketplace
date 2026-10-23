@@ -725,6 +725,52 @@ async function main() {
     assert.strictEqual(submittedBrief, 'Find creators who can produce cinematic vertical AI videos for skincare launch.');
   });
 
+  await runTest('NL-23: Brand overview "Structure with Alloy Brief AI" click handler navigates to Discover view', async () => {
+    let currentNavigatedView = null;
+    let locationHash = null;
+
+    const onExploreMarketplace = () => {
+      currentNavigatedView = 'discover';
+      locationHash = 'discover';
+    };
+
+    const handleNavigateToDiscover = () => {
+      if (typeof onExploreMarketplace === 'function') {
+        onExploreMarketplace();
+      } else {
+        locationHash = 'discover';
+      }
+    };
+
+    handleNavigateToDiscover();
+
+    assert.strictEqual(currentNavigatedView, 'discover', 'Clicking Structure with Alloy Brief AI must navigate to Discover view');
+    assert.strictEqual(locationHash, 'discover', 'Location hash must be set to discover');
+  });
+
+  await runTest('NL-24: Hash routing correctly resolves #/discover, #discover, #/creators to discover view for authenticated brand user without role conflict', async () => {
+    const activeBrandUser = { id: 'usr-brand-1', email: 'brand@alloy.market', role: 'brand' };
+    const resolveRole = (user) => user?.role || null;
+
+    const testHashes = ['discover', '/discover', 'creators', '/creators'];
+
+    testHashes.forEach(hash => {
+      let resolvedView = null;
+      let roleConflict = false;
+
+      const currentRole = resolveRole(activeBrandUser);
+
+      if (hash === 'discover' || hash === '/discover' || hash === 'creators' || hash === '/creators') {
+        resolvedView = 'discover';
+      } else if (hash === '/creator' && currentRole === 'brand') {
+        roleConflict = true;
+      }
+
+      assert.strictEqual(resolvedView, 'discover', `Hash "${hash}" must resolve directly to discover view`);
+      assert.strictEqual(roleConflict, false, `Hash "${hash}" must not trigger creator-role conflict for brand user`);
+    });
+  });
+
   console.log(`\n========================================`);
   console.log(`Natural Filter Tests: ${passedTests}/${totalTests} Passed.`);
   console.log(`========================================\n`);

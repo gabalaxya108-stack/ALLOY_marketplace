@@ -36,11 +36,11 @@ import LoginModal from './components/LoginModal';
 import RoleConflictModal from './components/RoleConflictModal';
 import MessagesLoginWall from './components/MessagesLoginWall';
 import JudgeDemoWalkthrough from './components/JudgeDemoWalkthrough';
-import AlloyLoadingScreen from './components/AlloyLoadingScreen';
 import { Sparkles } from 'lucide-react';
 
 import { CREATORS } from './data/creatorsData';
 import PipelineTraceModal from './components/PipelineTraceModal';
+import AlloyLoadingScreen from './components/AlloyLoadingScreen';
 import {
   getInitialMarketplaceState,
   saveMarketplaceState,
@@ -89,7 +89,13 @@ import {
   executeCampaignFilteringPipeline,
   deduplicateMessages,
   reconcileMessages,
-  handleGoogleTokenResponse
+  handleGoogleTokenResponse,
+  submitCreatorApplication,
+  proposeApplicationCounterOffer,
+  respondToApplicationCounterOffer,
+  acceptCreatorApplication,
+  fetchMyApplications,
+  fetchBrandApplications
 } from './services/marketplaceBackend';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 
@@ -124,11 +130,11 @@ function resolveUserRole(user) {
 }
 
 export default function App() {
+  const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   // Active Authenticated User & Protected Action Queue
   const [currentUser, setCurrentUser] = useState(null);
   const currentUserRef = useRef(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [pendingAction, setPendingAction] = useState(null);
   const [loginInitialRole, setLoginInitialRole] = useState('brand');
   const [loginNotice, setLoginNotice] = useState(null);
@@ -185,7 +191,8 @@ export default function App() {
     invitations = [],
     shortlists = {},
     connections = [],
-    opportunities = []
+    opportunities = [],
+    applications = []
   } = marketplaceData;
 
   // Persist state updates to localStorage & broadcast event
@@ -415,11 +422,65 @@ export default function App() {
         }
       }
     });
+
+    // Also synchronize accepted applications so direct application acceptance and
+    // accepted counter-offers converge on Alloy's canonical conversation thread.
+    (applications || []).forEach(app => {
+      if (app.status !== 'accepted' || !app.creatorId || !app.campaignId) return;
+      const canonicalId = `conn-${app.campaignId}-${app.creatorId}`;
+
+      const existingIndex = conns.findIndex(c =>
+        c.id === canonicalId || (c.creatorId === app.creatorId && c.campaignId === app.campaignId)
+      );
+
+      const agreedRate = app.counterOffer?.proposedRate || app.proposedPrice || 'Agreed Rate';
+      const agreedTimeline = app.counterOffer?.proposedTimeline || app.deliveryTimeline || 'Standard Timeline';
+      const openingMsgId = `msg-app-${app.id}`;
+      const initialMsg = {
+        id: openingMsgId,
+        sender: 'brand',
+        senderName: app.brandName || 'Brand Partner',
+        text: `Application accepted! Collaboration started for "${app.campaignTitle || 'Creative Campaign'}" with agreed rate of ${agreedRate} and timeline of ${agreedTimeline}.`,
+        timestamp: app.updatedAt || 'Just now',
+        createdAt: app.updatedAt || new Date().toISOString()
+      };
+
+      if (existingIndex === -1) {
+        conns.push({
+          id: canonicalId,
+          brandId: app.brandId || 'brand-general',
+          creatorId: app.creatorId,
+          creatorName: app.creatorName || 'Creative Partner',
+          creatorRole: app.creatorRole || 'AI Creative Partner',
+          creatorAvatar: app.creatorAvatar || '',
+          campaignId: app.campaignId,
+          campaignTitle: app.campaignTitle || 'Creative Campaign',
+          brandName: app.brandName || 'Brand Partner',
+          agreedBudget: agreedRate,
+          agreedTimeline,
+          applicationId: app.id,
+          status: 'connected',
+          createdAt: app.updatedAt || 'Just now',
+          connectedAt: app.updatedAt || 'Just now',
+          messages: [initialMsg]
+        });
+      } else {
+        const existing = conns[existingIndex];
+        const alreadyHasOpeningMsg = (existing.messages || []).some(m => m.id === openingMsgId);
+        if (!alreadyHasOpeningMsg && (!existing.messages || existing.messages.length === 0)) {
+          conns[existingIndex] = {
+            ...existing,
+            messages: [...(existing.messages || []), initialMsg]
+          };
+        }
+      }
+    });
+
     return conns.map(conn => ({
       ...conn,
       messages: deduplicateMessages(conn.messages || [])
     }));
-  }, [connections, invitations, currentUser]);
+  }, [connections, invitations, applications, currentUser]);
 
   // Derived Brand Connections from synchronized connections
   const brandConnections = useMemo(() => {
@@ -488,6 +549,62 @@ export default function App() {
     const myCreatorId = marketplaceData.myCreatorId || null;
     return myCreatorId ? (creatorsList.find(c => c.id === myCreatorId) || null) : null;
   }, [currentUser, creatorsList, marketplaceData.myCreatorId]);
+
+  // Hydrate applications correctly across authenticated creator and brand sessions
+  useEffect(() => {
+    if (!currentUser) return;
+    let isMounted = true;
+    const role = resolveUserRole(currentUser);
+
+    const hydrateApplications = async () => {
+      try {
+        let loadedApps = [];
+        if (role === 'creator') {
+          const creatorId = myCreator?.id;
+          if (creatorId) {
+            loadedApps = await fetchMyApplications(creatorId);
+          }
+        } else if (role === 'brand') {
+          const brandId = currentBrand?.id || effectiveBrandId;
+          loadedApps = await fetchBrandApplications(brandId);
+        }
+
+        if (!isMounted || !Array.isArray(loadedApps) || loadedApps.length === 0) return;
+
+        setMarketplaceData(prev => {
+          const existingApps = prev.applications || [];
+          const map = new Map();
+          // Seed with existing applications
+          existingApps.forEach(a => {
+            if (a && a.id) map.set(a.id, a);
+          });
+          // Merge incoming hydrated applications by stable application ID
+          loadedApps.forEach(incoming => {
+            if (!incoming || !incoming.id) return;
+            // Preserving held-application privacy: brand views must NEVER contain held or ineligible submissions
+            if (role === 'brand' && (incoming.isHeld || incoming.eligibilityStatus !== 'ELIGIBLE')) {
+              return;
+            }
+            const existing = map.get(incoming.id);
+            map.set(incoming.id, existing ? { ...existing, ...incoming } : incoming);
+          });
+
+          return {
+            ...prev,
+            applications: Array.from(map.values())
+          };
+        });
+      } catch (err) {
+        console.warn('[CreaSync] Application hydration note:', err);
+      }
+    };
+
+    hydrateApplications();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.id, myCreator?.id, currentBrand?.id, effectiveBrandId]);
 
   // Creator-Scoped Invitations: strictly invitations for this creator
   const creatorInvitations = useMemo(() => {
@@ -1246,7 +1363,7 @@ export default function App() {
           setActiveCreatorId(id || null);
           setCurrentView('creator-not-found');
         }
-      } else if (hash === 'discover') {
+      } else if (hash === 'discover' || hash === '/discover' || hash === 'creators' || hash === '/creators') {
         setCurrentView('discover');
       } else if (hash === 'trust-center' || hash === '/trust-center') {
         setCurrentView('trust-center');
@@ -1400,7 +1517,7 @@ export default function App() {
     if (view === 'creator-profile' && extraId) {
       setActiveCreatorId(extraId);
       window.location.hash = `/creator/${extraId}`;
-    } else if (view === 'discover') {
+    } else if (view === 'discover' || view === 'creators') {
       window.location.hash = 'discover';
     } else if (view === 'trust-center') {
       window.location.hash = '/trust-center';
@@ -1895,6 +2012,238 @@ export default function App() {
     });
   };
 
+  // --- Hybrid Marketplace Application Handlers ---
+  const handleSubmitApplication = async (payload) => {
+    try {
+      const response = await submitCreatorApplication(payload);
+      if (response && response.application) {
+        setMarketplaceData(prev => ({
+          ...prev,
+          applications: [response.application, ...(prev.applications || [])]
+        }));
+      }
+      return response;
+    } catch (err) {
+      console.error('[App] Failed to submit creator application:', err);
+      throw err;
+    }
+  };
+
+  const handleAcceptApplication = async (applicationId, campaignId) => {
+    try {
+      const app = (marketplaceData.applications || []).find(a => a.id === applicationId);
+      const camp = (marketplaceData.campaigns || []).find(c => c.id === campaignId);
+
+      const response = await acceptCreatorApplication(applicationId, campaignId, currentBrand?.id);
+
+      const agreedRate = app?.counterOffer?.status === 'accepted' ? app.counterOffer.proposedRate : (app?.proposedPrice || camp?.budget || '$5,000');
+      const agreedTimeline = app?.counterOffer?.status === 'accepted' ? app.counterOffer.proposedTimeline : (app?.deliveryTimeline || camp?.timeline || '3 Weeks');
+
+      const creatorId = app?.creatorId || 'creator-unknown';
+
+      const newProject = {
+        id: `proj-app-${applicationId}`,
+        brandId: camp?.ownerBrandId || currentBrand?.id || 'brand-general',
+        campaignId: campaignId,
+        campaignTitle: camp?.title || 'Creative Campaign',
+        brandName: camp?.brandName || currentBrand?.name || 'Brand Partner',
+        brandContact: "Creative Director",
+        creatorId,
+        creatorName: app?.creatorName || "Verified Creator",
+        creatorAvatar: app?.creatorAvatar || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80",
+        status: "in-progress",
+        progressPercent: 30,
+        milestone: "Milestone 1 of 3: Creative Brief Alignment & Moodboard",
+        deadline: agreedTimeline,
+        agreedBudget: agreedRate,
+        deliverablesScope: Array.isArray(camp?.deliverables) ? camp.deliverables.join(' • ') : (camp?.deliverables || 'Deliverables Package'),
+        latestFeedback: `"Application accepted! Collaboration underway. Creative brief confirmed."`,
+        submissionUrl: "",
+        submissionNotes: "",
+        submissionPreviews: [],
+        feedbackHistory: [
+          {
+            id: `fb-accept-${applicationId}`,
+            author: camp?.brandName || currentBrand?.name || 'Brand Partner',
+            role: "brand",
+            text: `"Application proposal accepted! Welcome to the campaign."`,
+            timestamp: "Just now"
+          }
+        ],
+        revisionHistory: []
+      };
+
+      // -----------------------------------------------------------------------
+      // Establish the canonical conversation for this campaign x creator pair.
+      // Same ID formula as the invitation flow: conn-${campaignId}-${creatorId}
+      // so that both invitation-based and application-based collaborations share
+      // the same thread, and opening messages are never duplicated.
+      // -----------------------------------------------------------------------
+      const canonicalConnId = campaignId
+        ? `conn-${campaignId}-${creatorId}`
+        : `conn-${currentBrand?.id || 'brand-general'}-${creatorId}`;
+
+      const openingMsgId = `msg-app-accept-${applicationId}`;
+      const openingMsgText = `Hi ${app?.creatorName || 'there'}! Your application for "${camp?.title || 'our campaign'}" has been accepted. Agreed rate: ${agreedRate}, timeline: ${agreedTimeline}. Looking forward to working with you!`;
+
+      const openingMsg = {
+        id: openingMsgId,
+        conversationId: canonicalConnId,
+        sender: 'brand',
+        senderName: camp?.brandName || currentBrand?.name || 'Brand Partner',
+        text: openingMsgText,
+        timestamp: 'Just now',
+        createdAt: new Date().toISOString()
+      };
+
+      const newConn = {
+        id: canonicalConnId,
+        brandId: camp?.ownerBrandId || currentBrand?.id || 'brand-general',
+        creatorId,
+        creatorName: app?.creatorName || 'Creator',
+        creatorRole: app?.creatorRole || 'AI Creative Partner',
+        creatorAvatar: app?.creatorAvatar || '',
+        campaignId,
+        campaignTitle: camp?.title || 'Creative Campaign',
+        brandName: camp?.brandName || currentBrand?.name || 'Brand Partner',
+        agreedBudget: agreedRate,
+        agreedTimeline,
+        applicationId,
+        status: 'connected',
+        createdAt: new Date().toISOString(),
+        connectedAt: new Date().toISOString(),
+        messages: [openingMsg]
+      };
+
+      setMarketplaceData(prev => {
+        const nextApps = (prev.applications || []).map(a => a.id === applicationId ? { ...a, status: 'accepted' } : a);
+        const nextCampaigns = (prev.campaigns || []).map(c => {
+          if (c.id === campaignId) {
+            const nextAccepted = (c.acceptedApplicationsCount || 0) + 1;
+            const slots = c.creatorSlots || 1;
+            const remaining = Math.max(0, slots - nextAccepted);
+            return {
+              ...c,
+              acceptedApplicationsCount: nextAccepted,
+              remainingSlots: remaining,
+              applicationStatus: remaining <= 0 ? 'closed' : c.applicationStatus
+            };
+          }
+          return c;
+        });
+
+        // Deduplicate projects: never create a second project for the same
+        // applicationId or the same campaignId x creatorId pair.
+        const projectAlreadyExists = (prev.projects || []).some(
+          p => p.id === newProject.id || (p.campaignId === campaignId && p.creatorId === creatorId)
+        );
+        const nextProjects = projectAlreadyExists
+          ? (prev.projects || []).map(p =>
+              (p.campaignId === campaignId && p.creatorId === creatorId)
+                ? { ...p, status: 'in-progress', agreedBudget: agreedRate, deadline: agreedTimeline }
+                : p
+            )
+          : [newProject, ...(prev.projects || [])];
+
+        // Merge canonical connection: reuse existing thread if present,
+        // only appending the opening message if it isn't already there.
+        const existingConnIdx = (prev.connections || []).findIndex(
+          c => c.id === canonicalConnId ||
+               (c.creatorId === creatorId && c.campaignId === campaignId)
+        );
+        let nextConnections;
+        if (existingConnIdx >= 0) {
+          nextConnections = (prev.connections || []).map((c, i) => {
+            if (i !== existingConnIdx) return c;
+            const alreadyHasOpeningMsg = (c.messages || []).some(m => m.id === openingMsgId);
+            return {
+              ...c,
+              ...newConn,
+              messages: alreadyHasOpeningMsg ? c.messages : [...(c.messages || []), openingMsg]
+            };
+          });
+        } else {
+          nextConnections = [newConn, ...(prev.connections || [])];
+        }
+
+        return {
+          ...prev,
+          applications: nextApps,
+          campaigns: nextCampaigns,
+          projects: nextProjects,
+          connections: nextConnections
+        };
+      });
+
+      saveBackendCollaboration(newProject, currentUser?.display_name, currentUser?.id).catch(err => {
+        console.warn('[CreaSync] Background application collaboration sync deferred:', err);
+      });
+
+      return response;
+    } catch (err) {
+      console.error('[App] Failed to accept application:', err);
+      throw err;
+    }
+  };
+
+  const handleProposeCounterOffer = async (applicationId, counterOfferData) => {
+    try {
+      const response = await proposeApplicationCounterOffer(applicationId, counterOfferData);
+      setMarketplaceData(prev => ({
+        ...prev,
+        applications: (prev.applications || []).map(a => {
+          if (a.id === applicationId) {
+            return {
+              ...a,
+              status: 'counter_offered',
+              counterOffer: {
+                ...counterOfferData,
+                status: 'pending',
+                proposedAt: new Date().toISOString()
+              }
+            };
+          }
+          return a;
+        })
+      }));
+      return response;
+    } catch (err) {
+      console.error('[App] Failed to propose counter-offer:', err);
+      throw err;
+    }
+  };
+
+  const handleRespondCounterOffer = async (applicationId, decision) => {
+    try {
+      const response = await respondToApplicationCounterOffer(applicationId, decision, myCreator?.id);
+
+      if (decision === 'accept') {
+        const targetApp = (marketplaceData.applications || []).find(a => a.id === applicationId);
+        if (targetApp) {
+          await handleAcceptApplication(applicationId, targetApp.campaignId);
+        }
+      } else {
+        setMarketplaceData(prev => ({
+          ...prev,
+          applications: (prev.applications || []).map(a => {
+            if (a.id === applicationId) {
+              return {
+                ...a,
+                status: 'counter_declined',
+                counterOffer: a.counterOffer ? { ...a.counterOffer, status: 'declined' } : null
+              };
+            }
+            return a;
+          })
+        }));
+      }
+      return response;
+    } catch (err) {
+      console.error('[App] Failed to respond to counter-offer:', err);
+      throw err;
+    }
+  };
+
   // --- Collaboration Lifecycle Handlers: Submit -> Review -> Revise -> Approve ---
   const handleSubmitDeliverables = (projectId, { assetsUrl, notes, milestone }) => {
     setMarketplaceData(prev => ({
@@ -2360,6 +2709,9 @@ export default function App() {
             onSelectCreator={handleOpenCreatorProfile}
             onRunFilteringPipeline={handleRunFilteringPipeline}
             initialTab={initialBrandTab}
+            applications={applications}
+            onAcceptApplication={handleAcceptApplication}
+            onProposeCounterOffer={handleProposeCounterOffer}
             pipelineFilter={pipelineFilter}
             onClearPipelineFilter={() => setPipelineFilter(null)}
             onOpenPipelineTrace={(campaignId) => {
@@ -2377,6 +2729,8 @@ export default function App() {
               setLoginNotice('Please sign in to access your direct messages');
               setIsLoginOpen(true);
             }}
+            onNavigate={navigateTo}
+            onExploreMarketplace={() => navigateTo('discover')}
           />
         )}
 
@@ -2436,6 +2790,9 @@ export default function App() {
             onSendMessage={handleSendMessage}
             onSelectProject={handleSelectProject}
             initialTab={initialCreatorTab}
+            applications={applications.filter(a => a.creatorId === myCreator?.id)}
+            onSubmitApplication={handleSubmitApplication}
+            onRespondCounterOffer={handleRespondCounterOffer}
             onLoginSuccess={(user, role) => executePendingActionOrRoute(user, role)}
             onOpenLogin={() => {
               setLoginNotice('Please sign in to access your direct messages');
@@ -2577,6 +2934,9 @@ export default function App() {
                 onSendMessage={handleSendMessage}
                 onSelectProject={handleSelectProject}
                 initialTab="messages"
+                applications={applications.filter(a => a.creatorId === myCreator?.id)}
+                onSubmitApplication={handleSubmitApplication}
+                onRespondCounterOffer={handleRespondCounterOffer}
                 onLoginSuccess={(user, role) => executePendingActionOrRoute(user, role)}
                 onOpenLogin={() => setIsLoginOpen(true)}
               />
@@ -2611,6 +2971,9 @@ export default function App() {
                 onSelectCreator={handleOpenCreatorProfile}
                 onRunFilteringPipeline={handleRunFilteringPipeline}
                 initialTab="messages"
+                applications={applications}
+                onAcceptApplication={handleAcceptApplication}
+                onProposeCounterOffer={handleProposeCounterOffer}
                 pipelineFilter={pipelineFilter}
                 onClearPipelineFilter={() => setPipelineFilter(null)}
                 onOpenTrustCenter={() => setCurrentView('trust-center')}

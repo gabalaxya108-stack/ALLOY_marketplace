@@ -21,8 +21,15 @@ export default function CampaignModal({
   const [naturalText, setNaturalText] = useState(initialNaturalText);
   const [analysis, setAnalysis] = useState(initialAnalysis);
   const [clarification, setClarification] = useState(initialClarification);
-  const [selectedClarificationOption, setSelectedClarificationOption] = useState('');
   const [transitionStatusText, setTransitionStatusText] = useState('Understanding your creative direction…');
+
+  // Marketplace publication settings (Private by default)
+  const [isMarketplacePublished, setIsMarketplacePublished] = useState(false);
+  const [isAcceptingApplications, setIsAcceptingApplications] = useState(true);
+  const [creatorSlots, setCreatorSlots] = useState(1);
+  const [deadlineType, setDeadlineType] = useState('open-ended'); // 'open-ended' | 'date'
+  const [customDeadline, setCustomDeadline] = useState('');
+  const [isBudgetNegotiable, setIsBudgetNegotiable] = useState(true);
 
   if (!isOpen) return null;
 
@@ -108,7 +115,16 @@ export default function CampaignModal({
           budget: analysis.budget,
           timeline: analysis.timeline,
           status: 'Active',
-          visibility: 'published',
+          visibility: isMarketplacePublished ? 'published' : 'private',
+          isMarketplacePublished: Boolean(isMarketplacePublished),
+          isAcceptingApplications: isMarketplacePublished ? Boolean(isAcceptingApplications) : false,
+          applicationStatus: (isMarketplacePublished && isAcceptingApplications) ? 'open' : 'closed',
+          creatorSlots: Math.max(1, parseInt(creatorSlots, 10) || 1),
+          acceptedApplicationsCount: 0,
+          remainingSlots: Math.max(1, parseInt(creatorSlots, 10) || 1),
+          isOpenEnded: deadlineType === 'open-ended',
+          deadline: (deadlineType === 'date' && customDeadline) ? customDeadline : null,
+          isNegotiable: Boolean(isBudgetNegotiable),
           createdAt: 'Just now',
           updatedAt: 'Just now',
           targetAudience: analysis.audience,
@@ -359,6 +375,138 @@ export default function CampaignModal({
                   </span>
                 )}
               </div>
+            </div>
+
+            {/* Marketplace & Discovery Configuration (Private by default) */}
+            <div className="marketplace-modal-settings" style={{
+              marginTop: '24px',
+              padding: '20px 22px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-card-subtle)',
+              border: '1px solid var(--border-medium)',
+              boxShadow: 'var(--shadow-subtle)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                      Creator Marketplace Discovery
+                    </span>
+                    <span className={`badge ${isMarketplacePublished ? 'badge-primary' : 'badge-subtle'}`} style={{
+                      fontSize: '0.72rem',
+                      background: isMarketplacePublished ? 'var(--accent-forest)' : undefined,
+                      color: isMarketplacePublished ? '#FAF8F5' : undefined
+                    }}>
+                      {isMarketplacePublished ? 'Public Marketplace' : 'Private (Brand-Only)'}
+                    </span>
+                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                    Allow verified creators to discover this brief in the feed and submit proposals.
+                  </p>
+                </div>
+                <label style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', gap: '10px', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={isMarketplacePublished}
+                    onChange={(e) => setIsMarketplacePublished(e.target.checked)}
+                    style={{ width: '18px', height: '18px', accentColor: 'var(--accent-forest)' }}
+                  />
+                  <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {isMarketplacePublished ? 'Marketplace Active' : 'Make Public'}
+                  </span>
+                </label>
+              </div>
+
+              {isMarketplacePublished ? (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '16px',
+                  marginTop: '14px',
+                  paddingTop: '16px',
+                  borderTop: '1px solid var(--border-light)'
+                }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Creator Slots
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={creatorSlots}
+                      onChange={(e) => setCreatorSlots(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="form-input"
+                      style={{ padding: '8px 12px', fontSize: '0.9rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Application Deadline
+                    </label>
+                    <select
+                      value={deadlineType}
+                      onChange={(e) => setDeadlineType(e.target.value)}
+                      className="form-input"
+                      style={{ padding: '8px 12px', fontSize: '0.9rem' }}
+                    >
+                      <option value="open-ended">Open-ended (until filled)</option>
+                      <option value="date">Specific deadline</option>
+                    </select>
+                    {deadlineType === 'date' && (
+                      <input
+                        type="date"
+                        value={customDeadline}
+                        onChange={(e) => setCustomDeadline(e.target.value)}
+                        className="form-input"
+                        style={{ marginTop: '8px', padding: '8px 12px', fontSize: '0.88rem' }}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Application Terms
+                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                        <input
+                          type="checkbox"
+                          checked={isAcceptingApplications}
+                          onChange={(e) => setIsAcceptingApplications(e.target.checked)}
+                          style={{ width: '16px', height: '16px', accentColor: 'var(--accent-forest)' }}
+                        />
+                        Accept Applications
+                      </label>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                        <input
+                          type="checkbox"
+                          checked={isBudgetNegotiable}
+                          onChange={(e) => setIsBudgetNegotiable(e.target.checked)}
+                          style={{ width: '16px', height: '16px', accentColor: 'var(--accent-forest)' }}
+                        />
+                        Budget is Negotiable
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  padding: '12px 16px',
+                  background: 'var(--bg-card)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-light)',
+                  fontSize: '0.84rem',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: '1rem' }}>🔒</span>
+                  <span><strong>Private Campaign:</strong> Only creators you invite directly through Alloy's matching engine can see and participate.</span>
+                </div>
+              )}
             </div>
 
             {/* Actions: Looks right? */}
