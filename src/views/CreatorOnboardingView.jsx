@@ -148,6 +148,7 @@ export default function CreatorOnboardingView({ onPublishCreator, onExploreMarke
     format: '4K Stills Suite',
     aspect: 'portrait',
     image: '',
+    video: '',
     description: '',
     role: 'Lead AI Creator'
   });
@@ -275,14 +276,38 @@ export default function CreatorOnboardingView({ onPublishCreator, onExploreMarke
 
   // Add Portfolio Item
   const handleAddProject = () => {
-    if (!newProject.title.trim() || !newProject.image.trim()) {
-      setUploadFeedback('Please provide both a project title and an image URL.');
+    if (!newProject.title.trim() || (!newProject.image.trim() && !newProject.video?.trim())) {
+      setUploadFeedback('Please provide a project title and an image or video URL.');
       return;
     }
+
+    const isVideo = Boolean(newProject.video?.trim()) || /\.(mp4|webm|mov)(\?.*)?$/i.test(newProject.image || '');
+    const media = [];
+    if (newProject.image) {
+      media.push({
+        id: `media-${Date.now()}-img`,
+        url: newProject.image,
+        mediaType: isVideo ? 'video' : 'image',
+        isCover: true
+      });
+    }
+    if (newProject.video && newProject.video !== newProject.image) {
+      media.push({
+        id: `media-${Date.now()}-vid`,
+        url: newProject.video,
+        mediaType: 'video',
+        isCover: !newProject.image
+      });
+    }
+
     const created = {
       id: `proj-${Date.now()}`,
-      ...newProject
+      ...newProject,
+      video: newProject.video || (isVideo ? newProject.image : null),
+      image: newProject.image || (isVideo ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=85' : ''),
+      media
     };
+
     setProfileData(prev => ({
       ...prev,
       portfolio: [created, ...prev.portfolio]
@@ -293,6 +318,7 @@ export default function CreatorOnboardingView({ onPublishCreator, onExploreMarke
       format: '4K Stills Suite',
       aspect: 'portrait',
       image: '',
+      video: '',
       description: '',
       role: 'Lead AI Creator'
     });

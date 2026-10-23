@@ -38,8 +38,48 @@ export function calculateCreaMatch(campaign, creator) {
   const cPlatforms = `${campaign.platforms || ''}`.toLowerCase();
   const cFull = `${cTitle} ${cDesc} ${cStyle} ${cInd} ${cFormats} ${cPlatforms}`;
 
-  const projects = creator.projects || [];
-  const creatorStyles = (creator.styles || []).map(s => s.toLowerCase());
+  const projects = Array.isArray(creator.projects) && creator.projects.length > 0
+    ? creator.projects
+    : (Array.isArray(creator.portfolio_projects) && creator.portfolio_projects.length > 0
+      ? creator.portfolio_projects
+      : (Array.isArray(creator.portfolio) ? creator.portfolio : []));
+
+  const allMedia = [
+    ...(creator.portfolio_media || creator.portfolioMedia || []),
+    ...projects.flatMap(p => p.media || [])
+  ];
+
+  const allImages = [
+    creator.heroWork,
+    creator.hero_work,
+    ...(creator.portfolio_images || []),
+    ...(creator.portfolioImages || []),
+    ...projects.map(p => p.image)
+  ].filter(Boolean);
+
+  const allVideos = [
+    creator.videoPreview,
+    creator.video_preview,
+    ...(creator.portfolio_videos || []),
+    ...(creator.portfolioVideos || []),
+    ...projects.map(p => p.video),
+    ...allMedia.filter(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || '')).map(m => m.url)
+  ].filter(Boolean);
+
+  // Creative styles from creator profile and uploaded portfolio projects
+  const projectStyles = projects.flatMap(p => [
+    p.creativeStyle,
+    p.creative_style,
+    p.category,
+    p.creativeDirection,
+    p.creative_direction
+  ]).filter(Boolean).map(s => s.toLowerCase());
+
+  const creatorStyles = Array.from(new Set([
+    ...(creator.styles || []).map(s => s.toLowerCase()),
+    ...projectStyles
+  ]));
+
   const creatorIndustries = (creator.industries || []).map(i => i.toLowerCase());
   const creatorTags = (creator.categoryTags || []).map(t => t.toLowerCase());
   const creatorCaps = (creator.capabilities || []).map(c => c.toLowerCase());
@@ -92,15 +132,17 @@ export function calculateCreaMatch(campaign, creator) {
 
   // ========================================================
   // DIMENSION 2: PORTFOLIO RELEVANCE & EVIDENCE (25 pts)
-  // SCENARIO C CHECK: Creators with 0 verified projects CANNOT score high!
+  // Evaluates uploaded visual assets and projects
   // ========================================================
   let portfolioScore = 0;
   let evidenceTier = 'verified';
 
-  if (projects.length === 0) {
-    portfolioScore = 3; // Strict penalty for unverified / empty portfolio
+  const totalVerifiedAssets = projects.length + (allVideos.length > 0 ? 1 : 0) + (allImages.length > 0 ? 1 : 0);
+
+  if (projects.length === 0 && allImages.length === 0 && allVideos.length === 0) {
+    portfolioScore = 3; // Strict penalty for empty portfolio
     evidenceTier = 'sparse';
-  } else if (projects.length === 1) {
+  } else if (projects.length <= 1 && totalVerifiedAssets <= 1) {
     portfolioScore = 6;
     evidenceTier = 'limited';
   } else {
@@ -108,12 +150,23 @@ export function calculateCreaMatch(campaign, creator) {
     evidenceTier = 'verified';
   }
 
+  const wantsVideo = cFormats.includes('video') || cFormats.includes('loop') || cFormats.includes('motion') || cFormats.includes('reel');
+  const wantsStill = cFormats.includes('still') || cFormats.includes('photo') || cFormats.includes('suite') || cFormats.includes('asset') || cFormats.includes('key art') || cFormats.includes('image');
+
+  // Direct media bonus: rewards creators who uploaded the exact media format requested by the brand
+  if (wantsVideo && allVideos.length > 0) {
+    portfolioScore += 3.0;
+  }
+  if (wantsStill && allImages.length > 0) {
+    portfolioScore += 2.0;
+  }
+
   if (projects.length > 0) {
     let relevantProjectCount = 0;
     let highRelevanceCount = 0;
 
     projects.forEach(p => {
-      const pText = `${p.title} ${p.description || ''} ${p.category || ''} ${p.creativeDirection || ''} ${p.clientType || ''} ${(p.capabilities || []).join(' ')}`.toLowerCase();
+      const pText = `${p.title} ${p.description || ''} ${p.category || ''} ${p.creativeStyle || ''} ${p.creative_style || ''} ${p.creativeDirection || ''} ${p.clientType || ''} ${(p.capabilities || []).join(' ')}`.toLowerCase();
       
       let pMatches = 0;
       if (cInd && (pText.includes(cInd.split(' ')[0]) || pText.includes(cInd.split('&')[0]?.trim()))) pMatches += 2;
@@ -139,15 +192,26 @@ export function calculateCreaMatch(campaign, creator) {
 
   // ========================================================
   // DIMENSION 3: CONTENT FORMAT COMPATIBILITY (15 pts)
+  // Verifies format against both profile tags and uploaded media assets
   // ========================================================
   let formatScore = 5;
 
-  const wantsVideo = cFormats.includes('video') || cFormats.includes('loop') || cFormats.includes('motion') || cFormats.includes('reel');
-  const wantsStill = cFormats.includes('still') || cFormats.includes('photo') || cFormats.includes('suite') || cFormats.includes('asset') || cFormats.includes('key art');
   const wants3D = cFormats.includes('3d') || cFormats.includes('spatial') || cFormats.includes('cgi') || cFormats.includes('render');
 
-  const creatorHasVideo = creatorTags.includes('ai-video') || creatorTags.includes('motion') || creatorSpecialty.includes('video') || creatorSpecialty.includes('motion');
-  const creatorHasStill = creatorTags.includes('ai-photography') || creatorTags.includes('product-visuals') || creatorSpecialty.includes('photography') || creatorSpecialty.includes('product');
+  const creatorHasVideo = creatorTags.includes('ai-video') || 
+                          creatorTags.includes('motion') || 
+                          creatorSpecialty.includes('video') || 
+                          creatorSpecialty.includes('motion') ||
+                          allVideos.length > 0 ||
+                          projects.some(p => Boolean(p.video) || (p.format || '').toLowerCase().includes('video') || (p.format || '').toLowerCase().includes('motion'));
+
+  const creatorHasStill = creatorTags.includes('ai-photography') || 
+                          creatorTags.includes('product-visuals') || 
+                          creatorSpecialty.includes('photography') || 
+                          creatorSpecialty.includes('product') ||
+                          allImages.length > 0 ||
+                          projects.some(p => Boolean(p.image) || (p.format || '').toLowerCase().includes('still') || (p.format || '').toLowerCase().includes('photo'));
+
   const creatorHas3D = creatorTags.includes('3d') || creatorSpecialty.includes('3d') || creatorCaps.some(c => c.includes('3d'));
 
   if (wantsVideo && creatorHasVideo) formatScore += 4;
@@ -233,7 +297,7 @@ export function calculateCreaMatch(campaign, creator) {
   const rawTotal = Math.round(styleScore + portfolioScore + formatScore + industryScore + platformScore + availabilityBudgetTotal);
 
   // Evidence confidence evaluation
-  const isLimitedEvidence = projects.length <= 1;
+  const isLimitedEvidence = projects.length === 0 || (projects.length <= 1 && totalVerifiedAssets <= 1);
   const confidence = isLimitedEvidence ? 'limited' : rawTotal >= 85 ? 'high' : 'medium';
 
   let fitLabel = `${rawTotal}% Creative Fit`;

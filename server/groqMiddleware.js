@@ -38,7 +38,7 @@ function parseJsonBody(req) {
     let body = '';
     req.on('data', chunk => {
       body += chunk;
-      if (body.length > 1e6) { // 1MB limit
+      if (body.length > 50 * 1024 * 1024) { // 50MB limit
         reject(new Error('Payload too large'));
       }
     });
@@ -234,6 +234,19 @@ export function createGroqMiddleware() {
           });
         }
 
+        // If client provided candidate creators (e.g. newly published session creators), merge them uniquely
+        if (Array.isArray(body.creators) && body.creators.length > 0) {
+          if (!creators) {
+            creators = body.creators;
+          } else {
+            const existingIds = new Set(creators.map(c => c.id));
+            const newFromClient = body.creators.filter(c => c && c.id && !existingIds.has(c.id));
+            if (newFromClient.length > 0) {
+              creators = [...creators, ...newFromClient];
+            }
+          }
+        }
+
         const result = executeFilteringPipeline({ campaign, creators, options });
 
         return sendJson(res, 200, {
@@ -245,10 +258,15 @@ export function createGroqMiddleware() {
         });
       } catch (err) {
         console.error('[Pipeline Middleware Error]:', err.message);
-        return sendJson(res, 500, {
+        const isPayloadTooLarge = err.message === 'Payload too large';
+        const statusCode = isPayloadTooLarge ? 413 : 500;
+        const code = isPayloadTooLarge ? 'PAYLOAD_TOO_LARGE' : 'PIPELINE_EXECUTION_ERROR';
+        return sendJson(res, statusCode, {
           ok: false,
-          code: 'PIPELINE_EXECUTION_ERROR',
-          error: 'An unexpected error occurred while executing the backend filtering pipeline.'
+          code,
+          error: isPayloadTooLarge
+            ? 'Request payload exceeds maximum allowed size limit (50MB).'
+            : 'An unexpected error occurred while executing the backend filtering pipeline.'
         });
       }
     }

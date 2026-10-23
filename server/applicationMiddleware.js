@@ -1,13 +1,15 @@
 // server/applicationMiddleware.js
 // Alloy Hybrid Marketplace: Server-Side Creator Applications, Discovery & Negotiation Engine
 // Strictly enforces campaign privacy, bid isolation, pre-bid eligibility gates, slot limits, and deadlines.
+// Provides dual-layer durability: PostgreSQL / Supabase write-through with atomic RPC slot management,
+// plus in-memory fallback cache for high performance and offline test determinism.
 
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseConfig } from './supabaseCreators.js';
 import { evaluateCreatorEligibility, ELIGIBILITY_STATUS } from '../src/intelligence/eligibilityEngine.js';
 import { CREATORS } from '../src/data/creatorsData.js';
 
-// In-memory persistent application registry for local runtime, cross-tab testing, and backend storage
+// In-memory persistent application registry for local runtime, cross-tab testing, and offline fallback
 export let applicationsStore = [
   {
     id: 'app-demo-maya-1',
@@ -34,6 +36,105 @@ export let applicationsStore = [
     updatedAt: new Date(Date.now() - 86400000).toISOString()
   }
 ];
+
+// Per-campaign in-process promise locks to serialize concurrent slot checks
+const campaignLocks = new Map();
+
+export async function withCampaignLock(campaignId, fn) {
+  const key = campaignId || 'global';
+  const prevPromise = campaignLocks.get(key) || Promise.resolve();
+  let release;
+  const currentPromise = new Promise(resolve => { release = resolve; });
+  campaignLocks.set(key, prevPromise.then(() => currentPromise));
+  await prevPromise;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (campaignLocks.get(key) === currentPromise) {
+      campaignLocks.delete(key);
+    }
+  }
+}
+
+/**
+ * Maps database snake_case row to camelCase application object
+ */
+export function mapRowToApplication(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    campaignTitle: row.campaign_title,
+    brandId: row.brand_id,
+    brandName: row.brand_name,
+    creatorId: row.creator_id,
+    creatorName: row.creator_name,
+    creatorAvatar: row.creator_avatar || '',
+    creatorRole: row.creator_role || '',
+    proposedPrice: row.proposed_price,
+    bidAmount: Number(row.bid_amount),
+    currency: row.currency || 'USD',
+    proposalText: row.proposal_text || '',
+    deliveryTimeline: row.delivery_timeline || '',
+    portfolioEvidence: Array.isArray(row.portfolio_evidence) ? row.portfolio_evidence : [],
+    eligibilityStatus: row.eligibility_status,
+    eligibilityReport: row.eligibility_report || null,
+    isHeld: Boolean(row.is_held),
+    heldReason: row.held_reason || null,
+    status: row.status,
+    counterOffer: row.counter_offer || null,
+    isDemo: Boolean(row.is_demo),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+/**
+ * Maps camelCase application object to database snake_case row
+ */
+export function mapApplicationToRow(app) {
+  if (!app) return null;
+  return {
+    id: app.id,
+    campaign_id: app.campaignId,
+    campaign_title: app.campaignTitle,
+    brand_id: app.brandId,
+    brand_name: app.brandName,
+    creator_id: app.creatorId,
+    creator_name: app.creatorName,
+    creator_avatar: app.creatorAvatar || '',
+    creator_role: app.creatorRole || '',
+    proposed_price: app.proposedPrice,
+    bid_amount: app.bidAmount || parsePrice(app.proposedPrice),
+    currency: app.currency || 'USD',
+    proposal_text: app.proposalText || '',
+    delivery_timeline: app.deliveryTimeline || '',
+    portfolio_evidence: Array.isArray(app.portfolioEvidence) ? app.portfolioEvidence : [],
+    eligibility_status: app.eligibilityStatus,
+    eligibility_report: app.eligibilityReport || {},
+    is_held: Boolean(app.isHeld),
+    held_reason: app.heldReason || null,
+    status: app.status,
+    counter_offer: app.counterOffer || null,
+    is_demo: Boolean(app.isDemo ?? false),
+    created_at: app.createdAt || new Date().toISOString(),
+    updated_at: app.updatedAt || new Date().toISOString()
+  };
+}
+
+// Resolves or creates a Supabase client with service-role or anon privileges
+export function getSupabaseClient() {
+  const config = getSupabaseConfig();
+  if (!config) return null;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = (serviceKey && serviceKey !== 'your-supabase-service-role-key') ? serviceKey : config.key;
+  try {
+    return createClient(config.url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  } catch (e) {
+    return null;
+  }
+}
 
 // Helper to parse JSON body from incoming stream
 function parseJsonBody(req) {
@@ -93,13 +194,14 @@ function parsePrice(priceVal) {
   const match = String(priceVal).replace(/,/g, '').match(/\d+(\.\d+)?/);
   return match ? parseFloat(match[0]) : 0;
 }
+
 /**
  * Authenticates the incoming request using the project's standard bearer token mechanism.
  * Extracts JWT from Authorization header, validates with Supabase Auth when configured,
  * or validates deterministic test tokens in test/offline runtime.
  * Returns { user, userId, email, role, brandId, creatorId } or { error, status, code }.
  */
-async function authenticateCaller(req) {
+async function authenticateCaller(req, customSupabaseClient = null) {
   const authHeader = req.headers['authorization'] || req.headers['Authorization'] || '';
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return { error: 'Authentication required. Missing Bearer token.', status: 401, code: 'UNAUTHORIZED' };
@@ -123,16 +225,15 @@ async function authenticateCaller(req) {
 
   // Cryptographically verify token via Supabase Auth when configured
   const supabaseConfig = getSupabaseConfig();
-  if (supabaseConfig && !token.startsWith('test-valid-') && token !== 'authenticated-session-token') {
+  if ((customSupabaseClient || supabaseConfig) && !token.startsWith('test-valid-') && token !== 'authenticated-session-token') {
     try {
-      const supabaseAuthClient = createClient(supabaseConfig.url, supabaseConfig.key);
-      const { data: { user }, error: authErr } = await supabaseAuthClient.auth.getUser(token);
+      const authClient = customSupabaseClient || createClient(supabaseConfig.url, supabaseConfig.key);
+      const { data: { user }, error: authErr } = await authClient.auth.getUser(token);
       if (authErr || !user) {
         return { error: 'Invalid or expired session token. Please sign in again.', status: 401, code: 'UNAUTHORIZED' };
       }
 
       // Derive role and brand/creator identity from verified Supabase user
-      // Prefer server-controlled app_metadata over user-editable user_metadata
       let role = user.app_metadata?.role || user.user_metadata?.role;
       let brandId = user.app_metadata?.brandId || user.user_metadata?.brandId || user.user_metadata?.brand_id;
       let creatorId = user.app_metadata?.creatorId || user.user_metadata?.creatorId || user.user_metadata?.creator_id;
@@ -248,7 +349,14 @@ async function authenticateCaller(req) {
   return { error: 'Invalid or unrecognized session token.', status: 401, code: 'UNAUTHORIZED' };
 }
 
-export function createApplicationMiddleware() {
+export function createApplicationMiddleware(options = {}) {
+  // Allow injecting custom Supabase client (e.g. for deterministic persistence tests)
+  const explicitClient = options.supabaseClient || null;
+
+  function getClient() {
+    return explicitClient || getSupabaseClient();
+  }
+
   return async function applicationMiddleware(req, res, next) {
     const parsedUrl = new URL(req.url, 'http://localhost');
     const pathname = parsedUrl.pathname;
@@ -267,14 +375,13 @@ export function createApplicationMiddleware() {
       return res.end();
     }
 
+    const dbClient = getClient();
+
     try {
       // ------------------------------------------------------------------------
       // 1. GET /api/marketplace/campaigns (Public Creator Campaign Feed)
       // ------------------------------------------------------------------------
       if (req.method === 'GET' && pathname === '/api/marketplace/campaigns') {
-        // Only return published, active campaigns with open applications
-        // Strips all confidential brand notes, private bids, and internal shortlists
-        const publicFeed = applicationsStore; // Access context
         return sendJson(res, 200, {
           ok: true,
           feed: []
@@ -285,7 +392,7 @@ export function createApplicationMiddleware() {
       // 2. GET /api/applications/my (Creator: Access Own Submissions Only)
       // ------------------------------------------------------------------------
       if (req.method === 'GET' && pathname === '/api/applications/my') {
-        const auth = await authenticateCaller(req);
+        const auth = await authenticateCaller(req, dbClient);
         if (auth.error) {
           return sendJson(res, auth.status, { ok: false, code: auth.code, error: auth.error });
         }
@@ -307,6 +414,31 @@ export function createApplicationMiddleware() {
           });
         }
 
+        // 1. Query database when configured
+        if (dbClient) {
+          try {
+            const { data, error } = await dbClient
+              .from('campaign_applications')
+              .select('*')
+              .eq('creator_id', creatorId)
+              .order('created_at', { ascending: false });
+
+            if (!error && Array.isArray(data)) {
+              const mapped = data.map(mapRowToApplication);
+              // Converge in-memory store with database records
+              for (const app of mapped) {
+                const idx = applicationsStore.findIndex(a => a.id === app.id);
+                if (idx >= 0) applicationsStore[idx] = app;
+                else applicationsStore.unshift(app);
+              }
+              return sendJson(res, 200, { ok: true, applications: mapped });
+            }
+          } catch (dbErr) {
+            console.warn('[Application Middleware] Database read error, falling back to memory:', dbErr.message);
+          }
+        }
+
+        // 2. Memory store fallback
         const myApps = applicationsStore.filter(a => a.creatorId === creatorId);
         return sendJson(res, 200, { ok: true, applications: myApps });
       }
@@ -318,7 +450,7 @@ export function createApplicationMiddleware() {
         const campaignId = pathname.replace('/api/applications/campaign/', '');
 
         // 1. Authenticate caller using verified session token
-        const auth = await authenticateCaller(req);
+        const auth = await authenticateCaller(req, dbClient);
         if (auth.error) {
           return sendJson(res, auth.status, { ok: false, code: auth.code, error: auth.error });
         }
@@ -333,13 +465,10 @@ export function createApplicationMiddleware() {
         }
 
         // 3. Campaign ownership verification
-        const campaignApps = applicationsStore.filter(a => a.campaignId === campaignId);
-        let campaignOwnerBrand = campaignApps[0]?.brandId || (campaignId === 'camp-summer-skincare' ? 'brand-demo-lumina' : null);
-
-        if (!campaignOwnerBrand && supabaseConfig) {
+        let campaignOwnerBrand = null;
+        if (dbClient) {
           try {
-            const supabaseAuthClient = createClient(supabaseConfig.url, supabaseConfig.key);
-            const { data: campData } = await supabaseAuthClient
+            const { data: campData } = await dbClient
               .from('campaigns')
               .select('owner_brand_id')
               .eq('id', campaignId)
@@ -350,6 +479,11 @@ export function createApplicationMiddleware() {
           } catch (e) {}
         }
 
+        if (!campaignOwnerBrand) {
+          const matchingApp = applicationsStore.find(a => a.campaignId === campaignId);
+          campaignOwnerBrand = matchingApp?.brandId || (campaignId === 'camp-summer-skincare' ? 'brand-demo-lumina' : null);
+        }
+
         if (campaignOwnerBrand && campaignOwnerBrand !== auth.brandId && auth.role !== 'admin') {
           return sendJson(res, 403, {
             ok: false,
@@ -358,9 +492,33 @@ export function createApplicationMiddleware() {
           });
         }
 
-        // 4. Strict Privacy: Ineligible and insufficient-evidence (held) applications are hidden from brand review
-        const visibleApps = campaignApps.filter(a => !a.isHeld && a.eligibilityStatus === 'ELIGIBLE');
+        // 4. Query database when configured with strict privacy filter (no held applications)
+        if (dbClient) {
+          try {
+            const { data, error } = await dbClient
+              .from('campaign_applications')
+              .select('*')
+              .eq('campaign_id', campaignId)
+              .eq('is_held', false)
+              .eq('eligibility_status', 'ELIGIBLE')
+              .order('created_at', { ascending: false });
 
+            if (!error && Array.isArray(data)) {
+              const visibleApps = data.map(mapRowToApplication);
+              for (const app of visibleApps) {
+                const idx = applicationsStore.findIndex(a => a.id === app.id);
+                if (idx >= 0) applicationsStore[idx] = app;
+                else applicationsStore.unshift(app);
+              }
+              return sendJson(res, 200, { ok: true, applications: visibleApps });
+            }
+          } catch (dbErr) {
+            console.warn('[Application Middleware] Database read error, falling back to memory:', dbErr.message);
+          }
+        }
+
+        // 5. Memory store fallback with strict privacy filter
+        const visibleApps = applicationsStore.filter(a => a.campaignId === campaignId && !a.isHeld && a.eligibilityStatus === 'ELIGIBLE');
         return sendJson(res, 200, { ok: true, applications: visibleApps });
       }
 
@@ -368,13 +526,11 @@ export function createApplicationMiddleware() {
       // 3B. GET /api/applications/brand (Brand: View Applications Across Owned Campaigns)
       // ------------------------------------------------------------------------
       if (req.method === 'GET' && (pathname === '/api/applications/brand' || pathname === '/api/applications/brand/')) {
-        // 1. Authenticate caller using verified session token
-        const auth = await authenticateCaller(req);
+        const auth = await authenticateCaller(req, dbClient);
         if (auth.error) {
           return sendJson(res, auth.status, { ok: false, code: auth.code, error: auth.error });
         }
 
-        // 2. Role verification: only brands or admins can review applications
         if (auth.role !== 'brand' && auth.role !== 'admin') {
           return sendJson(res, 403, {
             ok: false,
@@ -392,14 +548,40 @@ export function createApplicationMiddleware() {
           });
         }
 
-        // 3. Query all applications belonging to this brand's campaigns
+        // 1. Query database when configured
+        if (dbClient) {
+          try {
+            let query = dbClient
+              .from('campaign_applications')
+              .select('*')
+              .eq('is_held', false)
+              .eq('eligibility_status', 'ELIGIBLE')
+              .order('created_at', { ascending: false });
+
+            if (auth.role !== 'admin') {
+              query = query.eq('brand_id', verifiedBrandId);
+            }
+
+            const { data, error } = await query;
+            if (!error && Array.isArray(data)) {
+              const visibleApps = data.map(mapRowToApplication);
+              for (const app of visibleApps) {
+                const idx = applicationsStore.findIndex(a => a.id === app.id);
+                if (idx >= 0) applicationsStore[idx] = app;
+                else applicationsStore.unshift(app);
+              }
+              return sendJson(res, 200, { ok: true, applications: visibleApps });
+            }
+          } catch (dbErr) {
+            console.warn('[Application Middleware] Database read error, falling back to memory:', dbErr.message);
+          }
+        }
+
+        // 2. Memory store fallback
         const brandApps = auth.role === 'admin'
           ? applicationsStore
           : applicationsStore.filter(a => a.brandId === verifiedBrandId);
-
-        // 4. Strict Privacy: Ineligible and held applications are hidden from brand review
         const visibleApps = brandApps.filter(a => !a.isHeld && a.eligibilityStatus === 'ELIGIBLE');
-
         return sendJson(res, 200, { ok: true, applications: visibleApps });
       }
 
@@ -407,13 +589,11 @@ export function createApplicationMiddleware() {
       // 4. POST /api/applications/submit (Creator: Submit Bid with Pre-Bid Gate)
       // ------------------------------------------------------------------------
       if (req.method === 'POST' && pathname === '/api/applications/submit') {
-        // 1. Authenticate caller using verified session token
-        const auth = await authenticateCaller(req);
+        const auth = await authenticateCaller(req, dbClient);
         if (auth.error) {
           return sendJson(res, auth.status, { ok: false, code: auth.code, error: auth.error });
         }
 
-        // 2. Role verification: only creators can submit applications
         if (auth.role !== 'creator') {
           return sendJson(res, 403, {
             ok: false,
@@ -445,7 +625,7 @@ export function createApplicationMiddleware() {
           return sendJson(res, 400, { ok: false, code: 'INVALID_CAMPAIGN', error: 'Valid campaign object is required.' });
         }
 
-        // 3. Reject conflicting creator identity supplied in the request body
+        // Reject conflicting creator identity supplied in request body
         if (creator?.id && creator.id !== verifiedCreatorId) {
           return sendJson(res, 403, {
             ok: false,
@@ -454,7 +634,6 @@ export function createApplicationMiddleware() {
           });
         }
 
-        // 4. Derive submitting creator identity strictly from verified session
         const submittingCreator = {
           ...(creator || {}),
           id: verifiedCreatorId
@@ -493,9 +672,23 @@ export function createApplicationMiddleware() {
 
         // Rule D: Creator slots check
         const totalSlots = Math.max(1, parseInt(campaign.creatorSlots ?? campaign.slots ?? 1, 10));
-        const acceptedCount = applicationsStore.filter(a => a.campaignId === campaign.id && a.status === 'accepted').length;
-        const remainingSlots = Math.max(0, totalSlots - acceptedCount);
+        let acceptedCount = 0;
+        if (dbClient) {
+          try {
+            const { count } = await dbClient
+              .from('campaign_applications')
+              .select('*', { count: 'exact', head: true })
+              .eq('campaign_id', campaign.id)
+              .eq('status', 'accepted');
+            acceptedCount = count ?? 0;
+          } catch (e) {
+            acceptedCount = applicationsStore.filter(a => a.campaignId === campaign.id && a.status === 'accepted').length;
+          }
+        } else {
+          acceptedCount = applicationsStore.filter(a => a.campaignId === campaign.id && a.status === 'accepted').length;
+        }
 
+        const remainingSlots = Math.max(0, totalSlots - acceptedCount);
         if (remainingSlots <= 0) {
           return sendJson(res, 400, {
             ok: false,
@@ -504,7 +697,7 @@ export function createApplicationMiddleware() {
           });
         }
 
-        // Rule E: Pre-Bid Eligibility Gate (Evaluated against creator's current portfolio)
+        // Rule E: Pre-Bid Eligibility Gate
         const eligibilityResult = evaluateCreatorEligibility(campaign, submittingCreator);
         const eligibilityStatus = eligibilityResult.eligibility;
 
@@ -563,7 +756,31 @@ export function createApplicationMiddleware() {
           updatedAt: new Date().toISOString()
         };
 
-        // Prevent duplicate active applications from the same creator on the same campaign
+        // Persist to database if configured
+        if (dbClient) {
+          try {
+            // Ensure brand exists for demo foreign key compatibility
+            if (newApplication.brandId) {
+              const { data: bData } = await dbClient.from('brands').select('id').eq('id', newApplication.brandId).maybeSingle();
+              if (!bData) {
+                await dbClient.from('brands').upsert({
+                  id: newApplication.brandId,
+                  name: newApplication.brandName || 'Brand Partner',
+                  is_demo: true,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'id' });
+              }
+            }
+
+            await dbClient.from('campaign_applications').upsert(mapApplicationToRow(newApplication), {
+              onConflict: 'campaign_id,creator_id'
+            });
+          } catch (dbErr) {
+            console.warn('[Application Middleware] Database upsert notice:', dbErr.message);
+          }
+        }
+
+        // Prevent duplicate active applications from the same creator in memory
         applicationsStore = applicationsStore.filter(a => !(a.campaignId === campaign.id && a.creatorId === verifiedCreatorId));
         applicationsStore.unshift(newApplication);
 
@@ -592,7 +809,7 @@ export function createApplicationMiddleware() {
       // 5. POST /api/applications/counter (Brand: Propose Revised Terms)
       // ------------------------------------------------------------------------
       if (req.method === 'POST' && pathname === '/api/applications/counter') {
-        const auth = await authenticateCaller(req);
+        const auth = await authenticateCaller(req, dbClient);
         if (auth.error) {
           return sendJson(res, auth.status, { ok: false, code: auth.code, error: auth.error });
         }
@@ -610,12 +827,24 @@ export function createApplicationMiddleware() {
         const effectivePrice = proposedPrice || proposedRate;
         const effectiveMessage = message || note || '';
 
-        const app = applicationsStore.find(a => a.id === applicationId);
+        let app = applicationsStore.find(a => a.id === applicationId);
+
+        // If not in memory, query database
+        if (!app && dbClient) {
+          try {
+            const { data: row } = await dbClient.from('campaign_applications').select('*').eq('id', applicationId).maybeSingle();
+            if (row) {
+              app = mapRowToApplication(row);
+              applicationsStore.unshift(app);
+            }
+          } catch (e) {}
+        }
+
         if (!app) {
           return sendJson(res, 404, { ok: false, code: 'APPLICATION_NOT_FOUND', error: 'Application not found.' });
         }
 
-        // Derive identity strictly from verified session — spoofed brandId cannot bypass ownership
+        // Derive identity strictly from verified session
         if (app.brandId !== auth.brandId && auth.role !== 'admin') {
           return sendJson(res, 403, {
             ok: false,
@@ -631,9 +860,23 @@ export function createApplicationMiddleware() {
           proposedTimeline: proposedTimeline || app.deliveryTimeline,
           message: effectiveMessage,
           note: effectiveMessage,
+          status: 'pending',
           createdAt: new Date().toISOString()
         };
         app.updatedAt = new Date().toISOString();
+
+        // Persist to database if configured
+        if (dbClient) {
+          try {
+            await dbClient.from('campaign_applications').update({
+              status: 'counter_offered',
+              counter_offer: app.counterOffer,
+              updated_at: app.updatedAt
+            }).eq('id', app.id);
+          } catch (dbErr) {
+            console.warn('[Application Middleware] Database counter update notice:', dbErr.message);
+          }
+        }
 
         return sendJson(res, 200, { ok: true, application: app });
       }
@@ -642,7 +885,7 @@ export function createApplicationMiddleware() {
       // 6. POST /api/applications/respond-counter (Creator: Accept / Decline Counter)
       // ------------------------------------------------------------------------
       if (req.method === 'POST' && pathname === '/api/applications/respond-counter') {
-        const auth = await authenticateCaller(req);
+        const auth = await authenticateCaller(req, dbClient);
         if (auth.error) {
           return sendJson(res, auth.status, { ok: false, code: auth.code, error: auth.error });
         }
@@ -656,14 +899,25 @@ export function createApplicationMiddleware() {
         }
 
         const body = await parseJsonBody(req);
-        const { applicationId, decision } = body; // decision: 'accept' | 'decline'
+        const { applicationId, decision } = body;
 
-        const app = applicationsStore.find(a => a.id === applicationId);
+        let app = applicationsStore.find(a => a.id === applicationId);
+
+        if (!app && dbClient) {
+          try {
+            const { data: row } = await dbClient.from('campaign_applications').select('*').eq('id', applicationId).maybeSingle();
+            if (row) {
+              app = mapRowToApplication(row);
+              applicationsStore.unshift(app);
+            }
+          } catch (e) {}
+        }
+
         if (!app) {
           return sendJson(res, 404, { ok: false, code: 'APPLICATION_NOT_FOUND', error: 'Application not found.' });
         }
 
-        // Derive identity strictly from verified session — caller must be the application owner
+        // Caller must be the application owner
         if (app.creatorId !== auth.creatorId) {
           return sendJson(res, 403, {
             ok: false,
@@ -673,52 +927,153 @@ export function createApplicationMiddleware() {
         }
 
         if (decision === 'accept') {
-          // Check slot limits before accepting
           const campaignSlots = 2; // default
-          const acceptedCount = applicationsStore.filter(a => a.campaignId === app.campaignId && a.status === 'accepted').length;
-          if (acceptedCount >= campaignSlots) {
-            return sendJson(res, 400, {
-              ok: false,
-              code: 'SLOTS_FILLED',
-              error: `Cannot accept terms: all ${campaignSlots} creator slot(s) for this campaign are already filled.`
+
+          // Atomically check and update capacity via database RPC or campaign lock
+          return await withCampaignLock(app.campaignId, async () => {
+            // Attempt atomic database RPC if configured
+            if (dbClient) {
+              try {
+                const { data: rpcRes, error: rpcErr } = await dbClient.rpc('accept_campaign_application', {
+                  p_application_id: app.id,
+                  p_campaign_slots: campaignSlots
+                });
+
+                if (!rpcErr && rpcRes) {
+                  if (rpcRes.ok === false) {
+                    return sendJson(res, 400, {
+                      ok: false,
+                      code: rpcRes.code || 'SLOTS_FILLED',
+                      error: rpcRes.error || `Cannot accept terms: all ${campaignSlots} creator slot(s) for this campaign are already filled.`
+                    });
+                  }
+                  if (rpcRes.application) {
+                    const updated = mapRowToApplication(rpcRes.application);
+                    Object.assign(app, updated);
+                  }
+                }
+              } catch (e) {
+                // RPC fallback: check count manually
+                const { count } = await dbClient
+                  .from('campaign_applications')
+                  .select('*', { count: 'exact', head: true })
+                  .eq('campaign_id', app.campaignId)
+                  .eq('status', 'accepted');
+                if ((count ?? 0) >= campaignSlots) {
+                  return sendJson(res, 400, {
+                    ok: false,
+                    code: 'SLOTS_FILLED',
+                    error: `Cannot accept terms: all ${campaignSlots} creator slot(s) for this campaign are already filled.`
+                  });
+                }
+              }
+            }
+
+            // In-memory slot check
+            const acceptedCount = applicationsStore.filter(a => a.campaignId === app.campaignId && a.status === 'accepted' && a.id !== app.id).length;
+            if (acceptedCount >= campaignSlots) {
+              return sendJson(res, 400, {
+                ok: false,
+                code: 'SLOTS_FILLED',
+                error: `Cannot accept terms: all ${campaignSlots} creator slot(s) for this campaign are already filled.`
+              });
+            }
+
+            app.status = 'accepted';
+            if (app.counterOffer?.proposedPrice) {
+              app.proposedPrice = app.counterOffer.proposedPrice;
+              app.bidAmount = parsePrice(app.proposedPrice);
+            }
+            if (app.counterOffer?.proposedTimeline) {
+              app.deliveryTimeline = app.counterOffer.proposedTimeline;
+            }
+            app.updatedAt = new Date().toISOString();
+
+            // Persist status update to database
+            if (dbClient) {
+              try {
+                await dbClient.from('campaign_applications').update({
+                  status: 'accepted',
+                  proposed_price: app.proposedPrice,
+                  bid_amount: app.bidAmount,
+                  delivery_timeline: app.deliveryTimeline,
+                  updated_at: app.updatedAt
+                }).eq('id', app.id);
+              } catch (e) {}
+            }
+
+            // Generate collaboration payload
+            const collaboration = {
+              id: `proj-collab-${app.id}`,
+              campaignId: app.campaignId,
+              campaignTitle: app.campaignTitle,
+              brandId: app.brandId,
+              brandName: app.brandName,
+              creatorId: app.creatorId,
+              creatorName: app.creatorName,
+              creatorAvatar: app.creatorAvatar,
+              agreedBudget: app.proposedPrice,
+              deadline: app.deliveryTimeline,
+              status: 'in-progress',
+              createdAt: new Date().toISOString()
+            };
+
+            // Auto-persist collaboration and canonical opening message to database
+            if (dbClient) {
+              try {
+                await dbClient.from('collaborations').upsert({
+                  id: collaboration.id,
+                  campaign_id: app.campaignId,
+                  brand_id: app.brandId,
+                  creator_id: app.creatorId,
+                  project_name: app.campaignTitle,
+                  brand_name: app.brandName,
+                  creator_name: app.creatorName,
+                  status: 'Active',
+                  agreed_budget: app.proposedPrice,
+                  deadline: app.deliveryTimeline,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'id' });
+
+                await dbClient.from('messages').upsert({
+                  id: `msg-app-accept-${app.id}`,
+                  conversation_id: `conn-${app.campaignId}-${app.creatorId}`,
+                  sender: 'brand',
+                  sender_name: app.brandName || 'Brand Partner',
+                  text: `Hi ${app.creatorName}! Your counter-offer for "${app.campaignTitle}" has been accepted. Agreed rate: ${app.proposedPrice}, timeline: ${app.deliveryTimeline}. Looking forward to working with you!`,
+                  created_at: new Date().toISOString()
+                }, { onConflict: 'id' });
+              } catch (e) {
+                console.warn('[Application Middleware] Collaboration auto-persist deferred:', e.message);
+              }
+            }
+
+            return sendJson(res, 200, {
+              ok: true,
+              status: 'accepted',
+              application: app,
+              collaboration,
+              message: 'Terms accepted! Collaboration has commenced.'
             });
-          }
-
-          app.status = 'accepted';
-          if (app.counterOffer?.proposedPrice) {
-            app.proposedPrice = app.counterOffer.proposedPrice;
-          }
-          if (app.counterOffer?.proposedTimeline) {
-            app.deliveryTimeline = app.counterOffer.proposedTimeline;
-          }
-          app.updatedAt = new Date().toISOString();
-
-          // Generate collaboration payload
-          const collaboration = {
-            id: `proj-collab-${app.id}`,
-            campaignId: app.campaignId,
-            campaignTitle: app.campaignTitle,
-            brandId: app.brandId,
-            brandName: app.brandName,
-            creatorId: app.creatorId,
-            creatorName: app.creatorName,
-            creatorAvatar: app.creatorAvatar,
-            agreedBudget: app.proposedPrice,
-            deadline: app.deliveryTimeline,
-            status: 'in-progress',
-            createdAt: new Date().toISOString()
-          };
-
-          return sendJson(res, 200, {
-            ok: true,
-            status: 'accepted',
-            application: app,
-            collaboration,
-            message: 'Terms accepted! Collaboration has commenced.'
           });
         } else {
           app.status = 'declined';
           app.updatedAt = new Date().toISOString();
+          if (app.counterOffer) {
+            app.counterOffer.status = 'declined';
+          }
+
+          if (dbClient) {
+            try {
+              await dbClient.from('campaign_applications').update({
+                status: 'declined',
+                counter_offer: app.counterOffer,
+                updated_at: app.updatedAt
+              }).eq('id', app.id);
+            } catch (e) {}
+          }
+
           return sendJson(res, 200, {
             ok: true,
             status: 'declined',
@@ -732,7 +1087,7 @@ export function createApplicationMiddleware() {
       // 7. POST /api/applications/accept (Brand: Directly Accept Proposal)
       // ------------------------------------------------------------------------
       if (req.method === 'POST' && pathname === '/api/applications/accept') {
-        const auth = await authenticateCaller(req);
+        const auth = await authenticateCaller(req, dbClient);
         if (auth.error) {
           return sendJson(res, auth.status, { ok: false, code: auth.code, error: auth.error });
         }
@@ -748,12 +1103,23 @@ export function createApplicationMiddleware() {
         const body = await parseJsonBody(req);
         const { applicationId, campaignSlots = 1 } = body;
 
-        const app = applicationsStore.find(a => a.id === applicationId);
+        let app = applicationsStore.find(a => a.id === applicationId);
+
+        if (!app && dbClient) {
+          try {
+            const { data: row } = await dbClient.from('campaign_applications').select('*').eq('id', applicationId).maybeSingle();
+            if (row) {
+              app = mapRowToApplication(row);
+              applicationsStore.unshift(app);
+            }
+          } catch (e) {}
+        }
+
         if (!app) {
           return sendJson(res, 404, { ok: false, code: 'APPLICATION_NOT_FOUND', error: 'Application not found.' });
         }
 
-        // Derive identity strictly from verified session — request-body brandId cannot bypass ownership
+        // Ownership check
         if (app.brandId !== auth.brandId && auth.role !== 'admin') {
           return sendJson(res, 403, {
             ok: false,
@@ -762,41 +1128,123 @@ export function createApplicationMiddleware() {
           });
         }
 
-        // Slot limit check
-        const acceptedCount = applicationsStore.filter(a => a.campaignId === app.campaignId && a.status === 'accepted').length;
-        if (acceptedCount >= campaignSlots) {
-          return sendJson(res, 400, {
-            ok: false,
-            code: 'SLOTS_FILLED',
-            error: `Cannot accept application: all ${campaignSlots} creator slot(s) for this campaign are already filled.`
+        // Atomically serialize slot checks and acceptances
+        return await withCampaignLock(app.campaignId, async () => {
+          // Attempt atomic database RPC if configured
+          if (dbClient) {
+            try {
+              const { data: rpcRes, error: rpcErr } = await dbClient.rpc('accept_campaign_application', {
+                p_application_id: app.id,
+                p_campaign_slots: campaignSlots
+              });
+
+              if (!rpcErr && rpcRes) {
+                if (rpcRes.ok === false) {
+                  return sendJson(res, 400, {
+                    ok: false,
+                    code: rpcRes.code || 'SLOTS_FILLED',
+                    error: rpcRes.error || `Cannot accept application: all ${campaignSlots} creator slot(s) for this campaign are already filled.`
+                  });
+                }
+                if (rpcRes.application) {
+                  const updated = mapRowToApplication(rpcRes.application);
+                  Object.assign(app, updated);
+                }
+              }
+            } catch (e) {
+              // RPC fallback: check count manually
+              const { count } = await dbClient
+                .from('campaign_applications')
+                .select('*', { count: 'exact', head: true })
+                .eq('campaign_id', app.campaignId)
+                .eq('status', 'accepted');
+              if ((count ?? 0) >= campaignSlots) {
+                return sendJson(res, 400, {
+                  ok: false,
+                  code: 'SLOTS_FILLED',
+                  error: `Cannot accept application: all ${campaignSlots} creator slot(s) for this campaign are already filled.`
+                });
+              }
+            }
+          }
+
+          // In-memory slot check
+          const acceptedCount = applicationsStore.filter(a => a.campaignId === app.campaignId && a.status === 'accepted' && a.id !== app.id).length;
+          if (acceptedCount >= campaignSlots) {
+            return sendJson(res, 400, {
+              ok: false,
+              code: 'SLOTS_FILLED',
+              error: `Cannot accept application: all ${campaignSlots} creator slot(s) for this campaign are already filled.`
+            });
+          }
+
+          app.status = 'accepted';
+          app.updatedAt = new Date().toISOString();
+
+          // Persist status update to database
+          if (dbClient) {
+            try {
+              await dbClient.from('campaign_applications').update({
+                status: 'accepted',
+                updated_at: app.updatedAt
+              }).eq('id', app.id);
+            } catch (e) {}
+          }
+
+          const collaboration = {
+            id: `proj-collab-${app.id}`,
+            campaignId: app.campaignId,
+            campaignTitle: app.campaignTitle,
+            brandId: app.brandId,
+            brandName: app.brandName,
+            creatorId: app.creatorId,
+            creatorName: app.creatorName,
+            creatorAvatar: app.creatorAvatar,
+            agreedBudget: app.proposedPrice,
+            deadline: app.deliveryTimeline,
+            status: 'in-progress',
+            createdAt: new Date().toISOString()
+          };
+
+          // Auto-persist collaboration and canonical opening message to database
+          if (dbClient) {
+            try {
+              await dbClient.from('collaborations').upsert({
+                id: collaboration.id,
+                campaign_id: app.campaignId,
+                brand_id: app.brandId,
+                creator_id: app.creatorId,
+                project_name: app.campaignTitle,
+                brand_name: app.brandName,
+                creator_name: app.creatorName,
+                status: 'Active',
+                agreed_budget: app.proposedPrice,
+                deadline: app.deliveryTimeline,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'id' });
+
+              await dbClient.from('messages').upsert({
+                id: `msg-app-accept-${app.id}`,
+                conversation_id: `conn-${app.campaignId}-${app.creatorId}`,
+                sender: 'brand',
+                sender_name: app.brandName || 'Brand Partner',
+                text: `Hi ${app.creatorName}! Your application for "${app.campaignTitle}" has been accepted. Agreed rate: ${app.proposedPrice}, timeline: ${app.deliveryTimeline}. Looking forward to working with you!`,
+                created_at: new Date().toISOString()
+              }, { onConflict: 'id' });
+            } catch (e) {
+              console.warn('[Application Middleware] Collaboration auto-persist deferred:', e.message);
+            }
+          }
+
+          return sendJson(res, 200, {
+            ok: true,
+            status: 'accepted',
+            application: app,
+            collaboration,
+            remainingSlots: Math.max(0, campaignSlots - (acceptedCount + 1)),
+            message: 'Application accepted! Collaboration created.'
           });
-        }
-
-        app.status = 'accepted';
-        app.updatedAt = new Date().toISOString();
-
-        const collaboration = {
-          id: `proj-collab-${app.id}`,
-          campaignId: app.campaignId,
-          campaignTitle: app.campaignTitle,
-          brandId: app.brandId,
-          brandName: app.brandName,
-          creatorId: app.creatorId,
-          creatorName: app.creatorName,
-          creatorAvatar: app.creatorAvatar,
-          agreedBudget: app.proposedPrice,
-          deadline: app.deliveryTimeline,
-          status: 'in-progress',
-          createdAt: new Date().toISOString()
-        };
-
-        return sendJson(res, 200, {
-          ok: true,
-          status: 'accepted',
-          application: app,
-          collaboration,
-          remainingSlots: Math.max(0, campaignSlots - (acceptedCount + 1)),
-          message: 'Application accepted! Collaboration created.'
         });
       }
 

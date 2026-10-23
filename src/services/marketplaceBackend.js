@@ -36,6 +36,8 @@ import {
   syncVerificationClaimToDb
 } from './dbSync.js';
 
+export { syncMessageToDb };
+
 /**
  * Returns backend status descriptor
  */
@@ -573,7 +575,94 @@ export async function signUp(email, password, role = 'creator', displayName = ''
   return { user: mockUser, session: { access_token: 'mock-token' } };
 }
 
+export async function verifyLogin(email, password, role = 'brand') {
+  const res = await fetch('/api/auth/login-verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, role })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    const err = new Error(data.message || 'Login verification failed.');
+    err.code = data.error || 'AUTH_FAILED';
+    err.status = res.status;
+    throw err;
+  }
+
+  if (typeof window !== 'undefined' && data.user) {
+    localStorage.setItem('creasync_active_user', JSON.stringify(data.user));
+    localStorage.setItem('creasync_active_role', data.user.role || role);
+  }
+
+  return { user: data.user, session: data.session || null };
+}
+
+export async function resetPassword(email, newPassword) {
+  const res = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, newPassword })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    const err = new Error(data.message || 'Password reset failed.');
+    err.code = data.error || 'RESET_FAILED';
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+export async function registerAccount(email, password, role = 'brand', displayName = '') {
+  const res = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, role, displayName })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    const err = new Error(data.message || 'Registration failed.');
+    err.code = data.error || 'REGISTRATION_FAILED';
+    err.status = res.status;
+    throw err;
+  }
+  if (typeof window !== 'undefined' && data.user) {
+    localStorage.setItem('creasync_active_user', JSON.stringify(data.user));
+    localStorage.setItem('creasync_active_role', data.user.role || role);
+  }
+  return { user: data.user, session: null };
+}
+
+export async function checkAccountExists(email) {
+  try {
+    const res = await fetch('/api/auth/check-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    return data.exists || false;
+  } catch (e) {
+    return false;
+  }
+}
+
 export async function signIn(email, password) {
+  // First attempt rigorous server-side database verification
+  try {
+    const verified = await verifyLogin(email, password);
+    if (verified && verified.user) {
+      return verified;
+    }
+  } catch (apiErr) {
+    // If the server explicitly rejected due to ACCOUNT_NOT_FOUND or INVALID_PASSWORD, propagate directly!
+    if (apiErr.code === 'ACCOUNT_NOT_FOUND' || apiErr.code === 'INVALID_PASSWORD') {
+      throw apiErr;
+    }
+    // If network or server unavailable, fall back to direct Supabase client
+    console.warn('[CreaSync Auth] verifyLogin endpoint fallback:', apiErr.message);
+  }
+
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -624,18 +713,40 @@ export async function signIn(email, password) {
     return { user: userWithProfile, session: data.session };
   }
 
-  // Local fallback: Simulated user for demo/offline evaluation
-  const mockRole = email.toLowerCase().includes('creator') ? 'creator' : 'brand';
+  // Fallback for offline/headless test runs strictly matching demo accounts
+  const normalizedEmail = (email || '').toLowerCase().trim();
+  const demoPws = {
+    'lumina.demo@alloy.market': 'AlloyDemo2026!',
+    'maya.demo@alloy.market': 'AlloyDemo2026!',
+    'admin@alloy.market': 'alloyadminmarketplace-2026',
+    'judge@alloy.market': 'JudgeAlloy2026!'
+  };
+
+  if (!demoPws[normalizedEmail]) {
+    const notFoundErr = new Error('Account not found in our database. Please create an account first to get started.');
+    notFoundErr.code = 'ACCOUNT_NOT_FOUND';
+    notFoundErr.status = 404;
+    throw notFoundErr;
+  }
+
+  if (demoPws[normalizedEmail] !== password) {
+    const invalidErr = new Error('Incorrect password for this account. Please try again or reset your password.');
+    invalidErr.code = 'INVALID_PASSWORD';
+    invalidErr.status = 401;
+    throw invalidErr;
+  }
+
+  const mockRole = normalizedEmail.includes('creator') ? 'creator' : 'brand';
   const mockUser = {
-    id: `user-${email.replace(/[^a-zA-Z0-9]/g, '-')}`,
-    email,
+    id: `user-${normalizedEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
+    email: normalizedEmail,
     role: mockRole,
-    display_name: email.split('@')[0],
+    display_name: normalizedEmail.split('@')[0],
     profile: {
-      id: `user-${email.replace(/[^a-zA-Z0-9]/g, '-')}`,
-      email,
+      id: `user-${normalizedEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
+      email: normalizedEmail,
       role: mockRole,
-      display_name: email.split('@')[0]
+      display_name: normalizedEmail.split('@')[0]
     }
   };
   if (typeof window !== 'undefined') {
@@ -757,6 +868,20 @@ export function normalizeSupabaseWorkflow(row) {
 
 export function normalizeSupabaseCreator(row) {
   if (!row) return null;
+
+  const rawProjects = (Array.isArray(row.projects) && row.projects.length > 0)
+    ? row.projects
+    : (Array.isArray(row.portfolio_projects) && row.portfolio_projects.length > 0
+      ? row.portfolio_projects
+      : (Array.isArray(row.portfolio) ? row.portfolio : []));
+
+  const portfolioMedia = Array.isArray(row.portfolio_media) ? row.portfolio_media : [];
+  const portfolioImages = Array.isArray(row.portfolio_images) ? row.portfolio_images : [];
+  const portfolioVideos = Array.isArray(row.portfolio_videos) ? row.portfolio_videos : [];
+
+  const heroWork = row.hero_work || portfolioImages[0] || rawProjects[0]?.image || '';
+  const videoPreview = row.video_preview || portfolioVideos[0] || rawProjects.find(p => p.video)?.video || null;
+
   return {
     id: row.id,
     userId: row.user_id,
@@ -770,8 +895,8 @@ export function normalizeSupabaseCreator(row) {
     statusBadge: row.status_badge,
     turnaround: row.turnaround,
     experience: row.experience,
-    heroWork: row.hero_work,
-    videoPreview: row.video_preview,
+    heroWork,
+    videoPreview,
     avatar: row.avatar,
     styles: row.styles || [],
     industries: row.industries || [],
@@ -781,37 +906,42 @@ export function normalizeSupabaseCreator(row) {
     categoryTags: row.category_tags || [],
     technicalSkills: row.technical_skills || row.technicalSkills || [],
     creativeSkills: row.creative_skills || row.creativeSkills || [],
+    commercialLicensingVerified: Boolean(row.commercial_licensing_verified ?? true),
+    trustVerification: row.trust_verification || {},
+    portfolioMedia,
+    portfolioImages,
+    portfolioVideos,
     status: row.status,
     visibility: row.visibility,
     isDemo: !!row.is_demo,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    projects: (row.projects || []).map(p => ({
+    projects: rawProjects.map(p => ({
       id: p.id,
       title: p.title,
       description: p.description,
       category: p.category,
-      creativeStyle: p.creative_style,
+      creativeStyle: p.creative_style || p.creativeStyle,
       tools: p.tools,
       format: p.format,
       image: p.image,
       video: p.video,
       aspect: p.aspect,
       role: p.role,
-      clientType: p.client_type,
-      creativeDirection: p.creative_direction,
+      clientType: p.client_type || p.clientType,
+      creativeDirection: p.creative_direction || p.creativeDirection,
       capabilities: p.capabilities || [],
       media: p.media || [],
-      workflowId: p.workflow_id,
+      workflowId: p.workflow_id || p.workflowId,
       workflowStages: p.workflow_stages || p.workflowStages || [],
       productionWorkflow: p.production_workflow || p.productionWorkflow || null,
       workflowTitle: p.workflow_title || p.workflowTitle || p.production_workflow?.title || '',
       workflowOverview: p.workflow_overview || p.workflowOverview || p.production_workflow?.overview || '',
       visibility: p.visibility,
       featured: !!p.featured,
-      displayOrder: p.display_order,
-      createdAt: p.created_at,
-      updatedAt: p.updated_at
+      displayOrder: p.display_order ?? p.displayOrder,
+      createdAt: p.created_at || p.createdAt,
+      updatedAt: p.updated_at || p.updatedAt
     })),
     creativeDNA: row.creative_dna?.[0] ? {
       traits: row.creative_dna[0].traits || [],
@@ -1110,20 +1240,52 @@ export async function savePortfolioProject(creatorId, project) {
     throw new Error('creatorId and project.id are required.');
   }
 
+  // Ensure durable media persistence: never persist ephemeral blob: URLs to database or permanent store
+  const sanitizedMedia = Array.isArray(project.media)
+    ? project.media.map(m => ({
+        ...m,
+        url: (m.url && m.url.startsWith('blob:') && m.durableUrl) ? m.durableUrl : m.url
+      }))
+    : [];
+
+  const coverItem = sanitizedMedia.find(m => m.isCover) || sanitizedMedia[0];
+  const videoItem = sanitizedMedia.find(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || ''));
+
+  let sanitizedImage = project.image;
+  if (!sanitizedImage || sanitizedImage.startsWith('blob:')) {
+    sanitizedImage = coverItem ? (coverItem.durableUrl || coverItem.url) : sanitizedImage;
+  }
+  let sanitizedVideo = project.video;
+  if (sanitizedVideo && sanitizedVideo.startsWith('blob:')) {
+    sanitizedVideo = videoItem ? (videoItem.durableUrl || videoItem.url) : sanitizedVideo;
+  }
+
+  const projectToSave = {
+    ...project,
+    image: sanitizedImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=85',
+    video: sanitizedVideo,
+    media: sanitizedMedia
+  };
+
   // Synchronize local cache
   const state = getInitialMarketplaceState();
   const creator = (state.creators || CREATORS).find(c => c.id === creatorId);
+  let updatedCreator = null;
   if (creator) {
-    const existingIdx = (creator.projects || []).findIndex(p => p.id === project.id);
+    const existingIdx = (creator.projects || []).findIndex(p => p.id === projectToSave.id);
     const updatedProjects = existingIdx >= 0
-      ? creator.projects.map(p => p.id === project.id ? { ...p, ...project } : p)
-      : [project, ...(creator.projects || [])];
-    saveMarketplaceState(updateCreatorRecord(state, { ...creator, projects: updatedProjects }));
+      ? creator.projects.map(p => p.id === projectToSave.id ? { ...p, ...projectToSave } : p)
+      : [projectToSave, ...(creator.projects || [])];
+    updatedCreator = { ...creator, projects: updatedProjects };
+    saveMarketplaceState(updateCreatorRecord(state, updatedCreator));
   }
 
-  // Sync to database
+  // Sync to database: both project row and updated creator profile row
   try {
-    await syncProjectToDb(creatorId, project);
+    await syncProjectToDb(creatorId, projectToSave);
+    if (updatedCreator) {
+      await syncCreatorToDb(updatedCreator);
+    }
   } catch (err) {
     console.warn('[CreaSync] syncProjectToDb notice:', err);
   }
@@ -1137,7 +1299,7 @@ export async function savePortfolioProject(creatorId, project) {
     metadata: { title: project.title, category: project.category }
   }).catch(() => {});
 
-  return project;
+  return projectToSave;
 }
 
 export async function deletePortfolioProject(creatorId, projectId) {
@@ -1148,14 +1310,19 @@ export async function deletePortfolioProject(creatorId, projectId) {
   // Synchronize local cache
   const state = getInitialMarketplaceState();
   const creator = (state.creators || CREATORS).find(c => c.id === creatorId);
+  let updatedCreator = null;
   if (creator) {
     const updatedProjects = (creator.projects || []).filter(p => p.id !== projectId);
-    saveMarketplaceState(updateCreatorRecord(state, { ...creator, projects: updatedProjects }));
+    updatedCreator = { ...creator, projects: updatedProjects };
+    saveMarketplaceState(updateCreatorRecord(state, updatedCreator));
   }
 
   // Sync delete to database
   try {
     await deleteProjectFromDb(creatorId, projectId);
+    if (updatedCreator) {
+      await syncCreatorToDb(updatedCreator);
+    }
   } catch (err) {
     console.warn('[CreaSync] deleteProjectFromDb notice:', err);
   }
@@ -2024,6 +2191,88 @@ export async function saveCreatorTrustVerification(creatorId, trustData) {
 import { executeFilteringPipeline } from '../../server/filteringPipeline.js';
 
 /**
+ * Sanitizes candidate creators for pipeline network transmission.
+ * Strips heavy binary Data URIs (photos/videos) from image, video, and media items,
+ * replacing them with lightweight storage paths or reference identifiers, while preserving
+ * 100% of the metadata fields (creativeStyle, format, tools, capabilities, clientType)
+ * needed by the deterministic filtering pipeline and matching engine.
+ */
+export function sanitizePipelineCandidates(creators) {
+  if (!Array.isArray(creators)) return creators;
+
+  return creators.map(creator => {
+    if (!creator || typeof creator !== 'object') return creator;
+
+    const sanitized = { ...creator };
+
+    // Strip large data URI avatar
+    if (typeof sanitized.avatar === 'string' && sanitized.avatar.startsWith('data:') && sanitized.avatar.length > 2048) {
+      sanitized.avatar = sanitized.avatar.slice(0, 100) + '...';
+    }
+
+    const rawProjects = Array.isArray(sanitized.projects)
+      ? sanitized.projects
+      : (Array.isArray(sanitized.portfolio_projects)
+        ? sanitized.portfolio_projects
+        : (Array.isArray(sanitized.portfolio) ? sanitized.portfolio : null));
+
+    if (Array.isArray(rawProjects)) {
+      sanitized.projects = rawProjects.map(proj => {
+        if (!proj || typeof proj !== 'object') return proj;
+        const cleanProj = { ...proj };
+
+        if (typeof cleanProj.image === 'string' && cleanProj.image.startsWith('data:')) {
+          cleanProj.image = cleanProj.storagePath || cleanProj.durableUrl || cleanProj.previewUrl || cleanProj.id || '[persisted-image]';
+        }
+        if (typeof cleanProj.video === 'string' && cleanProj.video.startsWith('data:')) {
+          cleanProj.video = cleanProj.storagePath || cleanProj.durableUrl || cleanProj.previewUrl || cleanProj.id || '[persisted-video]';
+        }
+
+        if (Array.isArray(cleanProj.media)) {
+          cleanProj.media = cleanProj.media.map(item => {
+            if (!item || typeof item !== 'object') return item;
+            const cleanItem = { ...item };
+            if (typeof cleanItem.url === 'string' && cleanItem.url.startsWith('data:')) {
+              cleanItem.url = cleanItem.storagePath || cleanItem.durableUrl || cleanItem.previewUrl || cleanItem.id || '[persisted-media]';
+            }
+            if (typeof cleanItem.previewUrl === 'string' && cleanItem.previewUrl.startsWith('data:')) {
+              cleanItem.previewUrl = cleanItem.storagePath || cleanItem.durableUrl || cleanItem.id || '[persisted-media]';
+            }
+            if (typeof cleanItem.durableUrl === 'string' && cleanItem.durableUrl.startsWith('data:')) {
+              cleanItem.durableUrl = cleanItem.storagePath || cleanItem.id || '[persisted-media]';
+            }
+            return cleanItem;
+          });
+        }
+
+        return cleanProj;
+      });
+    }
+
+    return sanitized;
+  });
+}
+
+/**
+ * Sanitizes campaign brief parameters for pipeline network transmission.
+ */
+export function sanitizePipelineCampaign(campaign) {
+  if (!campaign || typeof campaign !== 'object') return campaign;
+  const cleanCampaign = { ...campaign };
+  if (Array.isArray(cleanCampaign.moodboard)) {
+    cleanCampaign.moodboard = cleanCampaign.moodboard.map(item => {
+      if (!item || typeof item !== 'object') return item;
+      const cleanItem = { ...item };
+      if (typeof cleanItem.url === 'string' && cleanItem.url.startsWith('data:')) {
+        cleanItem.url = cleanItem.storagePath || cleanItem.id || '[persisted-image]';
+      }
+      return cleanItem;
+    });
+  }
+  return cleanCampaign;
+}
+
+/**
  * Executes the backend campaign-to-creator filtering pipeline.
  * Tries the live server endpoint /api/pipeline/filter first.
  * If running in static/offline client mode, executes the deterministic pipeline engine directly.
@@ -2034,9 +2283,11 @@ import { executeFilteringPipeline } from '../../server/filteringPipeline.js';
  */
 export async function executeCampaignFilteringPipeline(campaign, creators = null, options = {}) {
   const isNatural = typeof campaign === 'string' || (campaign && typeof campaign.naturalBrief === 'string');
+  const cleanCampaign = isNatural ? campaign : sanitizePipelineCampaign(campaign);
+  const cleanCreators = sanitizePipelineCandidates(creators);
   const payload = isNatural
     ? { naturalBrief: typeof campaign === 'string' ? campaign : campaign.naturalBrief, options }
-    : { campaign, creators, options };
+    : { campaign: cleanCampaign, creators: cleanCreators, options };
 
   // Prepare request headers; attach authenticated session token if available
   const headers = { 'Content-Type': 'application/json' };
@@ -2093,8 +2344,8 @@ export async function executeCampaignFilteringPipeline(campaign, creators = null
   }
 
   // 2. Direct engine execution fallback for structured campaigns
-  const pool = creators || (getInitialMarketplaceState().creators || CREATORS);
-  const result = executeFilteringPipeline({ campaign, creators: pool, options });
+  const pool = cleanCreators || (getInitialMarketplaceState().creators || CREATORS);
+  const result = executeFilteringPipeline({ campaign: cleanCampaign, creators: pool, options });
   return { ok: true, source: 'client-deterministic-fallback', ...result };
 }
 

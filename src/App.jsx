@@ -96,7 +96,8 @@ import {
   respondToApplicationCounterOffer,
   acceptCreatorApplication,
   fetchMyApplications,
-  fetchBrandApplications
+  fetchBrandApplications,
+  syncMessageToDb
 } from './services/marketplaceBackend';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 
@@ -1639,8 +1640,8 @@ export default function App() {
     setPipelineError(null);
     const currentVersion = ++pipelineRunVersionRef.current;
     try {
-      // Pass null creators to ensure authoritative server-side creator data is used
-      const trace = await executeCampaignFilteringPipeline(campaignToRun, null);
+      // Pass marketplaceData.creators so newly created and session creators are included in the evaluation pool
+      const trace = await executeCampaignFilteringPipeline(campaignToRun, marketplaceData.creators);
       if (currentVersion === pipelineRunVersionRef.current) {
         setPipelineError(null);
         setPipelineTrace({
@@ -1709,11 +1710,20 @@ export default function App() {
       lastPipelineCampaignRef.current = finalCamp;
       setIsPipelineTraceLoading(true);
       setPipelineError(null);
-      const trace = await executeCampaignFilteringPipeline(finalCamp, null);
+      const trace = await executeCampaignFilteringPipeline(finalCamp, marketplaceData.creators);
       setPipelineTrace({
         ...trace,
         isStale: false,
         staleReason: null
+      });
+      setPipelineFilter({
+        campaignId: trace.campaignId || finalCamp.id,
+        campaignTitle: trace.interpretedBrief?.title || trace.campaignTitle || finalCamp.title,
+        eligibleCreatorIds: trace.eligibleCreatorIds || [],
+        rankedOrder: trace.rankedCreators || [],
+        source: trace.source,
+        interpretedBrief: trace.interpretedBrief,
+        isStale: false
       });
       setIsPipelineTraceModalOpen(true);
     } catch (pipelineErr) {
@@ -1784,7 +1794,7 @@ export default function App() {
     const currentVersion = ++pipelineRunVersionRef.current;
 
     try {
-      const freshTrace = await executeCampaignFilteringPipeline(updatedCampaign, null);
+      const freshTrace = await executeCampaignFilteringPipeline(updatedCampaign, marketplaceData.creators);
 
       // Replace prior results only after a successful new run
       if (currentVersion === pipelineRunVersionRef.current) {
@@ -2197,6 +2207,10 @@ export default function App() {
 
       saveBackendCollaboration(newProject, currentUser?.display_name, currentUser?.id).catch(err => {
         console.warn('[CreaSync] Background application collaboration sync deferred:', err);
+      });
+
+      syncMessageToDb(openingMsg).catch(err => {
+        console.warn('[CreaSync] Background opening message sync deferred:', err);
       });
 
       return response;

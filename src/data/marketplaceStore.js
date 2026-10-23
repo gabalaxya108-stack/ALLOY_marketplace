@@ -414,12 +414,22 @@ export function getInitialMarketplaceState() {
                 'Lighting and visual aesthetics'
               ];
             }
-            // Ensure projects retain or merge workflowStages
+            // Ensure projects retain or merge workflowStages and sanitize any transient blob: URLs
             if (Array.isArray(updatedC.projects)) {
               updatedC.projects = updatedC.projects.map(p => {
                 const seedProj = seedCreator?.projects?.find(sp => sp.id === p.id);
+                const sanitizedMedia = Array.isArray(p.media) ? p.media.map(m => ({
+                  ...m,
+                  url: (m.url && m.url.startsWith('blob:') && m.durableUrl) ? m.durableUrl : m.url
+                })) : (seedProj?.media || []);
+                const cover = sanitizedMedia.find(m => m.isCover) || sanitizedMedia[0];
+                const cleanImage = (p.image && p.image.startsWith('blob:'))
+                  ? (cover?.durableUrl || cover?.url || seedProj?.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=85')
+                  : (p.image || seedProj?.image || '');
                 return {
                   ...p,
+                  image: cleanImage,
+                  media: sanitizedMedia,
                   workflowStages: Array.isArray(p.workflowStages) && p.workflowStages.length > 0
                     ? p.workflowStages
                     : (seedProj?.workflowStages || [])
@@ -835,13 +845,16 @@ export function createCampaignRecord(campaignData, brand) {
     brandWebsite,
     title: campaignData.title || `${brandName} Campaign`,
     objective: campaignData.objective || "Product Launch",
-    productOrService: campaignData.productOrService || campaignData.title || "",
+    product: campaignData.product || campaignData.productOrService || campaignData.title || "",
+    productOrService: campaignData.productOrService || campaignData.product || campaignData.title || "",
     industry: campaignData.industry || brand?.industry || "Creative & Media",
     description: campaignData.description || campaignData.creativeDirection || "",
-    desiredCreatorSpecialties: campaignData.desiredCreatorSpecialties || campaignData.specialties || ["AI Creative Direction"],
+    desiredCreatorSpecialties: campaignData.desiredCreatorSpecialties || campaignData.specialties || campaignData.requirements?.mandatory?.specialization || ["AI Creative Direction"],
     creativeDirection: campaignData.creativeDirection || campaignData.description || "",
     creativeStyle: campaignData.creativeStyle || "Contemporary Editorial",
     toneOfVoice: campaignData.toneOfVoice || "Authentic & Premium",
+    requirements: campaignData.requirements || null,
+    traits: campaignData.traits || [],
     deliverables,
     platforms,
     targetPlatforms: platforms,
@@ -1053,7 +1066,18 @@ export function buildPublishedCreatorProfile(profileData = {}, dnaResult = null)
     location,
     availability,
     statusBadge: 'Profile Live',
+    status: 'Published',
+    visibility: 'published',
+    commercialLicensingVerified: data.commercialLicensingVerified !== undefined ? Boolean(data.commercialLicensingVerified) : true,
     heroWork,
+    videoPreview: portfolio.find(p => p.video)?.video || data.videoPreview || null,
+    portfolioMedia: portfolio.flatMap(p => p.media || []),
+    portfolioImages: portfolio.map(p => p.image).filter(Boolean),
+    portfolioVideos: portfolio.map(p => p.video).filter(Boolean),
+    portfolio_media: portfolio.flatMap(p => p.media || []),
+    portfolio_images: portfolio.map(p => p.image).filter(Boolean),
+    portfolio_videos: portfolio.map(p => p.video).filter(Boolean),
+    portfolio_projects: portfolio,
     avatar,
     bio,
     styles,
