@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  Palette, Eye, EyeOff, Star, Plus, MessageSquare, Briefcase, ExternalLink, 
+import {
+  Palette, Eye, EyeOff, Star, Plus, MessageSquare, Briefcase, ExternalLink,
   CheckCircle, ArrowRight, Dna, CheckCircle2, X, Send, ChevronRight, Check,
   Clock, DollarSign, Calendar, Sparkles, Filter, Bookmark, BookmarkCheck,
   Edit3, Trash2, Upload, AlertCircle, FileText, UserCheck, ShieldCheck,
@@ -20,6 +20,7 @@ import ProjectWorkflowEditor from '../components/ProjectWorkflowEditor';
 import { createInitialTrustVerification } from '../data/trustVerificationData';
 import MessagesLoginWall from '../components/MessagesLoginWall';
 import { deduplicateMessages } from '../services/marketplaceBackend';
+import { evaluateCreatorEligibility, ELIGIBILITY_STATUS, ELIGIBILITY_OUTCOMES } from '../intelligence/eligibilityEngine';
 
 function formatInvitationField(...values) {
   for (const value of values) {
@@ -28,8 +29,8 @@ function formatInvitationField(...values) {
   return 'Not specified in this invitation';
 }
 
-export default function CreatorWorkspaceView({ 
-  creator, 
+export default function CreatorWorkspaceView({
+  creator,
   currentUser,
   onUpdateCreator,
   onViewPublicProfile,
@@ -47,7 +48,11 @@ export default function CreatorWorkspaceView({
   onSelectProject: propOnSelectProject,
   initialTab = 'overview',
   onLoginSuccess,
-  onOpenLogin
+  onOpenLogin,
+  applications = [],
+  onSubmitApplication,
+  onRespondCounterOffer,
+  onReevaluateApplication
 }) {
   const [activeCreator, setActiveCreator] = useState(creator || {});
   const [activeTab, setActiveTab] = useState(initialTab || 'overview'); // 'overview' | 'portfolio' | 'opportunities' | 'invitations' | 'projects' | 'messages' | 'profile' | 'trust'
@@ -57,7 +62,7 @@ export default function CreatorWorkspaceView({
       setActiveTab(initialTab);
     }
   }, [initialTab]);
-  
+
   // Workflows state
   const [workflowsList, setWorkflowsList] = useState(() => {
     if (creator?.workflows && creator.workflows.length > 0) return creator.workflows;
@@ -122,12 +127,17 @@ export default function CreatorWorkspaceView({
   });
   const [projectFormErrors, setProjectFormErrors] = useState({});
 
-  // Opportunities & Saved state
+  // Opportunities & Applications state
   const [opportunitiesList, setOpportunitiesList] = useState(opportunities);
   const [savedOppIds, setSavedOppIds] = useState(['opp-summer-skincare']);
   const [selectedOpportunityForModal, setSelectedOpportunityForModal] = useState(null);
   const [applyModalOpp, setApplyModalOpp] = useState(null);
   const [applyNoteText, setApplyNoteText] = useState('');
+  const [opportunitiesSubView, setOpportunitiesSubView] = useState('feed'); // 'feed' | 'applications'
+  const [applyPrice, setApplyPrice] = useState('');
+  const [applyTimeline, setApplyTimeline] = useState('');
+  const [applySelectedProjects, setApplySelectedProjects] = useState([]);
+  const [preBidResult, setPreBidResult] = useState(null);
 
   // Synchronize opportunities when published by brands,
   // preserving any locally-applied statuses that are not in the parent prop.
@@ -145,6 +155,11 @@ export default function CreatorWorkspaceView({
       });
     }
   }, [opportunities]);
+
+  // Applications submitted by this creator
+  const myApplications = useMemo(() => {
+    return (applications || []).filter(a => a.creatorId === activeCreator?.id);
+  }, [applications, activeCreator?.id]);
 
   // Invitations state (synced with shared props)
   const [localInvitationsList, setLocalInvitationsList] = useState(INITIAL_CREATOR_INVITATIONS);
@@ -504,8 +519,8 @@ export default function CreatorWorkspaceView({
 
     let updatedList;
     if (editingProject) {
-      updatedList = projectsList.map(p => 
-        p.id === editingProject.id 
+      updatedList = projectsList.map(p =>
+        p.id === editingProject.id
           ? { ...p, ...projectPayload }
           : p
       );
@@ -578,54 +593,86 @@ export default function CreatorWorkspaceView({
 
   // --- Handlers: Opportunities ---
   const handleToggleSaveOpportunity = (oppId) => {
-    setSavedOppIds(prev => 
+    setSavedOppIds(prev =>
       prev.includes(oppId) ? prev.filter(id => id !== oppId) : [...prev, oppId]
     );
   };
 
   const handleOpenApplyModal = (opp) => {
     setApplyModalOpp(opp);
-    setApplyNoteText(`Hi ${opp.brand}, I'm excited about your ${opp.title}. My visual style in ${activeCreator.creativeIdentity || 'generative direction'} aligns directly with your deliverables.`);
+    setApplyNoteText(`Hi ${opp.brandName || opp.brand}, I'm excited about your ${opp.title}. My visual style aligns directly with your deliverables.`);
+    setApplyPrice(opp.budget || '$5,000');
+    setApplyTimeline(opp.timeline || '2 Weeks');
+    setApplySelectedProjects(
+      (activeCreator.projects || []).slice(0, 2).map(p => p.id)
+    );
+    try {
+      const evalResult = evaluateCreatorEligibility(opp, activeCreator);
+      setPreBidResult(evalResult);
+    } catch (err) {
+      console.warn('[PreBidGate] Evaluation fallback:', err);
+      setPreBidResult({ eligibility: ELIGIBILITY_STATUS.ELIGIBLE, requirements: [], reasons: [] });
+    }
   };
 
-  const handleSendApplication = (e) => {
-    e.preventDefault();
+  const handleSendApplication = async (e, forceHeld = false) => {
+    if (e) e.preventDefault();
     if (!applyModalOpp) return;
 
-    if (onOpportunityResponse) {
-      // Parent creates the authoritative connection in marketplaceData.connections;
-      // it will flow back via the connections prop and activeConnectionsList.
-      // The selection-validity useEffect (line 138) will auto-select the new connection.
-      onOpportunityResponse(applyModalOpp, applyNoteText);
-    } else {
-      // Demo/standalone fallback: no parent handler, so manage connections locally
-      const newConn = {
-        id: `conn-opp-${applyModalOpp.id}-${Date.now()}`,
-        campaignTitle: applyModalOpp.title,
-        brandName: applyModalOpp.brand,
-        status: 'connected',
-        messages: [
-          {
-            id: `msg-${Date.now()}`,
-            sender: 'creator',
-            senderName: activeCreator.name,
-            text: applyNoteText,
-            timestamp: 'Just now'
-          }
-        ]
-      };
-      setCreatorConnections(prev => [newConn, ...prev]);
-      setSelectedConnectionId(newConn.id);
+    let currentResult = preBidResult;
+    if (!currentResult) {
+      try {
+        currentResult = evaluateCreatorEligibility(applyModalOpp, activeCreator);
+      } catch (err) {
+        currentResult = { eligibility: ELIGIBILITY_STATUS.ELIGIBLE, requirements: [], reasons: [] };
+      }
     }
 
-    // Update opportunity status
-    setOpportunitiesList(prev => prev.map(o => 
+    const isHeld = forceHeld || currentResult.eligibility !== ELIGIBILITY_STATUS.ELIGIBLE;
+
+    const applicationPayload = {
+      campaignId: applyModalOpp.id || applyModalOpp.campaignId,
+      campaignTitle: applyModalOpp.title,
+      brandId: applyModalOpp.ownerBrandId || applyModalOpp.brandId,
+      brandName: applyModalOpp.brandName || applyModalOpp.brand,
+      creatorId: activeCreator.id,
+      creatorName: activeCreator.name,
+      creatorAvatar: activeCreator.avatar,
+      creatorRole: activeCreator.role || activeCreator.creativeIdentity || 'AI Visual Creator',
+      proposedPrice: applyPrice,
+      bidAmount: parseFloat(String(applyPrice).replace(/[^0-9.]/g, '')) || 0,
+      currency: 'USD',
+      proposalText: applyNoteText,
+      deliveryTimeline: applyTimeline,
+      portfolioEvidence: applySelectedProjects,
+      eligibilityStatus: currentResult.eligibility,
+      isHeld,
+      heldReason: currentResult.eligibility === ELIGIBILITY_STATUS.INELIGIBLE
+        ? (currentResult.reasons?.[0] || 'Mandatory campaign requirement mismatch')
+        : currentResult.eligibility === ELIGIBILITY_STATUS.REQUIRES_REVIEW
+        ? (currentResult.reasons?.[0] || 'Additional portfolio evidence required before brand review')
+        : null,
+      status: isHeld ? 'held' : 'pending_review'
+    };
+
+    if (onSubmitApplication) {
+      await onSubmitApplication(applicationPayload);
+    } else if (onOpportunityResponse) {
+      onOpportunityResponse(applyModalOpp, applyNoteText);
+    }
+
+    // Update opportunity status locally
+    setOpportunitiesList(prev => prev.map(o =>
       o.id === applyModalOpp.id ? { ...o, status: 'applied' } : o
     ));
 
     setApplyModalOpp(null);
-    setInvitationNotice(`Application sent to ${applyModalOpp.brand}! Connection opened in Messages.`);
-    setTimeout(() => setInvitationNotice(null), 4000);
+    setInvitationNotice(
+      isHeld
+        ? `Application held from brand review. Action required: add portfolio evidence demonstrating required capability.`
+        : `Proposal & private bid submitted to ${applyModalOpp.brandName || applyModalOpp.brand}!`
+    );
+    setTimeout(() => setInvitationNotice(null), 5000);
   };
 
   // --- Handlers: Invitations (Accept / Decline) ---
@@ -633,7 +680,7 @@ export default function CreatorWorkspaceView({
     if (propOnAcceptInvitation) {
       propOnAcceptInvitation(invitation);
     } else {
-      setLocalInvitationsList(prev => prev.map(inv => 
+      setLocalInvitationsList(prev => prev.map(inv =>
         inv.id === invitation.id ? { ...inv, status: 'accepted' } : inv
       ));
       const newProject = {
@@ -663,7 +710,7 @@ export default function CreatorWorkspaceView({
     if (propOnDeclineInvitation) {
       propOnDeclineInvitation(invitation);
     } else {
-      setLocalInvitationsList(prev => prev.map(inv => 
+      setLocalInvitationsList(prev => prev.map(inv =>
         inv.id === invitation.id ? { ...inv, status: 'declined' } : inv
       ));
     }
@@ -802,8 +849,8 @@ export default function CreatorWorkspaceView({
           </div>
 
           <div className="studio-header-actions">
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="btn btn-secondary btn-sm"
               onClick={onViewPublicProfile}
             >
@@ -811,8 +858,8 @@ export default function CreatorWorkspaceView({
               <span>Public Profile</span>
             </button>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="btn btn-primary btn-sm studio-add-work-btn"
               onClick={() => handleOpenAddProject()}
             >
@@ -824,9 +871,9 @@ export default function CreatorWorkspaceView({
 
         {/* Studio Primary Navigation Tabs */}
         <div className="studio-nav-bar" role="tablist" aria-label="Creator Studio Navigation">
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'overview'}
             className={`studio-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
             onClick={() => setActiveTab('overview')}
@@ -834,9 +881,9 @@ export default function CreatorWorkspaceView({
             <span>Overview</span>
           </button>
 
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'portfolio'}
             className={`studio-tab-btn ${activeTab === 'portfolio' ? 'active' : ''}`}
             onClick={() => setActiveTab('portfolio')}
@@ -845,9 +892,9 @@ export default function CreatorWorkspaceView({
             <span className="tab-count-pill">{projectsList.length}</span>
           </button>
 
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'workflows'}
             className={`studio-tab-btn ${activeTab === 'workflows' ? 'active' : ''}`}
             onClick={() => setActiveTab('workflows')}
@@ -855,9 +902,9 @@ export default function CreatorWorkspaceView({
             <span>Workflows</span>
           </button>
 
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'opportunities'}
             className={`studio-tab-btn ${activeTab === 'opportunities' ? 'active' : ''}`}
             onClick={() => setActiveTab('opportunities')}
@@ -866,9 +913,9 @@ export default function CreatorWorkspaceView({
             <span className="tab-count-pill">{opportunitiesList.length}</span>
           </button>
 
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'invitations'}
             className={`studio-tab-btn ${activeTab === 'invitations' ? 'active' : ''}`}
             onClick={() => setActiveTab('invitations')}
@@ -877,9 +924,9 @@ export default function CreatorWorkspaceView({
             <span className="tab-count-pill highlight">{invitationsList.filter(i => i.status === 'pending').length}</span>
           </button>
 
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'projects'}
             className={`studio-tab-btn ${activeTab === 'projects' ? 'active' : ''}`}
             onClick={() => setActiveTab('projects')}
@@ -888,9 +935,9 @@ export default function CreatorWorkspaceView({
             <span className="tab-count-pill">{projectsCollaborations.length}</span>
           </button>
 
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'messages'}
             className={`studio-tab-btn ${activeTab === 'messages' ? 'active' : ''}`}
             onClick={() => setActiveTab('messages')}
@@ -899,9 +946,9 @@ export default function CreatorWorkspaceView({
             <span className="tab-count-pill">{activeConnectionsList.length}</span>
           </button>
 
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'profile'}
             className={`studio-tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
             onClick={() => setActiveTab('profile')}
@@ -909,9 +956,9 @@ export default function CreatorWorkspaceView({
             <span>Profile & DNA</span>
           </button>
 
-          <button 
-            type="button" 
-            role="tab" 
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'trust'}
             className={`studio-tab-btn ${activeTab === 'trust' ? 'active' : ''}`}
             onClick={() => setActiveTab('trust')}
@@ -933,14 +980,14 @@ export default function CreatorWorkspaceView({
               <div className="studio-card overview-profile-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '16px' }}>
                   <div className="overview-avatar-row" style={{ margin: 0 }}>
-                    <div 
-                      className="overview-avatar-wrap" 
+                    <div
+                      className="overview-avatar-wrap"
                       onClick={handleOpenEditProfile}
                       style={{ cursor: 'pointer' }}
                       title="Click to edit profile photo"
                     >
-                      <img 
-                        src={activeCreator.avatar || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80"} 
+                      <img
+                        src={activeCreator.avatar || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80"}
                         alt={activeCreator.name}
                         className="overview-avatar-img"
                       />
@@ -1055,10 +1102,10 @@ export default function CreatorWorkspaceView({
             </div>
 
             {/* Technical & Creative Skills Disciplines Block */}
-            <CreatorSkillsManager 
-              creator={activeCreator} 
-              onUpdateSkills={handleUpdateSkills} 
-              isEditable={true} 
+            <CreatorSkillsManager
+              creator={activeCreator}
+              onUpdateSkills={handleUpdateSkills}
+              isEditable={true}
             />
 
             {/* Middle Section: Recent Portfolio Highlights */}
@@ -1068,8 +1115,8 @@ export default function CreatorWorkspaceView({
                   <h3 className="overview-block-title">My Portfolio Showcase</h3>
                   <p className="overview-block-subtitle">High-fidelity project previews visible to brands and agencies.</p>
                 </div>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={() => setActiveTab('portfolio')}
                 >
@@ -1080,8 +1127,8 @@ export default function CreatorWorkspaceView({
 
               <div className="overview-portfolio-grid">
                 {projectsList.slice(0, 3).map((proj) => (
-                  <div 
-                    key={proj.id} 
+                  <div
+                    key={proj.id}
                     className="overview-project-card"
                     onClick={() => handleOpenProject(proj)}
                     role="button"
@@ -1095,8 +1142,8 @@ export default function CreatorWorkspaceView({
                     title={`Click to view project brief & details for ${proj.title}`}
                   >
                     <div className="overview-proj-img-wrap">
-                      <img 
-                        src={proj.image} 
+                      <img
+                        src={proj.image}
                         alt={proj.title}
                         className="overview-proj-img"
                         onError={(e) => {
@@ -1117,8 +1164,8 @@ export default function CreatorWorkspaceView({
                   </div>
                 ))}
 
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="overview-add-card-placeholder"
                   onClick={() => handleOpenAddProject()}
                 >
@@ -1138,8 +1185,8 @@ export default function CreatorWorkspaceView({
                     <Sparkles size={16} className="text-peach" />
                     <h4>Pending Brand Invitations</h4>
                   </div>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="link-subtle"
                     onClick={() => setActiveTab('invitations')}
                   >
@@ -1160,8 +1207,8 @@ export default function CreatorWorkspaceView({
                         </div>
                       </div>
                       <div className="activity-quick-actions">
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="btn btn-primary btn-xs"
                           onClick={() => setInvitationToConfirm(inv)}
                         >
@@ -1183,8 +1230,8 @@ export default function CreatorWorkspaceView({
                     <Briefcase size={16} className="text-lavender" />
                     <h4>Recommended Opportunities</h4>
                   </div>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="link-subtle"
                     onClick={() => setActiveTab('opportunities')}
                   >
@@ -1200,8 +1247,8 @@ export default function CreatorWorkspaceView({
                         <span className="activity-camp-title">{opp.title}</span>
                         <p className="activity-fit-reason">{opp.whyItFits}</p>
                       </div>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className={`btn ${opp.status === 'applied' ? 'btn-secondary' : 'btn-primary'} btn-xs`}
                         onClick={() => handleOpenApplyModal(opp)}
                         disabled={opp.status === 'applied'}
@@ -1237,8 +1284,8 @@ export default function CreatorWorkspaceView({
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={onViewPublicProfile}
                   title="Preview your public brand-facing portfolio"
@@ -1248,8 +1295,8 @@ export default function CreatorWorkspaceView({
                   <span>Preview as Brand</span>
                 </button>
 
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-primary btn-sm"
                   onClick={() => handleOpenAddProject()}
                 >
@@ -1263,8 +1310,8 @@ export default function CreatorWorkspaceView({
             {filteredProjects.length > 0 ? (
               <div className="portfolio-workspace-grid">
                 {filteredProjects.map((proj, idx) => (
-                  <div 
-                    key={proj.id} 
+                  <div
+                    key={proj.id}
                     className="portfolio-card-item"
                     onClick={() => handleOpenProject(proj)}
                     role="button"
@@ -1278,8 +1325,8 @@ export default function CreatorWorkspaceView({
                     title={`Click to view brief description & details for ${proj.title}`}
                   >
                     <div className="portfolio-item-media" style={{ position: 'relative' }}>
-                      <img 
-                        src={proj.image} 
+                      <img
+                        src={proj.image}
                         alt={proj.title}
                         className="portfolio-item-img"
                         onError={(e) => {
@@ -1341,13 +1388,13 @@ export default function CreatorWorkspaceView({
                             ★ Featured
                           </span>
                         )}
-                        <span style={{ 
-                          fontSize: '0.7rem', 
-                          padding: '3px 8px', 
-                          borderRadius: '100px', 
-                          background: proj.visibility === 'private' ? 'rgba(239, 68, 68, 0.85)' : 'rgba(16, 185, 129, 0.85)', 
-                          color: '#FFFFFF', 
-                          fontWeight: 600 
+                        <span style={{
+                          fontSize: '0.7rem',
+                          padding: '3px 8px',
+                          borderRadius: '100px',
+                          background: proj.visibility === 'private' ? 'rgba(239, 68, 68, 0.85)' : 'rgba(16, 185, 129, 0.85)',
+                          color: '#FFFFFF',
+                          fontWeight: 600
                         }}>
                           {proj.visibility === 'private' ? 'Private Draft' : 'Published'}
                         </span>
@@ -1378,8 +1425,8 @@ export default function CreatorWorkspaceView({
                         >
                           <Star size={14} fill={proj.featured ? "#F59E0B" : "none"} stroke={proj.featured ? "#F59E0B" : "currentColor"} />
                         </button>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="control-icon-btn"
                           title="Edit Project"
                           onClick={(e) => {
@@ -1389,8 +1436,8 @@ export default function CreatorWorkspaceView({
                         >
                           <Edit3 size={14} />
                         </button>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           className="control-icon-btn danger"
                           title="Delete Project"
                           onClick={(e) => {
@@ -1445,7 +1492,7 @@ export default function CreatorWorkspaceView({
                       )}
 
                       <p className="portfolio-item-desc">{proj.description}</p>
-                      
+
                       <div className="portfolio-item-tags">
                         <span className="tag-chip">{proj.creativeStyle || 'Cinematic'}</span>
                         <span className="tag-chip">{proj.tools || 'Midjourney'}</span>
@@ -1472,8 +1519,8 @@ export default function CreatorWorkspaceView({
                 <p className="empty-state-desc">
                   Add your first project to start building your portfolio and receiving tailored brand opportunities.
                 </p>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-primary btn-md"
                   onClick={() => handleOpenAddProject()}
                 >
@@ -1506,8 +1553,8 @@ export default function CreatorWorkspaceView({
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={onViewPublicProfile}
                   title="View how brands see your published workflows"
@@ -1517,8 +1564,8 @@ export default function CreatorWorkspaceView({
                   <span>View Public Profile</span>
                 </button>
 
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-primary btn-sm studio-add-work-btn"
                   onClick={() => handleOpenCreateWorkflow()}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
@@ -1530,11 +1577,11 @@ export default function CreatorWorkspaceView({
             </div>
 
             {/* Quick-Starter Demonstration Templates Bar */}
-            <div style={{ 
-              marginTop: '16px', 
-              padding: '16px 20px', 
-              background: 'linear-gradient(135deg, rgba(253, 247, 237, 0.8) 0%, rgba(246, 240, 232, 0.6) 100%)', 
-              border: '1px solid rgba(235, 110, 75, 0.2)', 
+            <div style={{
+              marginTop: '16px',
+              padding: '16px 20px',
+              background: 'linear-gradient(135deg, rgba(253, 247, 237, 0.8) 0%, rgba(246, 240, 232, 0.6) 100%)',
+              border: '1px solid rgba(235, 110, 75, 0.2)',
               borderRadius: '14px',
               display: 'flex',
               alignItems: 'center',
@@ -1637,7 +1684,7 @@ export default function CreatorWorkspaceView({
                     )).filter(Boolean).slice(0, 5);
 
                     return (
-                      <div 
+                      <div
                         key={wf.id}
                         className="studio-card workflow-manage-card"
                         style={{
@@ -1829,8 +1876,8 @@ export default function CreatorWorkspaceView({
                   Documenting your creative workflows proves your craft to brands, demonstrates your human-in-the-loop artistry, and speeds up commercial commissions.
                 </p>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="btn btn-primary btn-md"
                     onClick={() => handleOpenCreateWorkflow("Beauty & Skincare")}
                   >
@@ -1838,8 +1885,8 @@ export default function CreatorWorkspaceView({
                     <span>Use Skincare Campaign Template</span>
                   </button>
 
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="btn btn-secondary btn-md"
                     onClick={() => handleOpenCreateWorkflow()}
                   >
@@ -1856,84 +1903,374 @@ export default function CreatorWorkspaceView({
             TAB 3: OPPORTUNITIES
             ======================================================== */}
         {activeTab === 'opportunities' && (
-          <div className="studio-opportunities-view">
-            <div className="section-intro-bar">
-              <div>
-                <h2 className="section-title-sm">Campaign Opportunities</h2>
-                <p className="section-desc-sm">Curated commercial briefs matching your Creator DNA and verified portfolio strengths.</p>
+          <div className="studio-opportunities-view fade-in">
+            {/* Editorial Hero Header & Mode Switcher */}
+            <div className="marketplace-editorial-hero">
+              <div className="hero-titles">
+                <span className="opp-brand-tag" style={{ color: 'var(--accent-forest)' }}>Alloy Commercial Marketplace</span>
+                <h2>Campaign Opportunities & Applications</h2>
+                <p>Discover live commercial briefs published by luxury and tech brands, or manage your ongoing proposals and rate negotiations.</p>
+              </div>
+
+              {/* Segmented Switcher */}
+              <div className="marketplace-subview-nav" role="tablist" aria-label="Marketplace views">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={opportunitiesSubView === 'feed'}
+                  className={`marketplace-nav-btn ${opportunitiesSubView === 'feed' ? 'active' : ''}`}
+                  onClick={() => setOpportunitiesSubView('feed')}
+                >
+                  <Briefcase size={14} />
+                  <span>Campaign Feed</span>
+                  <span className="marketplace-nav-count">{opportunitiesList.length}</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={opportunitiesSubView === 'applications'}
+                  className={`marketplace-nav-btn ${opportunitiesSubView === 'applications' ? 'active' : ''}`}
+                  onClick={() => setOpportunitiesSubView('applications')}
+                >
+                  <FileText size={14} />
+                  <span>My Applications</span>
+                  <span className={`marketplace-nav-count ${myApplications.length > 0 ? 'highlight' : ''}`}>{myApplications.length}</span>
+                </button>
               </div>
             </div>
 
-            <div className="opportunities-grid-view">
-              {opportunitiesList.map((opp) => {
-                const isSaved = savedOppIds.includes(opp.id);
-                return (
-                  <div key={opp.id} className="studio-card opportunity-card-item">
-                    <div className="opp-header-row">
-                      <div className="opp-brand-info">
-                        <span className="opp-brand-name">{opp.brand}</span>
-                        <h3 className="opp-campaign-title">{opp.title}</h3>
+            {/* SUB-VIEW 1: CAMPAIGN DISCOVERY FEED */}
+            {opportunitiesSubView === 'feed' && (
+              opportunitiesList.length === 0 ? (
+                <div className="empty-state-card studio-card text-center" style={{ padding: '56px 24px', background: 'var(--bg-card)' }}>
+                  <Briefcase size={40} className="text-tertiary" style={{ margin: '0 auto 16px', opacity: 0.6 }} />
+                  <h3 className="font-editorial" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>No Marketplace Campaigns Available Right Now</h3>
+                  <p style={{ maxWidth: '520px', margin: '0 auto 18px', color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.6 }}>
+                    Brands publish open briefs periodically. Check back soon or enhance your verified portfolio to improve your direct brand matching visibility.
+                  </p>
+                </div>
+              ) : (
+                <div className="opportunities-grid-view">
+                  {opportunitiesList.map((opp) => {
+                    const isSaved = savedOppIds.includes(opp.id);
+                    const isClosed = opp.applicationStatus === 'closed' || (opp.remainingSlots !== undefined && opp.remainingSlots <= 0);
+                    const hasApplied = opp.status === 'applied' || myApplications.some(a => a.campaignId === opp.id || a.campaignId === opp.campaignId);
+                    const slotsRemaining = opp.remainingSlots ?? opp.creatorSlots ?? 1;
+                    const totalSlots = opp.creatorSlots ?? 1;
+
+                    return (
+                      <div key={opp.id} className="opportunity-card-item">
+                        <div className="opp-header-row">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <span className="opp-brand-tag">{opp.brandName || opp.brand}</span>
+                            <h3 className="opp-campaign-title">{opp.title}</h3>
+                          </div>
+                          <button
+                            type="button"
+                            className={`btn-icon-bookmark ${isSaved ? 'saved' : ''}`}
+                            onClick={() => handleToggleSaveOpportunity(opp.id)}
+                            title={isSaved ? "Saved" : "Save opportunity"}
+                            aria-label={isSaved ? "Remove from saved" : "Save opportunity"}
+                          >
+                            {isSaved ? <BookmarkCheck size={18} style={{ color: 'var(--accent-gold)' }} /> : <Bookmark size={18} />}
+                          </button>
+                        </div>
+
+                        {/* Specs Strip */}
+                        <div className="opp-specs-strip">
+                          <span className="spec-chip spec-budget">
+                            <DollarSign size={12} />
+                            <span>{opp.budget}</span>
+                            {opp.isNegotiable !== false ? (
+                              <span style={{ fontSize: '0.68rem', opacity: 0.85 }}>• Negotiable</span>
+                            ) : (
+                              <span style={{ fontSize: '0.68rem', opacity: 0.85 }}>• Fixed</span>
+                            )}
+                          </span>
+
+                          <span className="spec-chip spec-slots">
+                            <Layers size={12} />
+                            <span>{slotsRemaining} of {totalSlots} slot{totalSlots > 1 ? 's' : ''} open</span>
+                          </span>
+
+                          <span className="spec-chip">
+                            <Clock size={12} />
+                            <span>{opp.timeline}</span>
+                          </span>
+
+                          {opp.deadline && (
+                            <span className="spec-chip">
+                              <Calendar size={12} />
+                              <span>Due {opp.deadline}</span>
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="opp-direction-text">{opp.creativeDirection}</p>
+
+                        {/* Key Deliverables Pills */}
+                        {(opp.requirements || opp.deliverables || []).length > 0 && (
+                          <div className="opp-deliverables-wrap">
+                            <span className="box-mini-title">Key Deliverables</span>
+                            <div className="opp-deliverables-pills">
+                              {(opp.requirements || opp.deliverables || []).map((req, rIdx) => (
+                                <span key={rIdx} className="deliverable-pill">{req}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {opp.whyItFits && (
+                          <div className="opp-fit-note">
+                            <Sparkles size={13} style={{ flexShrink: 0 }} />
+                            <span>{opp.whyItFits}</span>
+                          </div>
+                        )}
+
+                        <div className="opp-card-actions">
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => setSelectedOpportunityForModal(opp)}
+                            style={{ flex: 1 }}
+                          >
+                            <span>View Brief</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            className={`btn ${hasApplied ? 'btn-secondary' : isClosed ? 'btn-subtle' : 'btn-primary'} btn-sm`}
+                            onClick={() => handleOpenApplyModal(opp)}
+                            disabled={hasApplied || isClosed}
+                            style={{ flex: 1.4 }}
+                          >
+                            <span>
+                              {hasApplied ? 'Submitted' : isClosed ? 'Slots Filled' : 'Apply & Submit Bid'}
+                            </span>
+                            {!hasApplied && !isClosed && <ArrowRight size={13} />}
+                          </button>
+                        </div>
                       </div>
-                      <button 
-                        type="button" 
-                        className={`btn-icon-bookmark ${isSaved ? 'saved' : ''}`}
-                        onClick={() => handleToggleSaveOpportunity(opp.id)}
-                        title={isSaved ? "Saved" : "Save opportunity"}
-                      >
-                        {isSaved ? <BookmarkCheck size={18} className="text-peach" /> : <Bookmark size={18} />}
-                      </button>
-                    </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
 
-                    <div className="opp-specs-chips">
-                      <span className="spec-chip">
-                        <DollarSign size={13} />
-                        <span>{opp.budget}</span>
-                      </span>
-                      <span className="spec-chip">
-                        <Clock size={13} />
-                        <span>{opp.timeline}</span>
-                      </span>
-                    </div>
+            {/* SUB-VIEW 2: MY APPLICATIONS & PROPOSALS */}
+            {opportunitiesSubView === 'applications' && (
+              myApplications.length === 0 ? (
+                <div className="empty-state-card studio-card text-center" style={{ padding: '56px 24px', background: 'var(--bg-card)' }}>
+                  <FileText size={40} className="text-tertiary" style={{ margin: '0 auto 16px', opacity: 0.6 }} />
+                  <h3 className="font-editorial" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>No Applications Submitted Yet</h3>
+                  <p style={{ maxWidth: '520px', margin: '0 auto 20px', color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.6 }}>
+                    Browse live briefs in the Campaign Feed above and submit your private creative proposal and pricing.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => setOpportunitiesSubView('feed')}
+                  >
+                    <span>Browse Campaign Feed</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div className="my-applications-stack" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {myApplications.map(app => {
+                    const statusConfig = {
+                      pending_review: { text: 'Under Brand Review', color: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)', border: 'rgba(99, 102, 241, 0.2)' },
+                      counter_offered: { text: 'Counter-Offer Proposed', color: '#D97706', bg: 'rgba(217, 119, 6, 0.08)', border: 'rgba(217, 119, 6, 0.25)' },
+                      accepted: { text: 'Proposal Accepted & Active', color: '#059669', bg: 'rgba(5, 150, 105, 0.08)', border: 'rgba(5, 150, 105, 0.25)' },
+                      held: { text: 'Held — Evidence Required', color: '#B45309', bg: 'rgba(180, 83, 9, 0.08)', border: 'rgba(180, 83, 9, 0.25)' },
+                      declined: { text: 'Declined', color: '#6B7280', bg: 'rgba(107, 114, 128, 0.08)', border: 'rgba(107, 114, 128, 0.2)' }
+                    };
+                    const badge = statusConfig[app.status] || statusConfig.pending_review;
 
-                    <p className="opp-direction-text">{opp.creativeDirection}</p>
+                    return (
+                      <div key={app.id} className="my-application-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                          <div>
+                            <span className="opp-brand-tag">{app.brandName}</span>
+                            <h3 className="opp-campaign-title" style={{ fontSize: '1.35rem' }}>
+                              {app.campaignTitle}
+                            </h3>
+                          </div>
+                          <span style={{
+                            padding: '5px 14px',
+                            borderRadius: '100px',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            color: badge.color,
+                            background: badge.bg,
+                            border: `1px solid ${badge.border}`
+                          }}>
+                            {badge.text}
+                          </span>
+                        </div>
 
-                    <div className="opp-requirements-box">
-                      <span className="box-mini-title">Key Deliverables:</span>
-                      <ul className="req-list">
-                        {(opp.requirements || []).map((req, rIdx) => (
-                          <li key={rIdx}>{req}</li>
-                        ))}
-                      </ul>
-                    </div>
+                        {/* Private Bid Summary Table */}
+                        <div className="app-terms-summary-grid">
+                          <div>
+                            <span className="term-label">Your Proposed Rate</span>
+                            <div className="term-value" style={{ color: 'var(--accent-forest)' }}>{app.proposedPrice}</div>
+                          </div>
+                          <div>
+                            <span className="term-label">Delivery Timeline</span>
+                            <div className="term-value">{app.deliveryTimeline || 'Flexible'}</div>
+                          </div>
+                          <div>
+                            <span className="term-label">Portfolio Evidence</span>
+                            <div className="term-value" style={{ fontSize: '0.9rem' }}>
+                              {(app.portfolioEvidence || []).length} project(s) attached
+                            </div>
+                          </div>
+                        </div>
 
-                    <div className="opp-match-fit-note">
-                      <Sparkles size={14} className="text-lavender" />
-                      <span>{opp.whyItFits}</span>
-                    </div>
+                        {app.proposalText && (
+                          <div className="app-proposal-quote">
+                            “{app.proposalText}”
+                          </div>
+                        )}
 
-                    <div className="opp-card-actions">
-                      <button 
-                        type="button" 
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setSelectedOpportunityForModal(opp)}
-                      >
-                        <span>View Brief</span>
-                      </button>
+                        {/* 1. Counter-Offer Section */}
+                        {app.status === 'counter_offered' && app.counterOffer && (
+                          <div className="counter-offer-callout">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                              <Sparkles size={16} style={{ color: 'var(--accent-bronze)' }} />
+                              <strong style={{ fontSize: '0.94rem', color: 'var(--text-primary)' }}>
+                                Brand Proposed Revised Terms
+                              </strong>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', fontSize: '0.9rem', marginBottom: '10px' }}>
+                              <div><span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem', display: 'block', textTransform: 'uppercase' }}>Revised Rate</span> <strong>{app.counterOffer.proposedRate || app.counterOffer.proposedPrice}</strong></div>
+                              {app.counterOffer.proposedTimeline && (
+                                <div><span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem', display: 'block', textTransform: 'uppercase' }}>Revised Timeline</span> <strong>{app.counterOffer.proposedTimeline}</strong></div>
+                              )}
+                            </div>
+                            {(app.counterOffer.note || app.counterOffer.message) && (
+                              <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0 0 14px', fontStyle: 'italic' }}>
+                                “{app.counterOffer.note || app.counterOffer.message}”
+                              </p>
+                            )}
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                onClick={() => onRespondCounterOffer && onRespondCounterOffer(app.id, 'accept', activeCreator?.id)}
+                              >
+                                <Check size={14} />
+                                <span>Accept Revised Terms</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => onRespondCounterOffer && onRespondCounterOffer(app.id, 'decline', activeCreator?.id)}
+                              >
+                                <X size={14} />
+                                <span>Decline</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
-                      <button 
-                        type="button" 
-                        className={`btn ${opp.status === 'applied' ? 'btn-secondary' : 'btn-primary'} btn-sm`}
-                        onClick={() => handleOpenApplyModal(opp)}
-                        disabled={opp.status === 'applied'}
-                      >
-                        <span>{opp.status === 'applied' ? 'Interest Expressed' : 'Apply / Express Interest'}</span>
-                        <ArrowRight size={14} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                        {/* 2. Held submission guidance */}
+                        {app.status === 'held' && (
+                          <div style={{ padding: '16px 18px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-yellow-light)', border: '1px solid var(--accent-yellow-border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                              <AlertCircle size={16} style={{ color: 'var(--accent-yellow-deep)' }} />
+                              <strong style={{ fontSize: '0.92rem', color: 'var(--accent-yellow-deep)' }}>
+                                Action Required — Application Held From Brand Review
+                              </strong>
+                            </div>
+                            <p style={{ margin: '0 0 12px', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                              {app.heldReason || 'Additional portfolio evidence is required before this application can be presented to the brand.'}
+                            </p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                  setActiveTab('portfolio');
+                                  setIsAddProjectModalOpen(true);
+                                }}
+                              >
+                                <Plus size={13} />
+                                <span>Add Matching Project to Portfolio</span>
+                              </button>
+                              {onReevaluateApplication && (
+                                <button
+                                  type="button"
+                                  className="btn btn-subtle btn-sm"
+                                  onClick={() => onReevaluateApplication(app.id)}
+                                >
+                                  <span>Re-evaluate Suitability</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3. Accepted submission */}
+                        {app.status === 'accepted' && (
+                          <div style={{
+                            padding: '14px 18px',
+                            borderRadius: 'var(--radius-sm)',
+                            background: 'var(--accent-mint-light)',
+                            border: '1px solid var(--accent-mint-border)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '12px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <CheckCircle size={18} style={{ color: 'var(--accent-forest)' }} />
+                              <div>
+                                <span style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--accent-forest)', display: 'block' }}>
+                                  Proposal accepted! Collaboration project activated.
+                                </span>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                  Deliverables and milestones are ready in your workspace.
+                                </span>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                id={`message-brand-btn-${app.id}`}
+                                className="btn btn-primary btn-sm"
+                                onClick={() => {
+                                  const connId = `conn-${app.campaignId}-${app.creatorId}`;
+                                  const matchingConn = (activeConnectionsList || []).find(c => c.id === connId || (c.campaignId === app.campaignId && c.creatorId === app.creatorId));
+                                  if (matchingConn) {
+                                    setSelectedConnectionId(matchingConn.id);
+                                  } else {
+                                    setSelectedConnectionId(connId);
+                                  }
+                                  setActiveTab('messages');
+                                }}
+                              >
+                                <MessageSquare size={14} />
+                                <span>Message Brand</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setActiveTab('projects')}
+                              >
+                                <span>Open in Projects</span>
+                                <ArrowRight size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
           </div>
         )}
 
@@ -1989,15 +2326,15 @@ export default function CreatorWorkspaceView({
 
                   {inv.status === 'pending' && (
                     <div className="inv-actions-row">
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn btn-secondary btn-sm"
                         onClick={() => handleDeclineInvitation(inv)}
                       >
                         Decline
                       </button>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn btn-primary btn-sm"
                         onClick={() => setInvitationToConfirm(inv)}
                       >
@@ -2011,8 +2348,8 @@ export default function CreatorWorkspaceView({
                     <div className="inv-accepted-footer">
                       <CheckCircle2 size={15} className="text-mint" />
                       <span>Collaboration project active in Projects tab. Direct chat enabled in Messages.</span>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="link-subtle"
                         onClick={() => setActiveTab('projects')}
                       >
@@ -2094,8 +2431,8 @@ export default function CreatorWorkspaceView({
 
                   {/* Action Row */}
                   <div className="collab-actions-row">
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       className="btn btn-secondary btn-sm"
                       onClick={() => setActiveTab('messages')}
                     >
@@ -2104,8 +2441,8 @@ export default function CreatorWorkspaceView({
                     </button>
 
                     {proj.status !== 'approved' && (
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn btn-primary btn-sm"
                         style={proj.status === 'revision-requested' ? { background: '#D97706', borderColor: '#D97706' } : {}}
                         onClick={() => {
@@ -2195,8 +2532,8 @@ export default function CreatorWorkspaceView({
                 )}
 
                 <form onSubmit={handleSendChatMessage} className="chat-compose-form">
-                  <textarea 
-                    className="form-input chat-input" 
+                  <textarea
+                    className="form-input chat-input"
                     placeholder={`Message ${activeConnection?.brandName || 'partner'}... (Enter to send, Shift+Enter for newline)`}
                     value={chatInputText}
                     onChange={(e) => {
@@ -2213,8 +2550,8 @@ export default function CreatorWorkspaceView({
                     rows={1}
                     style={{ resize: 'none', minHeight: '38px', padding: '8px 12px', fontFamily: 'inherit' }}
                   />
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="btn btn-primary btn-sm chat-send-btn"
                     disabled={!chatInputText.trim() || isSendingChatMessage}
                   >
@@ -2248,9 +2585,9 @@ export default function CreatorWorkspaceView({
                 <form onSubmit={handleSaveProfile} className="profile-edit-form">
                   <div className="form-group">
                     <label className="form-label">Full Name</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      className="form-input"
                       value={profileForm.name}
                       onChange={(e) => setProfileForm(prev => ({ ...prev, name: e.target.value }))}
                     />
@@ -2258,9 +2595,9 @@ export default function CreatorWorkspaceView({
 
                   <div className="form-group">
                     <label className="form-label">Creative Identity & Positioning</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
+                    <input
+                      type="text"
+                      className="form-input"
                       value={profileForm.creativeIdentity}
                       onChange={(e) => setProfileForm(prev => ({ ...prev, creativeIdentity: e.target.value }))}
                       placeholder="e.g. Cinematic AI Director & Visual Worldbuilder"
@@ -2269,8 +2606,8 @@ export default function CreatorWorkspaceView({
 
                   <div className="form-group">
                     <label className="form-label">Bio Statement</label>
-                    <textarea 
-                      className="form-textarea" 
+                    <textarea
+                      className="form-textarea"
                       rows={4}
                       value={profileForm.bio}
                       onChange={(e) => setProfileForm(prev => ({ ...prev, bio: e.target.value }))}
@@ -2280,9 +2617,9 @@ export default function CreatorWorkspaceView({
                   <div className="form-grid-2">
                     <div className="form-group">
                       <label className="form-label">Location / Timezone</label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
+                      <input
+                        type="text"
+                        className="form-input"
                         value={profileForm.location}
                         onChange={(e) => setProfileForm(prev => ({ ...prev, location: e.target.value }))}
                       />
@@ -2290,7 +2627,7 @@ export default function CreatorWorkspaceView({
 
                     <div className="form-group">
                       <label className="form-label">Availability Status</label>
-                      <select 
+                      <select
                         className="form-input"
                         value={profileForm.availability}
                         onChange={(e) => setProfileForm(prev => ({ ...prev, availability: e.target.value }))}
@@ -2307,8 +2644,8 @@ export default function CreatorWorkspaceView({
                     <button type="submit" className="btn btn-primary btn-md">
                       <span>Save Profile Changes</span>
                     </button>
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       className="btn btn-secondary btn-md"
                       onClick={onViewPublicProfile}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
@@ -2425,8 +2762,8 @@ export default function CreatorWorkspaceView({
       {isEditProfileModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsEditProfileModalOpen(false)}>
           <div className="creator-modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '640px' }}>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="modal-close-btn"
               onClick={() => setIsEditProfileModalOpen(false)}
             >
@@ -2444,17 +2781,17 @@ export default function CreatorWorkspaceView({
               <div className="form-group">
                 <label className="form-label">Profile Avatar URL</label>
                 <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                  <img 
-                    src={profileForm.avatar || activeCreator.avatar || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80"} 
+                  <img
+                    src={profileForm.avatar || activeCreator.avatar || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80"}
                     alt="Preview"
                     style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border-light, #E2E8F0)' }}
                     onError={(e) => {
                       e.currentTarget.src = "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80";
                     }}
                   />
-                  <input 
-                    type="url" 
-                    className="form-input" 
+                  <input
+                    type="url"
+                    className="form-input"
                     placeholder="https://images.unsplash.com/..."
                     value={profileForm.avatar}
                     onChange={(e) => setProfileForm(prev => ({ ...prev, avatar: e.target.value }))}
@@ -2465,9 +2802,9 @@ export default function CreatorWorkspaceView({
 
               <div className="form-group">
                 <label className="form-label">Full Name *</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  className="form-input"
                   required
                   placeholder="e.g. Maya Chen"
                   value={profileForm.name}
@@ -2477,9 +2814,9 @@ export default function CreatorWorkspaceView({
 
               <div className="form-group">
                 <label className="form-label">Creative Identity & Positioning</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  className="form-input"
                   placeholder="e.g. Cinematic AI Director & Visual Worldbuilder"
                   value={profileForm.creativeIdentity}
                   onChange={(e) => setProfileForm(prev => ({ ...prev, creativeIdentity: e.target.value }))}
@@ -2488,8 +2825,8 @@ export default function CreatorWorkspaceView({
 
               <div className="form-group">
                 <label className="form-label">Bio Statement</label>
-                <textarea 
-                  className="form-textarea" 
+                <textarea
+                  className="form-textarea"
                   rows={4}
                   placeholder="Directing cinematic narrative commercials, evocative brand mythologies, and cinematic product worlds..."
                   value={profileForm.bio}
@@ -2500,9 +2837,9 @@ export default function CreatorWorkspaceView({
               <div className="form-grid-2">
                 <div className="form-group">
                   <label className="form-label">Location / Timezone</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    className="form-input"
                     placeholder="e.g. London / New York"
                     value={profileForm.location}
                     onChange={(e) => setProfileForm(prev => ({ ...prev, location: e.target.value }))}
@@ -2511,7 +2848,7 @@ export default function CreatorWorkspaceView({
 
                 <div className="form-group">
                   <label className="form-label">Availability Status</label>
-                  <select 
+                  <select
                     className="form-input"
                     value={profileForm.availability}
                     onChange={(e) => setProfileForm(prev => ({ ...prev, availability: e.target.value }))}
@@ -2525,15 +2862,15 @@ export default function CreatorWorkspaceView({
               </div>
 
               <div className="modal-actions-row" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={() => setIsEditProfileModalOpen(false)}
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn btn-primary btn-sm"
                 >
                   Save Changes
@@ -2550,8 +2887,8 @@ export default function CreatorWorkspaceView({
       {isAddProjectModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsAddProjectModalOpen(false)}>
           <div className="creator-modal-card" onClick={(e) => e.stopPropagation()}>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="modal-close-btn"
               onClick={() => setIsAddProjectModalOpen(false)}
             >
@@ -2567,8 +2904,8 @@ export default function CreatorWorkspaceView({
             <form onSubmit={handleSaveProject} className="modal-form">
               <div className="form-group">
                 <label className="form-label">Project Title *</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className={`form-input ${projectFormErrors.title ? 'error' : ''}`}
                   placeholder="e.g. Echoes of the Solarium"
                   value={projectForm.title}
@@ -2579,7 +2916,7 @@ export default function CreatorWorkspaceView({
 
               <div className="form-group">
                 <label className="form-label">Description & Creative Concept *</label>
-                <textarea 
+                <textarea
                   className={`form-textarea ${projectFormErrors.description ? 'error' : ''}`}
                   rows={3}
                   placeholder="Describe the aesthetic, lighting, and creative direction..."
@@ -2592,7 +2929,7 @@ export default function CreatorWorkspaceView({
               <div className="form-grid-2">
                 <div className="form-group">
                   <label className="form-label">Category</label>
-                  <select 
+                  <select
                     className="form-input"
                     value={projectForm.category}
                     onChange={(e) => setProjectForm(prev => ({ ...prev, category: e.target.value }))}
@@ -2608,8 +2945,8 @@ export default function CreatorWorkspaceView({
 
                 <div className="form-group">
                   <label className="form-label">Creative Style</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-input"
                     placeholder="e.g. 35mm Cinematic, Editorial"
                     value={projectForm.creativeStyle}
@@ -2621,8 +2958,8 @@ export default function CreatorWorkspaceView({
               <div className="form-grid-2">
                 <div className="form-group">
                   <label className="form-label">Tools Used</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-input"
                     placeholder="e.g. Midjourney v6, Runway Gen-3"
                     value={projectForm.tools}
@@ -2632,8 +2969,8 @@ export default function CreatorWorkspaceView({
 
                 <div className="form-group">
                   <label className="form-label">Content Format</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-input"
                     placeholder="e.g. 4K Stills Suite, 9:16 Video"
                     value={projectForm.format}
@@ -2645,8 +2982,8 @@ export default function CreatorWorkspaceView({
               <div className="form-grid-2">
                 <div className="form-group">
                   <label className="form-label">Creator Role / Contribution</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-input"
                     placeholder="e.g. Generative Director & Editor"
                     value={projectForm.role}
@@ -2656,8 +2993,8 @@ export default function CreatorWorkspaceView({
 
                 <div className="form-group">
                   <label className="form-label">Client or Campaign Context</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-input"
                     placeholder="e.g. Heritage Luxury House"
                     value={projectForm.clientType}
@@ -2669,7 +3006,7 @@ export default function CreatorWorkspaceView({
               <div className="form-grid-2">
                 <div className="form-group">
                   <label className="form-label">Visibility Status</label>
-                  <select 
+                  <select
                     className="form-input"
                     value={projectForm.visibility}
                     onChange={(e) => setProjectForm(prev => ({ ...prev, visibility: e.target.value }))}
@@ -2681,7 +3018,7 @@ export default function CreatorWorkspaceView({
 
                 <div className="form-group" style={{ display: 'flex', alignItems: 'center', paddingTop: '28px' }}>
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-                    <input 
+                    <input
                       type="checkbox"
                       checked={projectForm.featured}
                       onChange={(e) => setProjectForm(prev => ({ ...prev, featured: e.target.checked }))}
@@ -2694,7 +3031,7 @@ export default function CreatorWorkspaceView({
 
               <div className="form-group">
                 <label className="form-label">Link Creative Workflow (Optional)</label>
-                <select 
+                <select
                   className="form-input"
                   value={projectForm.workflowId || ''}
                   onChange={(e) => setProjectForm(prev => ({ ...prev, workflowId: e.target.value }))}
@@ -2755,8 +3092,8 @@ export default function CreatorWorkspaceView({
               </div>
 
               <div className="modal-actions-row">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary btn-md"
                   onClick={() => setIsAddProjectModalOpen(false)}
                 >
@@ -2777,8 +3114,8 @@ export default function CreatorWorkspaceView({
       {submitModalProject && (
         <div className="modal-backdrop" onClick={() => setSubmitModalProject(null)}>
           <div className="creator-modal-card" onClick={(e) => e.stopPropagation()}>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="modal-close-btn"
               onClick={() => setSubmitModalProject(null)}
             >
@@ -2796,9 +3133,9 @@ export default function CreatorWorkspaceView({
             <form onSubmit={handleSubmitDeliverables} className="modal-form">
               <div className="form-group">
                 <label className="form-label">Deliverable Master Asset URL (Cloud Storage / Drive / WeTransfer) *</label>
-                <input 
-                  type="url" 
-                  className="form-input" 
+                <input
+                  type="url"
+                  className="form-input"
                   placeholder="https://drive.google.com/... or https://wetransfer.com/..."
                   required
                   value={deliverableForm.assetsUrl}
@@ -2808,9 +3145,9 @@ export default function CreatorWorkspaceView({
 
               <div className="form-group">
                 <label className="form-label">Milestone Scope</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  className="form-input"
                   value={deliverableForm.milestone}
                   onChange={(e) => setDeliverableForm(prev => ({ ...prev, milestone: e.target.value }))}
                 />
@@ -2818,8 +3155,8 @@ export default function CreatorWorkspaceView({
 
               <div className="form-group">
                 <label className="form-label">Notes for Creative Director</label>
-                <textarea 
-                  className="form-textarea" 
+                <textarea
+                  className="form-textarea"
                   rows={3}
                   placeholder="Detail changes made, color grade passes, or resolution specs..."
                   value={deliverableForm.notes}
@@ -2828,8 +3165,8 @@ export default function CreatorWorkspaceView({
               </div>
 
               <div className="modal-actions-row">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn btn-secondary btn-md"
                   onClick={() => setSubmitModalProject(null)}
                 >
@@ -2846,13 +3183,14 @@ export default function CreatorWorkspaceView({
       )}
 
       {/* ========================================================
-          MODAL: APPLY / EXPRESS INTEREST IN OPPORTUNITY
+          MODAL: APPLY / EXPRESS INTEREST & PRIVATE PROPOSAL
+          With Server-Enforced Pre-Bid Eligibility Gate
           ======================================================== */}
       {applyModalOpp && (
         <div className="modal-backdrop" onClick={() => setApplyModalOpp(null)}>
-          <div className="creator-modal-card" onClick={(e) => e.stopPropagation()}>
-            <button 
-              type="button" 
+          <div className="creator-modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '640px' }}>
+            <button
+              type="button"
               className="modal-close-btn"
               onClick={() => setApplyModalOpp(null)}
             >
@@ -2860,41 +3198,202 @@ export default function CreatorWorkspaceView({
             </button>
 
             <div className="modal-header-block">
-              <span className="section-label-pill">Express Interest</span>
-              <h2 className="modal-title">Apply to {applyModalOpp.brand}</h2>
+              <span className="section-label-pill">Creative Proposal & Private Bid</span>
+              <h2 className="modal-title font-editorial" style={{ fontSize: '2.1rem' }}>Apply to {applyModalOpp.brandName || applyModalOpp.brand}</h2>
               <p className="modal-sub">
-                Brief: <strong>{applyModalOpp.title}</strong> • Budget: {applyModalOpp.budget}
+                Brief: <strong>{applyModalOpp.title}</strong> • Budget Ceiling: <strong>{applyModalOpp.budget}</strong>
+                {applyModalOpp.isNegotiable === false ? (
+                  <span style={{ color: 'var(--accent-bronze)', fontWeight: 600, marginLeft: '6px' }}>(Fixed Budget)</span>
+                ) : (
+                  <span style={{ color: 'var(--accent-forest)', fontWeight: 600, marginLeft: '6px' }}>(Negotiable)</span>
+                )}
               </p>
             </div>
 
+            {/* PRE-BID ELIGIBILITY GATE EVALUATION BANNER */}
+            <div>
+              {preBidResult?.eligibility === ELIGIBILITY_STATUS.ELIGIBLE && (
+                <div className="prebid-banner eligible">
+                  <CheckCircle2 size={20} style={{ color: 'var(--accent-forest)', flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <span className="prebid-banner-title">
+                      Demonstrated Compatibility
+                    </span>
+                    <p className="prebid-banner-desc">
+                      Your verified portfolio and Creator DNA match this campaign's creative direction. Your proposal and rate will be submitted directly to the brand for review.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {preBidResult?.eligibility === ELIGIBILITY_STATUS.INELIGIBLE && (
+                <div className="prebid-banner ineligible">
+                  <AlertCircle size={20} style={{ color: '#DC2626', flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <span className="prebid-banner-title">
+                      Creative Fit Notice
+                    </span>
+                    <p className="prebid-banner-desc">
+                      {preBidResult.reasons?.[0] || 'A mandatory campaign requirement does not match your creative portfolio.'}
+                    </p>
+                    <p className="prebid-banner-sub">
+                      This submission cannot be presented to the brand. You remain in full standing across Alloy and can apply to matching briefs.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {preBidResult?.eligibility === ELIGIBILITY_STATUS.REQUIRES_REVIEW && (
+                <div className="prebid-banner requires-review">
+                  <AlertCircle size={20} style={{ color: 'var(--accent-yellow-deep)', flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <span className="prebid-banner-title">
+                      Portfolio Evidence Required
+                    </span>
+                    <p className="prebid-banner-desc">
+                      {preBidResult.reasons?.[0] || 'Campaign requirements specify formats or styles not yet verified in your portfolio.'}
+                    </p>
+                    <p className="prebid-banner-sub">
+                      Missing evidence is not a rejection. If you submit now, your application is held from brand visibility until matching portfolio evidence is attached.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handleSendApplication} className="modal-form">
+              {/* Proposal Pricing and Timeline */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 600 }}>
+                    Proposed Rate
+                    {applyModalOpp.isNegotiable === false ? ' (Fixed Budget)' : ' (Negotiable)'}
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={applyPrice}
+                    onChange={(e) => setApplyPrice(e.target.value)}
+                    placeholder="$5,000"
+                    required
+                  />
+                  {applyModalOpp.isNegotiable === false && (
+                    <span style={{ fontSize: '0.74rem', color: 'var(--accent-bronze)', marginTop: '4px', display: 'block' }}>
+                      Brand indicated a non-negotiable budget.
+                    </span>
+                  )}
+                </div>
+
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 600 }}>Estimated Delivery Timeline</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={applyTimeline}
+                    onChange={(e) => setApplyTimeline(e.target.value)}
+                    placeholder="2 Weeks"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Pitch Note */}
               <div className="form-group">
-                <label className="form-label">Message / Creative Pitch Note</label>
-                <textarea 
-                  className="form-textarea" 
-                  rows={4}
+                <label className="form-label" style={{ fontWeight: 600 }}>Creative Proposal Pitch / Approach Note</label>
+                <textarea
+                  className="form-textarea"
+                  rows={3}
                   value={applyNoteText}
                   onChange={(e) => setApplyNoteText(e.target.value)}
+                  placeholder="Describe your creative approach and how your technical workflow delivers this brief..."
+                  required
                 />
               </div>
 
-              <div className="opp-modal-summary-box">
-                <span><strong>Deliverables:</strong> {(applyModalOpp.requirements || []).join(' • ')}</span>
-                <span><strong>Timeline:</strong> {applyModalOpp.timeline}</span>
+              {/* Portfolio Evidence Selector */}
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 600 }}>Attach Relevant Portfolio Evidence</span>
+                  <span style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>
+                    {applySelectedProjects.length} project(s) selected
+                  </span>
+                </label>
+                <div style={{ maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '4px 0' }}>
+                  {(activeCreator.projects || []).length === 0 ? (
+                    <div style={{ fontSize: '0.84rem', color: 'var(--text-tertiary)', padding: '12px', background: 'var(--bg-card-subtle)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+                      No projects currently in your portfolio.
+                    </div>
+                  ) : (
+                    (activeCreator.projects || []).map(p => {
+                      const isSelected = applySelectedProjects.includes(p.id);
+                      return (
+                        <label
+                          key={p.id}
+                          className={`evidence-selector-card ${isSelected ? 'selected' : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setApplySelectedProjects(prev => [...prev, p.id]);
+                              } else {
+                                setApplySelectedProjects(prev => prev.filter(id => id !== p.id));
+                              }
+                            }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {p.title}
+                            </div>
+                            <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)' }}>
+                              {p.creativeStyle || p.category} • {p.format || 'Visual Asset'}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
-              <div className="modal-actions-row">
-                <button 
-                  type="button" 
+              <div className="opp-modal-summary-box" style={{ marginTop: '14px', background: 'var(--bg-card-subtle)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                <span><strong>Required Deliverables:</strong> {(applyModalOpp.requirements || applyModalOpp.deliverables || []).join(' • ')}</span>
+                <span><strong>Slots Remaining:</strong> {applyModalOpp.remainingSlots ?? applyModalOpp.creatorSlots ?? 1}</span>
+              </div>
+
+              <div className="modal-actions-row" style={{ marginTop: '20px' }}>
+                <button
+                  type="button"
                   className="btn btn-secondary btn-md"
                   onClick={() => setApplyModalOpp(null)}
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary btn-md">
-                  <Send size={14} />
-                  <span>Send Pitch Note</span>
-                </button>
+
+                {preBidResult?.eligibility === ELIGIBILITY_STATUS.ELIGIBLE && (
+                  <button type="submit" className="btn btn-primary btn-md">
+                    <Send size={14} />
+                    <span>Submit Proposal & Private Bid</span>
+                  </button>
+                )}
+
+                {preBidResult?.eligibility === ELIGIBILITY_STATUS.REQUIRES_REVIEW && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-md"
+                    onClick={(e) => handleSendApplication(e, true)}
+                    style={{ borderColor: 'var(--accent-yellow-border)', color: 'var(--accent-yellow-deep)' }}
+                  >
+                    <span>Submit to Hold Queue</span>
+                  </button>
+                )}
+
+                {preBidResult?.eligibility === ELIGIBILITY_STATUS.INELIGIBLE && (
+                  <button type="button" className="btn btn-subtle btn-md" disabled>
+                    <span>Submission Blocked (Incompatible)</span>
+                  </button>
+                )}
               </div>
             </form>
           </div>
@@ -2907,8 +3406,8 @@ export default function CreatorWorkspaceView({
       {selectedOpportunityForModal && (
         <div className="modal-backdrop" onClick={() => setSelectedOpportunityForModal(null)}>
           <div className="creator-modal-card" onClick={(e) => e.stopPropagation()}>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="modal-close-btn"
               onClick={() => setSelectedOpportunityForModal(null)}
             >
@@ -2946,15 +3445,15 @@ export default function CreatorWorkspaceView({
             </div>
 
             <div className="modal-actions-row">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-secondary btn-md"
                 onClick={() => setSelectedOpportunityForModal(null)}
               >
                 Close
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-primary btn-md"
                 onClick={() => {
                   const opp = selectedOpportunityForModal;
@@ -3075,7 +3574,7 @@ export default function CreatorWorkspaceView({
       {/* Workflow Preview Modal */}
       {previewingWorkflow && (
         <div className="modal-overlay" onClick={() => setPreviewingWorkflow(null)} role="dialog" aria-modal="true">
-          <div 
+          <div
             className="modal-content"
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: '860px', maxHeight: '90vh', overflowY: 'auto', borderRadius: '20px', padding: '24px 32px', background: 'var(--bg-card, #FFFFFF)' }}
@@ -3084,8 +3583,8 @@ export default function CreatorWorkspaceView({
               <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--accent-primary, #EB6E4B)', fontWeight: 700 }}>
                 Workflow Preview • Brand View
               </span>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="modal-close-btn"
                 onClick={() => setPreviewingWorkflow(null)}
                 style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-light)', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
@@ -3094,8 +3593,8 @@ export default function CreatorWorkspaceView({
               </button>
             </div>
 
-            <WorkflowTimeline 
-              workflow={previewingWorkflow} 
+            <WorkflowTimeline
+              workflow={previewingWorkflow}
               isReadOnly={true}
               onSelectProject={(projId) => {
                 const p = projectsList.find(item => item.id === projId);
