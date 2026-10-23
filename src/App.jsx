@@ -2826,6 +2826,8 @@ export default function App() {
               setLoginNotice('Please sign in to access your direct messages');
               setIsLoginOpen(true);
             }}
+            campaigns={marketplaceData.campaigns || []}
+            brands={marketplaceData.brands || []}
           />
         )}
 
@@ -2985,6 +2987,8 @@ export default function App() {
                 onRespondCounterOffer={handleRespondCounterOffer}
                 onLoginSuccess={(user, role) => executePendingActionOrRoute(user, role)}
                 onOpenLogin={() => setIsLoginOpen(true)}
+                campaigns={marketplaceData.campaigns || []}
+                brands={marketplaceData.brands || []}
               />
             ) : (
               <BrandWorkspaceView
@@ -3418,6 +3422,7 @@ export default function App() {
             setSelectedProject(proj);
             setIsMessagingDrawerOpen(false);
           }}
+          onExplore={() => navigateTo('discover')}
         />
       )}
 

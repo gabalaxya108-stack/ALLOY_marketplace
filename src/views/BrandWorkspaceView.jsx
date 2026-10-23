@@ -28,7 +28,69 @@ import CreatorComparisonModal from '../components/CreatorComparisonModal';
 import MessagesLoginWall from '../components/MessagesLoginWall';
 import CampaignFundingModal from '../components/CampaignFundingModal';
 import BrandTrustCenterView from './BrandTrustCenterView';
+import DirectMessagesEmptyState from '../components/DirectMessagesEmptyState';
 import { deduplicateMessages } from '../services/marketplaceBackend';
+
+function formatBudgetDisplay(budget) {
+  if (!budget) return 'In Discussion';
+  if (typeof budget === 'number') {
+    return `$${budget.toLocaleString()}`;
+  }
+  const str = String(budget).trim();
+  if (!str.startsWith('$') && !isNaN(Number(str.replace(/,/g, '')))) {
+    return `$${Number(str.replace(/,/g, '')).toLocaleString()}`;
+  }
+  return str;
+}
+
+function BrandCreatorAvatarWithFallback({ avatarUrl, name, size = 52, className = '' }) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [avatarUrl]);
+
+  const initials = useMemo(() => {
+    if (!name || typeof name !== 'string') return 'CR';
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase() || 'CR';
+  }, [name]);
+
+  if (!avatarUrl || hasError) {
+    return (
+      <div
+        className={`inv-creator-avatar-fallback ${className}`}
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          minWidth: `${size}px`,
+          minHeight: `${size}px`
+        }}
+        aria-label={name || 'Creator'}
+        title={name || 'Creator'}
+      >
+        <span>{initials}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={avatarUrl}
+      alt={name || 'Creator'}
+      className={className}
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        minWidth: `${size}px`,
+        minHeight: `${size}px`
+      }}
+      onError={() => setHasError(true)}
+      loading="lazy"
+    />
+  );
+}
 
 export default function BrandWorkspaceView({
   currentBrand = {
@@ -1059,54 +1121,182 @@ export default function BrandWorkspaceView({
                     </div>
 
                     <div className="top-matches-grid">
-                      {topOverviewMatches.map(({ creator, match, explanation }) => (
-                        <div key={creator.id} className="overview-creator-card studio-card">
-                          <div className="creator-card-header">
-                            <img src={creator.avatar} alt={creator.name} className="creator-avatar" />
-                            <div className="creator-info">
-                              <h4 className="creator-name">{creator.name}</h4>
-                              <span className="creator-role">{creator.specialty || creator.creativeIdentity}</span>
+                      {topOverviewMatches.map(({ creator, match, explanation }) => {
+                        // Extract real portfolio media asset
+                        const featuredProject = Array.isArray(creator.projects) && creator.projects.length > 0
+                          ? creator.projects[0]
+                          : null;
+                        const portfolioImage = featuredProject?.image || creator.heroWork || null;
+                        const projectTitle = featuredProject?.title || null;
+                        const projectFormat = featuredProject?.category || creator.specialty || null;
+
+                        // Extract clean, authentic tags from actual creator data (deduplicated, max 3)
+                        const displayTags = [];
+                        if (creator.specialty) displayTags.push(creator.specialty);
+                        (creator.styles || []).forEach(s => {
+                          if (!displayTags.includes(s) && displayTags.length < 3) displayTags.push(s);
+                        });
+                        (creator.capabilities || []).forEach(c => {
+                          if (!displayTags.includes(c) && displayTags.length < 3) displayTags.push(c);
+                        });
+
+                        // Grounded full match signal from real matching engine
+                        const matchSignal = explanation?.summary || explanation?.topReason || explanation?.headline || null;
+                        const matchHighlights = Array.isArray(explanation?.highlights) ? explanation.highlights : [];
+                        const matchDimensions = explanation?.dimensions || null;
+
+                        return (
+                          <div key={creator.id} className="overview-creator-card studio-card">
+                            {/* 1. Header: Avatar, Name, Specialization, Match Badge */}
+                            <div className="creator-card-header">
+                              <img
+                                src={creator.avatar}
+                                alt={creator.name}
+                                className="creator-avatar"
+                                onClick={() => onSelectCreator && onSelectCreator(creator.id)}
+                                style={{ cursor: onSelectCreator ? 'pointer' : 'default' }}
+                              />
+                              <div className="creator-info">
+                                <h4
+                                  className="creator-name"
+                                  onClick={() => onSelectCreator && onSelectCreator(creator.id)}
+                                  style={{ cursor: onSelectCreator ? 'pointer' : 'default' }}
+                                  title={onSelectCreator ? `View ${creator.name}'s profile` : creator.name}
+                                >
+                                  {creator.name}
+                                </h4>
+                                <span className="creator-role">{creator.specialty || creator.creativeIdentity}</span>
+                              </div>
+                              <div className="overview-match-badge" title={`Compatibility Score: ${match.score}% Fit`}>
+                                <Sparkles size={11} className="match-badge-icon" />
+                                <span>{match.score}% Fit</span>
+                              </div>
                             </div>
-                            <div className="score-pill">
-                              <Sparkles size={11} className="text-mint" />
-                              <span>{match.score}% Fit</span>
+
+                            {/* 2. Visual Portfolio Preview (Real assets only) */}
+                            {portfolioImage && (
+                              <div
+                                className="overview-portfolio-preview"
+                                onClick={() => onSelectCreator && onSelectCreator(creator.id)}
+                                style={{ cursor: onSelectCreator ? 'pointer' : 'default' }}
+                                title={projectTitle ? `Verified Work: ${projectTitle}` : 'Portfolio Preview'}
+                              >
+                                <img
+                                  src={portfolioImage}
+                                  alt={projectTitle || creator.name}
+                                  className="overview-portfolio-img"
+                                  loading="lazy"
+                                />
+                                {projectFormat && (
+                                  <span className="overview-portfolio-format-badge">{projectFormat}</span>
+                                )}
+                                {projectTitle && (
+                                  <div className="overview-portfolio-title-scrim">
+                                    <span className="overview-portfolio-title-text">{projectTitle}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* 3. Editorial Bio Summary (Readable 2-3 lines, no awkward truncation) */}
+                            <p className="overview-creator-bio">
+                              {creator.bio || creator.creativeIdentity || creator.introduction || creator.summary || 'Generative creative director specializing in AI visual production.'}
+                            </p>
+
+                            {/* 4. Verified Skill / Content Tags (Based on actual data) */}
+                            {displayTags.length > 0 && (
+                              <div className="overview-creator-tags">
+                                {displayTags.map(tag => (
+                                  <span key={tag} className="overview-creator-tag">{tag}</span>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* 5. Full Grounded Match Signal */}
+                            {(matchSignal || matchHighlights.length > 0) && (
+                              <div className="overview-match-signal-block">
+                                <div className="overview-match-signal-header">
+                                  <div className="overview-match-signal-title">
+                                    <Sparkles size={11} className="overview-match-signal-icon" />
+                                    <span>Full Match Signal</span>
+                                  </div>
+                                  {explanation?.fitLabel && (
+                                    <span className="overview-match-signal-tier">{explanation.fitLabel}</span>
+                                  )}
+                                </div>
+
+                                {matchSignal && (
+                                  <p className="overview-match-signal-summary">
+                                    “{matchSignal}”
+                                  </p>
+                                )}
+
+                                {matchHighlights.length > 0 && (
+                                  <div className="overview-match-signal-highlights">
+                                    {matchHighlights.slice(0, 2).map((item, idx) => (
+                                      <div key={idx} className="overview-match-signal-highlight-row">
+                                        <Check size={11} className="overview-match-signal-check" />
+                                        <span>{item}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {matchDimensions && (
+                                  <div className="overview-match-signal-dimensions">
+                                    {matchDimensions.creativeStyle && (
+                                      <span className="overview-match-dim-chip">
+                                        <span className="dim-chip-k">Style</span>
+                                        <span className="dim-chip-v">{matchDimensions.creativeStyle}</span>
+                                      </span>
+                                    )}
+                                    {matchDimensions.portfolioRelevance && (
+                                      <span className="overview-match-dim-chip">
+                                        <span className="dim-chip-k">Portfolio</span>
+                                        <span className="dim-chip-v">{matchDimensions.portfolioRelevance}</span>
+                                      </span>
+                                    )}
+                                    {matchDimensions.contentFormat && (
+                                      <span className="overview-match-dim-chip">
+                                        <span className="dim-chip-k">Format</span>
+                                        <span className="dim-chip-v">{matchDimensions.contentFormat}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* 6. Action Footer: Why Fit (Secondary) & Invite (Primary) */}
+                            <div className="creator-card-actions">
+                              <button
+                                type="button"
+                                className="btn btn-overview-why"
+                                onClick={() => {
+                                  setWhyModalCreator(creator);
+                                  setIsWhyModalOpen(true);
+                                }}
+                                title="Open algorithmic match compatibility breakdown"
+                              >
+                                <HelpCircle size={13} />
+                                <span>Why Fit</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-overview-invite"
+                                onClick={() => {
+                                  setInviteModalCreator(creator);
+                                  setIsInviteModalOpen(true);
+                                }}
+                                title={`Send campaign invitation to ${creator.name}`}
+                              >
+                                <Send size={13} />
+                                <span>Invite</span>
+                              </button>
                             </div>
                           </div>
-
-                          <p className="creator-bio-preview">
-                            {creator.bio || creator.introduction || creator.summary || creator.tagline || 'No introduction provided yet.'}
-                          </p>
-
-                          <p className="creator-match-reason">
-                            “{explanation.topReason || explanation.headline}”
-                          </p>
-
-                          <div className="creator-card-actions">
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => {
-                                setWhyModalCreator(creator);
-                                setIsWhyModalOpen(true);
-                              }}
-                            >
-                              <HelpCircle size={13} />
-                              <span>Why Fit</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => {
-                                setInviteModalCreator(creator);
-                                setIsInviteModalOpen(true);
-                              }}
-                            >
-                              <Send size={13} />
-                              <span>Invite</span>
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1730,43 +1920,64 @@ export default function BrandWorkspaceView({
               </div>
             ) : (
               <div className="invitations-list-stack">
-                {filteredInvitations.map(inv => (
-                  <div key={inv.id} className="invitation-card studio-card">
-                    <div className="inv-card-left">
-                      <img src={inv.creatorAvatar || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=120&q=80"} alt={inv.creatorName} className="inv-avatar-large" />
-                      <div className="inv-info-block">
-                        <div className="inv-header-meta">
-                          <h3 className="inv-creator-title">{inv.creatorName}</h3>
-                          <span className={`status-pill ${inv.status}`}>{inv.status}</span>
-                        </div>
-                        <span className="inv-campaign-link">Campaign: <strong>{inv.campaignTitle || inv.title}</strong></span>
-                        <p className="inv-summary-quote">“{inv.summary}”</p>
+                {filteredInvitations.map(inv => {
+                  const matchedCamp = (campaigns || []).find(c => c.id === (inv.campaignId || inv.campaign_id));
+                  const title = inv.campaignTitle || inv.title || matchedCamp?.title || 'Creative Campaign';
+                  const budget = formatBudgetDisplay(inv.budget || matchedCamp?.budget);
+                  const timeline = inv.timeline || matchedCamp?.timeline || 'Standard Timeline';
+                  const deadline = inv.deadline || matchedCamp?.deadline;
+                  const deliverables = inv.deliverables || (Array.isArray(matchedCamp?.deliverables) ? matchedCamp.deliverables.join(' • ') : matchedCamp?.deliverables) || 'Campaign Deliverables';
+                  const summary = inv.summary || inv.message || `Direct invitation sent for "${title}".`;
 
-                        <div className="inv-terms-row">
-                          <span><strong>Budget:</strong> {inv.budget}</span>
-                          <span>•</span>
-                          <span><strong>Timeline:</strong> {inv.timeline}</span>
-                          <span>•</span>
-                          <span><strong>Deliverables:</strong> {inv.deliverables}</span>
+                  return (
+                    <div key={inv.id} className="invitation-card studio-card">
+                      <div className="inv-card-left">
+                        <BrandCreatorAvatarWithFallback
+                          avatarUrl={inv.creatorAvatar}
+                          name={inv.creatorName}
+                          size={52}
+                          className="inv-avatar-large"
+                        />
+                        <div className="inv-info-block">
+                          <div className="inv-header-meta">
+                            <h3 className="inv-creator-title">{inv.creatorName || 'Invited Creator'}</h3>
+                            <span className={`status-pill ${inv.status}`}>{inv.status}</span>
+                          </div>
+                          <span className="inv-campaign-link">Campaign: <strong>{title}</strong></span>
+                          {summary && <p className="inv-summary-quote">“{summary}”</p>}
+
+                          <div className="inv-terms-row">
+                            <span className="inv-term-budget"><strong>Budget:</strong> {budget}</span>
+                            <span>•</span>
+                            <span><strong>Timeline:</strong> {timeline}</span>
+                            {deadline && (
+                              <>
+                                <span>•</span>
+                                <span><strong>Deadline:</strong> {deadline}</span>
+                              </>
+                            )}
+                            <span>•</span>
+                            <span><strong>Deliverables:</strong> {typeof deliverables === 'string' ? deliverables : deliverables.join(' • ')}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="inv-card-actions">
-                      <span className="inv-time-text">{inv.createdAt}</span>
-                      {inv.status === 'accepted' && (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={() => setActiveTab('collaborations')}
-                        >
-                          <span>Open Project</span>
-                          <ArrowRight size={14} />
-                        </button>
-                      )}
+                      <div className="inv-card-actions">
+                        <span className="inv-time-text">{inv.createdAt || 'Recently'}</span>
+                        {inv.status === 'accepted' && (
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setActiveTab('collaborations')}
+                          >
+                            <span>Open Project</span>
+                            <ArrowRight size={14} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1993,17 +2204,20 @@ export default function BrandWorkspaceView({
             </div>
           ) : (
           <div className="studio-messages-content fade-in">
-            <div className="messages-layout-grid studio-card">
-              {/* Thread list */}
-              <div className="messages-sidebar">
-                <div className="messages-sidebar-header">
-                  <h3>Direct Threads</h3>
-                </div>
-                <div className="messages-threads-list">
-                  {connections.length === 0 ? (
-                    <div className="empty-threads-msg">No conversations opened yet.</div>
-                  ) : (
-                    connections.map(conn => (
+            {connections.length === 0 ? (
+              <DirectMessagesEmptyState
+                role="brand"
+                onExplore={handleNavigateToDiscover}
+              />
+            ) : (
+              <div className="messages-layout-grid studio-card">
+                {/* Thread list */}
+                <div className="messages-sidebar">
+                  <div className="messages-sidebar-header">
+                    <h3>Direct Threads</h3>
+                  </div>
+                  <div className="messages-threads-list">
+                    {connections.map(conn => (
                       <div
                         key={conn.id}
                         className={`thread-item ${conn.id === selectedConnectionId ? 'active' : ''}`}
@@ -2015,80 +2229,88 @@ export default function BrandWorkspaceView({
                           <span className="thread-camp">{conn.campaignTitle}</span>
                         </div>
                       </div>
-                    ))
+                    ))}
+                  </div>
+                </div>
+
+                {/* Chat pane */}
+                <div className="messages-chat-pane">
+                  {activeConnection ? (
+                    <>
+                      <div className="chat-pane-header">
+                        <div className="chat-partner-info">
+                          <img src={activeConnection.creatorAvatar} alt={activeConnection.creatorName} className="chat-header-avatar" />
+                          <div>
+                            <h4>{activeConnection.creatorName}</h4>
+                            <span>{activeConnection.campaignTitle}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="chat-messages-transcript">
+                        {deduplicateMessages(activeConnection.messages || []).length === 0 ? (
+                          <DirectMessagesEmptyState
+                            type="empty-thread"
+                            partnerName={activeConnection.creatorName}
+                            role="brand"
+                          />
+                        ) : (
+                          deduplicateMessages(activeConnection.messages || []).map(msg => (
+                            <div key={msg.id} className={`chat-bubble-row ${msg.sender === 'brand' ? 'from-me' : 'from-them'}`}>
+                              <div className="chat-bubble">
+                                <span className="bubble-author">{msg.senderName}</span>
+                                <p className="bubble-text">{msg.text}</p>
+                                <span className="bubble-time">{msg.timestamp}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {sendMessageError && (
+                        <div style={{ padding: '8px 14px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', fontSize: '0.85rem', borderRadius: '6px', margin: '0 16px 8px' }}>
+                          {sendMessageError}
+                        </div>
+                      )}
+
+                      <form onSubmit={handleSendMessageSubmit} className="chat-input-bar">
+                        <textarea
+                          placeholder="Write a message to creative partner… (Enter to send, Shift+Enter for newline)"
+                          value={chatInputText}
+                          onChange={(e) => {
+                            setChatInputText(e.target.value);
+                            if (sendMessageError) setSendMessageError(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessageSubmit(e);
+                            }
+                          }}
+                          disabled={isSendingMessage}
+                          rows={1}
+                          className="chat-text-input"
+                          style={{ resize: 'none', minHeight: '38px', padding: '8px 12px', fontFamily: 'inherit' }}
+                        />
+                        <button
+                          type="submit"
+                          className="btn btn-primary btn-sm"
+                          disabled={!chatInputText.trim() || isSendingMessage}
+                        >
+                          <Send size={14} />
+                          <span>{isSendingMessage ? 'Sending...' : 'Send'}</span>
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <DirectMessagesEmptyState
+                      type="no-selection"
+                      role="brand"
+                    />
                   )}
                 </div>
               </div>
-
-              {/* Chat pane */}
-              <div className="messages-chat-pane">
-                {activeConnection ? (
-                  <>
-                    <div className="chat-pane-header">
-                      <div className="chat-partner-info">
-                        <img src={activeConnection.creatorAvatar} alt={activeConnection.creatorName} className="chat-header-avatar" />
-                        <div>
-                          <h4>{activeConnection.creatorName}</h4>
-                          <span>{activeConnection.campaignTitle}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="chat-messages-transcript">
-                      {deduplicateMessages(activeConnection.messages || []).map(msg => (
-                        <div key={msg.id} className={`chat-bubble-row ${msg.sender === 'brand' ? 'from-me' : 'from-them'}`}>
-                          <div className="chat-bubble">
-                            <span className="bubble-author">{msg.senderName}</span>
-                            <p className="bubble-text">{msg.text}</p>
-                            <span className="bubble-time">{msg.timestamp}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {sendMessageError && (
-                      <div style={{ padding: '8px 14px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', fontSize: '0.85rem', borderRadius: '6px', margin: '0 16px 8px' }}>
-                        {sendMessageError}
-                      </div>
-                    )}
-
-                    <form onSubmit={handleSendMessageSubmit} className="chat-input-bar">
-                      <textarea
-                        placeholder="Write a message to creative partner… (Enter to send, Shift+Enter for newline)"
-                        value={chatInputText}
-                        onChange={(e) => {
-                          setChatInputText(e.target.value);
-                          if (sendMessageError) setSendMessageError(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessageSubmit(e);
-                          }
-                        }}
-                        disabled={isSendingMessage}
-                        rows={1}
-                        className="chat-text-input"
-                        style={{ resize: 'none', minHeight: '38px', padding: '8px 12px', fontFamily: 'inherit' }}
-                      />
-                      <button
-                        type="submit"
-                        className="btn btn-primary btn-sm"
-                        disabled={!chatInputText.trim() || isSendingMessage}
-                      >
-                        <Send size={14} />
-                        <span>{isSendingMessage ? 'Sending...' : 'Send'}</span>
-                      </button>
-                    </form>
-                  </>
-                ) : (
-                  <div className="no-chat-selected text-center">
-                    <MessageSquare size={36} className="text-tertiary" />
-                    <p>Select a creator thread on the left to start messaging.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
           )
         )}
