@@ -3,6 +3,7 @@
 // Minimal, elevated, typography-first header supporting both authenticated users & guests
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Menu, X, ArrowRight, LogIn, LogOut, ChevronRight, Sparkles } from 'lucide-react';
 
 export default function Header({ 
@@ -31,6 +32,19 @@ export default function Header({
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Prevent background scrolling when mobile menu drawer is open
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMenuOpen]);
 
   const handleLinkClick = (action) => {
     setMobileMenuOpen(false);
@@ -281,12 +295,14 @@ export default function Header({
             </div>
           )}
 
-          {/* Mobile Hamburger Button */}
+          {/* Mobile/Tablet Hamburger Button */}
           <button
             type="button"
             className="mobile-menu-btn"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            onClick={() => setMobileMenuOpen(prev => !prev)}
             aria-label={mobileMenuOpen ? 'Close Menu' : 'Open Menu'}
+            aria-expanded={mobileMenuOpen}
+            id="header-mobile-menu-toggle"
           >
             {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -294,9 +310,9 @@ export default function Header({
 
       </div>
 
-      {/* Mobile Drawer */}
-      {mobileMenuOpen && (
-        <>
+      {/* Navigation Drawer rendered via Portal directly to body */}
+      {mobileMenuOpen && typeof document !== 'undefined' && createPortal(
+        <div className="mobile-drawer-portal-wrapper">
           <div 
             className="mobile-drawer-overlay"
             onClick={() => setMobileMenuOpen(false)}
@@ -404,7 +420,8 @@ export default function Header({
               )}
             </div>
           </div>
-        </>
+        </div>,
+        document.body
       )}
     </header>
   );
