@@ -32,6 +32,25 @@ export default function Header({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Lock body scroll when mobile menu is open & handle Escape key
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          setMobileMenuOpen(false);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    } else {
+      document.body.style.overflow = '';
+    }
+  }, [mobileMenuOpen]);
+
   const handleLinkClick = (action) => {
     setMobileMenuOpen(false);
     if (typeof action === 'function') {
@@ -223,7 +242,7 @@ export default function Header({
               {/* Workspace Action Button */}
               <button 
                 type="button" 
-                className="btn btn-primary btn-sm alloy-nav-btn"
+                className="btn btn-primary btn-sm alloy-nav-btn header-workspace-btn"
                 onClick={handleGoToWorkspace}
                 aria-label="Open Workspace"
                 id="header-workspace-btn"
@@ -236,7 +255,7 @@ export default function Header({
               <button
                 type="button"
                 id="header-logout-btn"
-                className="btn-link-login"
+                className="btn-link-login header-logout-btn"
                 onClick={onLogout}
                 aria-label="Log Out"
                 title="Log Out"
@@ -270,7 +289,7 @@ export default function Header({
               
               <button 
                 type="button" 
-                className="btn btn-primary btn-sm alloy-nav-btn"
+                className="btn btn-primary btn-sm alloy-nav-btn header-get-started-btn"
                 onClick={onOpenRoleSelect}
                 aria-label="Get started"
                 id="header-get-started-btn"
@@ -285,8 +304,10 @@ export default function Header({
           <button
             type="button"
             className="mobile-menu-btn"
+            id="mobile-nav-toggle-btn"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label={mobileMenuOpen ? 'Close Menu' : 'Open Menu'}
+            aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -328,6 +349,35 @@ export default function Header({
                 <X size={20} />
               </button>
             </div>
+
+            {/* Mobile Drawer User Identity Card */}
+            {currentUser && (
+              <div 
+                className="mobile-drawer-user-card"
+                onClick={() => handleLinkClick(handleGoToWorkspace)}
+                role="button"
+                tabIndex={0}
+              >
+                {avatarUrl ? (
+                  <img 
+                    src={avatarUrl} 
+                    alt={displayName} 
+                    className="mobile-drawer-avatar"
+                  />
+                ) : (
+                  <div className="mobile-drawer-avatar-fallback">
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="mobile-drawer-user-info">
+                  <span className="mobile-drawer-user-name">{displayName}</span>
+                  <span className="mobile-drawer-user-role">
+                    {activeRole === 'creator' ? 'Creator Studio' : activeRole === 'brand' ? 'Brand Studio' : 'Workspace'}
+                  </span>
+                </div>
+                <ChevronRight size={16} className="mobile-drawer-user-chevron" />
+              </div>
+            )}
 
             <ul className="mobile-nav-links">
               <li onClick={() => handleLinkClick(() => onNavigate('discover'))}>
