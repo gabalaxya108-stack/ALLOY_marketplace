@@ -20,11 +20,11 @@ export default function handler(req, res) {
   // Normalize req.url for Vercel serverless environment
   try {
     const parsedUrl = new URL(req.url, 'http://localhost');
-    const forwardedPath = req.headers['x-matched-path'] || 
-                          req.headers['x-vercel-original-url'] || 
-                          parsedUrl.searchParams.get('__path');
+    const forwardedPath = parsedUrl.searchParams.get('__path') ||
+                          req.headers['x-matched-path'] || 
+                          req.headers['x-vercel-original-url'];
 
-    if (forwardedPath && (!req.url.startsWith('/api/') || req.url.startsWith('/api/index.js'))) {
+    if (forwardedPath && forwardedPath.startsWith('/api')) {
       parsedUrl.searchParams.delete('__path');
       const search = parsedUrl.searchParams.toString();
       req.url = forwardedPath + (search ? `?${search}` : '');
