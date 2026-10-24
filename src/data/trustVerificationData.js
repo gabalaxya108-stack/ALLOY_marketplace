@@ -229,13 +229,13 @@ export function getCreatorTrustBadges(creator = {}) {
     : (trustData.email?.status || VERIFICATION_STATUSES.NOT_SUBMITTED);
 
   // 2. Identity Status
-  const identityStatus = trustData.identity?.status === 'verified'
+  const identityStatus = (trustData.identity?.status === 'verified' || creator.identity_verified || creator.is_verified)
     ? VERIFICATION_STATUSES.VERIFIED
     : (trustData.identity?.status || VERIFICATION_STATUSES.NOT_SUBMITTED);
 
   // 3. Tool Claim Status
-  const hasAuditedTools = (trustData.toolDeclarations || []).some(td => td.status === 'verified' || td.status === 'reviewed');
-  const hasPendingTools = (trustData.toolDeclarations || []).some(td => td.status === 'pending_review' || td.status === 'submitted' || td.status === 'under_review');
+  const hasAuditedTools = (trustData.toolDeclarations || []).some(td => td.status === 'verified' || td.status === 'reviewed') || trustData.ai_tools?.status === 'verified';
+  const hasPendingTools = (trustData.toolDeclarations || []).some(td => td.status === 'pending_review' || td.status === 'submitted' || td.status === 'under_review') || trustData.ai_tools?.status === 'pending_review';
   const toolStatus = hasAuditedTools 
     ? VERIFICATION_STATUSES.VERIFIED 
     : (hasPendingTools ? VERIFICATION_STATUSES.PENDING_REVIEW : ((trustData.toolDeclarations || []).length > 0 ? VERIFICATION_STATUSES.SELF_DECLARED : VERIFICATION_STATUSES.NOT_SUBMITTED));
@@ -246,14 +246,14 @@ export function getCreatorTrustBadges(creator = {}) {
     : (trustData.workflowVerification?.status || VERIFICATION_STATUSES.NOT_SUBMITTED);
 
   // 5. Portfolio Evidence Status
-  const hasAuditedEvidence = (trustData.portfolioEvidence || []).some(pe => pe.status === 'verified' || pe.status === 'reviewed');
-  const hasPendingEvidence = (trustData.portfolioEvidence || []).some(pe => pe.status === 'pending_review' || pe.status === 'submitted' || pe.status === 'under_review');
+  const hasAuditedEvidence = (trustData.portfolioEvidence || []).some(pe => pe.status === 'verified' || pe.status === 'reviewed') || trustData.portfolio?.status === 'verified';
+  const hasPendingEvidence = (trustData.portfolioEvidence || []).some(pe => pe.status === 'pending_review' || pe.status === 'submitted' || pe.status === 'under_review') || trustData.portfolio?.status === 'pending_review';
   const portfolioStatus = hasAuditedEvidence 
     ? VERIFICATION_STATUSES.VERIFIED 
     : (hasPendingEvidence ? VERIFICATION_STATUSES.PENDING_REVIEW : ((creator.projects || []).length > 0 ? VERIFICATION_STATUSES.SELF_DECLARED : VERIFICATION_STATUSES.NOT_SUBMITTED));
 
   // 6. Commercial Rights Status
-  const licensingStatus = trustData.licensing?.status === 'verified' || trustData.licensing?.status === 'reviewed'
+  const licensingStatus = trustData.licensing?.status === 'verified' || trustData.licensing?.status === 'reviewed' || creator.commercial_licensing_verified || creator.commercialLicensingVerified || trustData.commercial_rights?.status === 'verified'
     ? VERIFICATION_STATUSES.VERIFIED
     : (trustData.licensing?.modelRightsDeclaration ? VERIFICATION_STATUSES.SELF_DECLARED : VERIFICATION_STATUSES.NOT_SUBMITTED);
 

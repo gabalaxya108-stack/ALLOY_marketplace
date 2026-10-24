@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 import './admin.css';
+import './trustOrbit.css';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {

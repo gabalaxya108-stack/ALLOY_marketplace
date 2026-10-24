@@ -5,6 +5,8 @@ import { createAdminMiddleware } from './server/adminMiddleware.js';
 import { createPaymentMiddleware } from './server/paymentMiddleware.js';
 import { createDbMiddleware } from './server/dbMiddleware.js';
 import { createApplicationMiddleware } from './server/applicationMiddleware.js';
+import { createCreatorDnaMiddleware } from './server/creatorDnaMiddleware.js';
+import { createPortfolioMediaMiddleware } from './server/portfolioMediaMiddleware.js';
 
 export default defineConfig(({ mode }) => {
   // Load environment variables on the server side (including non-VITE_ keys)
@@ -77,18 +79,22 @@ export default defineConfig(({ mode }) => {
       {
         name: 'alloy-api-server',
         configureServer(server) {
+          server.middlewares.use(createPortfolioMediaMiddleware());
           server.middlewares.use(createDbMiddleware());
           server.middlewares.use(createGroqMiddleware());
           server.middlewares.use(createAdminMiddleware());
           server.middlewares.use(createPaymentMiddleware());
           server.middlewares.use(createApplicationMiddleware());
+          server.middlewares.use(createCreatorDnaMiddleware());
         },
         configurePreviewServer(server) {
+          server.middlewares.use(createPortfolioMediaMiddleware());
           server.middlewares.use(createDbMiddleware());
           server.middlewares.use(createGroqMiddleware());
           server.middlewares.use(createAdminMiddleware());
           server.middlewares.use(createPaymentMiddleware());
           server.middlewares.use(createApplicationMiddleware());
+          server.middlewares.use(createCreatorDnaMiddleware());
         }
       }
     ],

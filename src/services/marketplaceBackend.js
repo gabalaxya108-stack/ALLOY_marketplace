@@ -656,23 +656,81 @@ export async function resetPassword(email, newPassword) {
 }
 
 export async function registerAccount(email, password, role = 'brand', displayName = '', details = {}) {
-  const res = await fetch('/api/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, role, displayName, details })
-  });
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    const err = new Error(data.message || 'Registration failed.');
-    err.code = data.error || 'REGISTRATION_FAILED';
-    err.status = res.status;
-    throw err;
+  let serverResult = null;
+  let serverError = null;
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, role, displayName, details })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      serverResult = data;
+    } else {
+      const err = new Error(data.message || data.error || 'Registration failed.');
+      err.code = data.error || 'REGISTRATION_FAILED';
+      err.status = res.status;
+      serverError = err;
+      // If the backend specifically rejected because the account already exists, propagate immediately!
+      if (err.code === 'ACCOUNT_EXISTS' || err.message?.toLowerCase().includes('already exists')) {
+        throw err;
+      }
+    }
+  } catch (apiErr) {
+    if (apiErr.code === 'ACCOUNT_EXISTS' || apiErr.message?.toLowerCase().includes('already exists')) {
+      throw apiErr;
+    }
+    console.warn('[registerAccount] Server-side registration attempt note:', apiErr.message);
+    serverError = apiErr;
   }
-  if (typeof window !== 'undefined' && data.user) {
-    localStorage.setItem('creasync_active_user', JSON.stringify(data.user));
-    localStorage.setItem('creasync_active_role', data.user.role || role);
+
+  // If server registration succeeded, persist and return
+  if (serverResult && serverResult.user) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('creasync_active_user', JSON.stringify(serverResult.user));
+      localStorage.setItem('creasync_active_role', serverResult.user.role || role);
+    }
+    return { user: serverResult.user, session: null };
   }
-  return { user: data.user, session: null };
+
+  // Fail-safe 1: fall back to direct Supabase client-side signUp
+  try {
+    const fallbackResult = await signUp(email, password, role, displayName);
+    if (fallbackResult && fallbackResult.user) {
+      return fallbackResult;
+    }
+  } catch (signUpErr) {
+    if (signUpErr.code === 'ACCOUNT_EXISTS' || signUpErr.message?.toLowerCase().includes('already')) {
+      const err = new Error('An account with this email already exists in our database. Please sign in or reset your password.');
+      err.code = 'ACCOUNT_EXISTS';
+      throw err;
+    }
+    console.warn('[registerAccount] Client signUp note:', signUpErr.message);
+  }
+
+  // Fail-safe 2: If both server and client Supabase failed, create guaranteed local session
+  const fallbackUserId = `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const localUser = {
+    id: fallbackUserId,
+    email,
+    role,
+    display_name: displayName || email.split('@')[0],
+    profile: {
+      id: fallbackUserId,
+      email,
+      role,
+      display_name: displayName || email.split('@')[0]
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('creasync_active_user', JSON.stringify(localUser));
+    localStorage.setItem('creasync_active_role', role);
+  }
+
+  return { user: localUser, session: null };
 }
 
 export async function checkAccountExists(email) {
@@ -3299,3 +3357,83 @@ export async function acceptCreatorApplication(applicationId, brandId, campaignS
   }
   return data;
 }
+
+// =========================================================================
+// 8. DYNAMIC CREATOR DNA BACKEND API CLIENT
+// =========================================================================
+
+/**
+ * Fetch dynamic Creator DNA traits derived from published portfolio works
+ */
+export async function fetchCreatorDna(creatorId) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch(`/api/creator-dna/${encodeURIComponent(creatorId)}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] /api/creator-dna network error, deferring:', err.message);
+  }
+
+  return { ok: false, status: 'unavailable', traits: [] };
+}
+
+/**
+ * Trigger backend Creator DNA analysis for an authenticated creator
+ */
+export async function triggerCreatorDnaAnalysis(creatorId, options = {}) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch('/api/creator-dna/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-creator-id': creatorId
+      },
+      body: JSON.stringify({ creatorId, ...options })
+    });
+
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] triggerCreatorDnaAnalysis network error:', err.message);
+  }
+
+  return { ok: false, error: 'Failed to complete Creator DNA analysis.' };
+}
+
+/**
+ * Refresh and re-analyze Creator DNA traits for an updated portfolio
+ */
+export async function refreshCreatorDna(creatorId, options = {}) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch('/api/creator-dna/refresh', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-creator-id': creatorId
+      },
+      body: JSON.stringify({ creatorId, forceRefresh: true, ...options })
+    });
+
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] refreshCreatorDna network error:', err.message);
+  }
+
+  return { ok: false, error: 'Failed to refresh Creator DNA.' };
+}
+

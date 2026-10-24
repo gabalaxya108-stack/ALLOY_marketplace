@@ -22,7 +22,7 @@ export function getGroqModel() {
 /**
  * Low-level server-side caller to Groq Chat Completion API
  */
-async function callGroqChat({ messages, temperature = 0.2, jsonMode = true, maxTokens = 2048 }) {
+export async function callGroqChat({ messages, temperature = 0.2, jsonMode = true, maxTokens = 2048 }) {
   if (!isGroqConfigured()) {
     throw new Error('GROQ_CONFIG_MISSING: GROQ_API_KEY environment variable is not configured.');
   }

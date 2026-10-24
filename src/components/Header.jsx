@@ -3,6 +3,7 @@
 // Minimal, elevated, typography-first header supporting both authenticated users & guests
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Menu, X, ArrowRight, LogIn, LogOut, ChevronRight, Sparkles } from 'lucide-react';
 
 export default function Header({ 
@@ -32,8 +33,9 @@ export default function Header({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Lock body scroll when mobile menu is open & handle Escape key
+  // Prevent background scrolling when mobile menu drawer is open & handle Escape key
   useEffect(() => {
+    if (typeof document === 'undefined') return;
     if (mobileMenuOpen) {
       document.body.style.overflow = 'hidden';
       const handleKeyDown = (e) => {
@@ -49,6 +51,9 @@ export default function Header({
     } else {
       document.body.style.overflow = '';
     }
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [mobileMenuOpen]);
 
   const handleLinkClick = (action) => {
@@ -300,12 +305,12 @@ export default function Header({
             </div>
           )}
 
-          {/* Mobile Hamburger Button */}
+          {/* Mobile/Tablet Hamburger Button */}
           <button
             type="button"
             className="mobile-menu-btn"
             id="mobile-nav-toggle-btn"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            onClick={() => setMobileMenuOpen(prev => !prev)}
             aria-label={mobileMenuOpen ? 'Close Menu' : 'Open Menu'}
             aria-expanded={mobileMenuOpen}
           >
@@ -315,9 +320,9 @@ export default function Header({
 
       </div>
 
-      {/* Mobile Drawer */}
-      {mobileMenuOpen && (
-        <>
+      {/* Navigation Drawer rendered via Portal directly to body */}
+      {mobileMenuOpen && typeof document !== 'undefined' && createPortal(
+        <div className="mobile-drawer-portal-wrapper">
           <div 
             className="mobile-drawer-overlay"
             onClick={() => setMobileMenuOpen(false)}
@@ -454,7 +459,8 @@ export default function Header({
               )}
             </div>
           </div>
-        </>
+        </div>,
+        document.body
       )}
     </header>
   );

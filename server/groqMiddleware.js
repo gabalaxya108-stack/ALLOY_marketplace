@@ -68,6 +68,7 @@ import {
   getVerificationClaims, 
   submitVerificationClaim, 
   reviewVerificationClaim, 
+  runClaimAiReview,
   getVerificationAuditLog 
 } from './trustService.js';
 
@@ -288,11 +289,15 @@ export function createGroqMiddleware() {
           const brandId = queryParams.get('brandId');
           const entityId = queryParams.get('entityId');
           const entityType = queryParams.get('entityType');
+          const pillar = queryParams.get('pillar') || queryParams.get('claimType');
+          const status = queryParams.get('status');
           const claims = getVerificationClaims({
             creatorId,
             brandId,
             entityId,
             entityType,
+            pillar,
+            status,
             isAdmin: isAuthorizedReviewer,
             currentUserId: queryParams.get('userId')
           });
@@ -302,23 +307,34 @@ export function createGroqMiddleware() {
         // POST /api/trust/claims (Creator or Brand submitting verification claim)
         if (url === '/api/trust/claims' && req.method === 'POST') {
           const body = await parseJsonBody(req);
-          const newClaim = submitVerificationClaim(body, reqRole);
+          const newClaim = await submitVerificationClaim(body, reqRole);
           return sendJson(res, 201, { ok: true, claim: newClaim });
         }
 
-        // POST /api/trust/review (Authorized reviewer only!)
+        // POST /api/trust/review (Authorized Super Admin reviewer only!)
         if (url === '/api/trust/review' && req.method === 'POST') {
           const body = await parseJsonBody(req);
           const { claimId, decision, notes, reviewerName } = body;
           
-          const result = reviewVerificationClaim({
+          const result = await reviewVerificationClaim({
             claimId,
             decision,
             notes,
-            reviewerName: reviewerName || 'Authorized Platform Auditor',
+            reviewerName: reviewerName || 'Super Admin Platform Auditor',
             isAuthorized: isAuthorizedReviewer
           });
           return sendJson(res, 200, { ok: true, ...result });
+        }
+
+        // POST /api/trust/ai-review (Trigger or re-run AI advisory review on claim)
+        if (url === '/api/trust/ai-review' && req.method === 'POST') {
+          const body = await parseJsonBody(req);
+          const { claimId } = body;
+          if (!claimId) {
+            return sendJson(res, 400, { ok: false, error: 'claimId is required' });
+          }
+          const result = await runClaimAiReview({ claimId });
+          return sendJson(res, 200, result);
         }
 
         // GET /api/trust/audit (Audit trail log)

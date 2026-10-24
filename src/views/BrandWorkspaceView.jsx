@@ -46,6 +46,18 @@ function formatBudgetDisplay(budget) {
   return str;
 }
 
+function formatDisplayDate(dateVal) {
+  if (!dateVal) return 'Recently';
+  try {
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return String(dateVal);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return String(dateVal);
+  }
+}
+
+
 function BrandCreatorAvatarWithFallback({ avatarUrl, name, size = 52, className = '' }) {
   const [hasError, setHasError] = useState(false);
 
@@ -1055,39 +1067,86 @@ export default function BrandWorkspaceView({
                   </div>
 
                   <div className="attention-campaigns-grid">
-                    {campaigns.filter(c => c.status === 'Draft' || c.status === 'Active').slice(0, 2).map(camp => (
-                      <div key={camp.id} className="attention-card studio-card">
-                        <div className="attention-meta">
-                          <span className={`status-pill ${camp.status.toLowerCase()}`}>{camp.status}</span>
-                          <span className="visibility-indicator">{camp.visibility === 'published' ? 'Creator Opportunity' : 'Private Draft'}</span>
-                          <h3 className="attention-title">{camp.title}</h3>
-                          <p className="attention-desc">{camp.description || 'No description provided.'}</p>
-                          <div className="attention-tags">
-                            <span>{camp.budget || 'Budget flexible'}</span>
-                            <span>•</span>
-                            <span>{camp.timeline || camp.deadline || 'Timeline flexible'}</span>
+                    {campaigns.filter(c => c.status === 'Draft' || c.status === 'Active').length === 0 ? (
+                      <div className="empty-state-card studio-card text-center" style={{ gridColumn: '1 / -1', padding: '28px 20px' }}>
+                        <CheckCircle2 size={28} className="text-forest" style={{ margin: '0 auto 8px' }} />
+                        <h4 style={{ margin: '0 0 4px', fontSize: '0.98rem', fontWeight: 600 }}>All campaigns are currently active or completed</h4>
+                        <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>No campaigns currently require immediate publishing or status changes.</p>
+                      </div>
+                    ) : (
+                      campaigns.filter(c => c.status === 'Draft' || c.status === 'Active').slice(0, 2).map(camp => (
+                        <div key={camp.id} className="attention-card studio-card">
+                          <div className="attention-meta">
+                            <div className="attention-badge-row">
+                              <span className={`status-pill ${camp.status.toLowerCase()}`}>{camp.status}</span>
+                              <span className={`visibility-pill ${camp.visibility}`}>
+                                {camp.visibility === 'published' ? 'Marketplace Live' : 'Private'}
+                              </span>
+                              {camp.fundedAmountRupees > 0 && (
+                                <span className="camp-funded-pill">
+                                  <ShieldCheck size={11} />
+                                  ₹{Number(camp.fundedAmountRupees).toLocaleString('en-IN')} Funded
+                                </span>
+                              )}
+                              <span className="badge badge-subtle" style={{ fontSize: '0.7rem' }}>
+                                {camp.objective || 'Product Launch'}
+                              </span>
+                            </div>
+                            <h3 className="attention-title">{camp.title}</h3>
+                            <p className="attention-desc">{camp.description || 'No description provided.'}</p>
+                            <div className="attention-meta-chips">
+                              <span className="meta-chip">
+                                <DollarSign size={12} className="inline-icon" />
+                                {formatBudgetDisplay(camp.budget)}
+                              </span>
+                              <span className="meta-chip">
+                                <Calendar size={12} className="inline-icon" />
+                                {camp.deadline || camp.timeline || 'Flexible'}
+                              </span>
+                              {camp.deliverables && (
+                                <span className="meta-chip">
+                                  <Layers size={12} className="inline-icon" />
+                                  {Array.isArray(camp.deliverables) ? camp.deliverables.slice(0, 2).join(' • ') : String(camp.deliverables).slice(0, 24)}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        <div className="attention-actions">
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => handleOpenDetailModal(camp)}
-                          >
-                            <span>Inspect Brief</span>
-                          </button>
-                          {camp.status === 'Draft' && (
+                          <div className="attention-actions">
                             <button
                               type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={() => handleToggleCampaignState(camp)}
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleOpenDetailModal(camp)}
+                              title="Inspect full campaign brief, requirements, and applications"
                             >
-                              <span>Publish Opportunity</span>
+                              <FileText size={13} />
+                              <span>Inspect Brief</span>
                             </button>
-                          )}
+                            {camp.status === 'Draft' && (
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleToggleCampaignState(camp)}
+                                title="Publish campaign to Creator Marketplace"
+                              >
+                                <Globe size={13} />
+                                <span>Publish</span>
+                              </button>
+                            )}
+                            {camp.status === 'Active' && onRunFilteringPipeline && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => onRunFilteringPipeline(camp)}
+                                title="Execute Creator Filtering Pipeline"
+                              >
+                                <Sparkles size={13} className="text-mint" />
+                                <span>Pipeline</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -1446,16 +1505,19 @@ export default function BrandWorkspaceView({
                         src={camp.coverImage || "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80"}
                         alt={camp.title}
                         className="camp-card-cover"
+                        loading="lazy"
                       />
+                      <div className="camp-card-cover-overlay" />
                       <div className="camp-card-badges">
-                        <span className={`status-pill ${camp.status.toLowerCase()}`}>
-                          {camp.status}
+                        <span className={`status-pill ${camp.status ? camp.status.toLowerCase() : 'draft'}`}>
+                          {camp.status || 'Draft'}
                         </span>
-                        <span className={`visibility-pill ${camp.visibility}`}>
-                          {camp.visibility === 'published' ? 'Published' : camp.visibility}
+                        <span className={`visibility-pill ${camp.visibility || 'private'}`}>
+                          {camp.visibility === 'published' ? 'Marketplace Live' : 'Private'}
                         </span>
                         {camp.fundedAmountRupees > 0 && (
-                          <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '100px', background: 'rgba(16, 185, 129, 0.9)', color: '#FFFFFF', fontWeight: 700 }}>
+                          <span className="camp-funded-pill">
+                            <ShieldCheck size={11} />
                             ₹{Number(camp.fundedAmountRupees).toLocaleString('en-IN')} Funded
                           </span>
                         )}
@@ -1465,90 +1527,139 @@ export default function BrandWorkspaceView({
                     <div className="camp-card-body">
                       <span className="camp-card-objective">{camp.objective || 'Product Launch'}</span>
                       <h3 className="camp-card-title">{camp.title}</h3>
-                      <p className="camp-card-desc">{camp.description}</p>
+                      <p className="camp-card-desc">{camp.description || 'No description provided.'}</p>
 
-                      <div className="camp-card-specs">
-                        <div className="spec-row">
-                          <span className="spec-lbl">Deliverables:</span>
-                          <span className="spec-val">
-                            {Array.isArray(camp.deliverables) ? camp.deliverables.join(' • ') : camp.deliverables}
+                      <div className="camp-card-divider" />
+
+                      <div className="camp-card-metadata-grid">
+                        {/* Deliverables: Full-width row */}
+                        <div className="camp-meta-cell camp-meta-full">
+                          <span className="camp-meta-label">
+                            <Layers size={12} className="camp-meta-icon" />
+                            Deliverables
+                          </span>
+                          <span className="camp-meta-value">
+                            {Array.isArray(camp.deliverables)
+                              ? (camp.deliverables.length > 0 ? camp.deliverables.join(' • ') : 'Not specified')
+                              : (camp.deliverables || 'Not specified')}
                           </span>
                         </div>
-                        <div className="spec-row">
-                          <span className="spec-lbl">Budget & Deadline:</span>
-                          <span className="spec-val">
-                            {camp.budget || 'Flexible'} • {camp.deadline || camp.timeline || 'Flexible'}
+
+                        {/* Budget: Column 1 */}
+                        <div className="camp-meta-cell">
+                          <span className="camp-meta-label">
+                            <DollarSign size={12} className="camp-meta-icon" />
+                            Budget
+                          </span>
+                          <span className="camp-meta-value camp-meta-budget-val">
+                            {formatBudgetDisplay(camp.budget)}
                           </span>
                         </div>
-                        <div className="spec-row">
-                          <span className="spec-lbl">Platforms:</span>
-                          <span className="spec-val">
-                            {Array.isArray(camp.platforms) ? camp.platforms.join(', ') : camp.platforms || 'Instagram'}
+
+                        {/* Deadline: Column 2 */}
+                        <div className="camp-meta-cell">
+                          <span className="camp-meta-label">
+                            <Calendar size={12} className="camp-meta-icon" />
+                            Deadline
+                          </span>
+                          <span className="camp-meta-value">
+                            {camp.deadline || camp.timeline || 'Flexible'}
+                          </span>
+                        </div>
+
+                        {/* Platforms: Full-width row */}
+                        <div className="camp-meta-cell camp-meta-full">
+                          <span className="camp-meta-label">
+                            <Globe size={12} className="camp-meta-icon" />
+                            Platforms
+                          </span>
+                          <span className="camp-meta-value">
+                            {Array.isArray(camp.platforms)
+                              ? (camp.platforms.length > 0 ? camp.platforms.join(', ') : 'Instagram')
+                              : (camp.platforms || 'Instagram')}
                           </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="camp-card-footer">
-                      <span className="camp-card-updated">Updated {camp.updatedAt || camp.createdAt}</span>
+                      <div className="camp-card-footer-top">
+                        <span className="camp-card-updated">
+                          <Clock size={11} className="camp-updated-icon" />
+                          Updated {formatDisplayDate(camp.updatedAt || camp.createdAt)}
+                        </span>
+                      </div>
 
-                      <div className="camp-card-actions">
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-xs"
-                          onClick={() => handleOpenFundCampaign(camp)}
-                          title="Fund Campaign with Razorpay (Test Mode)"
-                          style={{ color: '#EB6E4B', borderColor: 'rgba(235, 110, 75, 0.35)', background: 'rgba(235, 110, 75, 0.06)', fontWeight: 600 }}
-                          id={`fund-camp-btn-${camp.id}`}
-                        >
-                          <CreditCard size={12} />
-                          <span>Fund</span>
-                        </button>
-                        {onRunFilteringPipeline && (
+                      <div className="camp-card-actions-wrapper">
+                        {/* Primary action row: Fund & Pipeline */}
+                        <div className="camp-actions-primary-row">
                           <button
                             type="button"
-                            className="btn btn-secondary btn-xs"
-                            onClick={() => onRunFilteringPipeline(camp)}
-                            title="Execute Creator Filtering Pipeline"
+                            className="btn btn-camp-primary btn-fund-action"
+                            onClick={() => handleOpenFundCampaign(camp)}
+                            title="Fund Campaign with Razorpay"
+                            id={`fund-camp-btn-${camp.id}`}
                           >
-                            <Sparkles size={12} className="text-mint" />
-                            <span>Pipeline</span>
+                            <CreditCard size={13} />
+                            <span>Fund</span>
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-xs"
-                          onClick={() => handleOpenDetailModal(camp)}
-                          title="View Full Brief & Matches"
-                        >
-                          <Eye size={13} />
-                          <span>View</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-xs"
-                          onClick={() => handleOpenEditCampaign(camp)}
-                          title="Edit Campaign"
-                        >
-                          <Edit3 size={13} />
-                          <span>Edit</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs"
-                          onClick={() => onDuplicateCampaign && onDuplicateCampaign(camp.id)}
-                          title="Duplicate Campaign"
-                        >
-                          <Copy size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs text-danger"
-                          onClick={() => setDeletingCampaign(camp)}
-                          title="Delete Campaign"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                          {onRunFilteringPipeline && (
+                            <button
+                              type="button"
+                              className="btn btn-camp-primary btn-pipeline-action"
+                              onClick={() => onRunFilteringPipeline(camp)}
+                              title="Execute Creator Filtering Pipeline"
+                            >
+                              <Sparkles size={13} className="text-mint" />
+                              <span>Pipeline</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Secondary action row: View/Edit + Duplicate/Delete */}
+                        <div className="camp-actions-secondary-row">
+                          <div className="camp-actions-main-secondary">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-xs camp-sub-btn"
+                              onClick={() => handleOpenDetailModal(camp)}
+                              title="Inspect Campaign Brief & Proposals"
+                            >
+                              <Eye size={13} />
+                              <span>View</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-xs camp-sub-btn"
+                              onClick={() => handleOpenEditCampaign(camp)}
+                              title="Edit Campaign Brief"
+                            >
+                              <Edit3 size={13} />
+                              <span>Edit</span>
+                            </button>
+                          </div>
+
+                          <div className="camp-actions-utility-group">
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-xs camp-icon-btn"
+                              onClick={() => onDuplicateCampaign && onDuplicateCampaign(camp.id)}
+                              title="Duplicate Campaign"
+                              aria-label="Duplicate Campaign"
+                            >
+                              <Copy size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-xs camp-icon-btn text-danger"
+                              onClick={() => setDeletingCampaign(camp)}
+                              title="Delete Campaign"
+                              aria-label="Delete Campaign"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1991,92 +2102,156 @@ export default function BrandWorkspaceView({
             ======================================================== */}
         {activeTab === 'collaborations' && (
           <div className="studio-collabs-content fade-in">
-            <div className="collabs-header studio-card">
-              <h2>Active Collaborations & Project Milestones</h2>
-              <p>Track production progress, evaluate drafts, and approve master passes.</p>
+            <div className="collabs-header studio-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h2>Active Collaborations & Project Milestones</h2>
+                <p>Track production progress, evaluate drafts, and approve master passes.</p>
+              </div>
+              <span className="badge badge-subtle" style={{ fontSize: '0.8rem', padding: '6px 14px' }}>
+                {projects.length} Active Production Workspace{projects.length === 1 ? '' : 's'}
+              </span>
             </div>
 
             {projects.length === 0 ? (
-              <div className="empty-state-card studio-card text-center">
-                <Layers size={32} className="text-tertiary" />
-                <h3>No active collaborations</h3>
-                <p>When a creator accepts your invitation, their project workspace appears here automatically.</p>
+              <div className="empty-state-card studio-card text-center" style={{ padding: '48px 24px', maxWidth: '600px', margin: '0 auto' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'var(--bg-secondary, #EEE7DE)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', color: 'var(--accent-bronze, #99714F)' }}>
+                  <Layers size={28} />
+                </div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', marginBottom: '8px', color: 'var(--text-primary)' }}>
+                  No Active Collaborations in Progress
+                </h3>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '20px' }}>
+                  When creators accept your campaign invitations or when you accept creator proposals, dedicated collaboration workspaces with live milestones will appear here.
+                </p>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setActiveTab('campaigns')}>
+                    <span>Review Campaigns</span>
+                  </button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => setActiveTab('discover')}>
+                    <Compass size={14} />
+                    <span>Discover Creators</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="collabs-grid">
-                {projects.map(proj => (
-                  <div key={proj.id} className="project-collab-card studio-card">
-                    <div className="proj-header-row">
-                      <div className="proj-creator-block">
-                        <img src={proj.creatorAvatar} alt={proj.creatorName} className="proj-creator-thumb" />
-                        <div>
-                          <h3 className="proj-title">{proj.campaignTitle}</h3>
-                          <span className="proj-creator-name">Partner: {proj.creatorName}</span>
+                {projects.map(proj => {
+                  const statusLabel = proj.status === 'submitted' ? 'Needs Review' :
+                                      proj.status === 'revision-requested' ? 'In Revision' :
+                                      proj.status === 'approved' ? 'Completed' : 'In Production';
+                  const statusClass = proj.status === 'submitted' ? 'alert' :
+                                      proj.status === 'approved' ? 'active' :
+                                      proj.status === 'revision-requested' ? 'paused' : 'active';
+                  return (
+                    <div key={proj.id} className="project-collab-card studio-card">
+                      <div className="proj-header-row">
+                        <div className="proj-creator-block">
+                          <BrandCreatorAvatarWithFallback
+                            avatarUrl={proj.creatorAvatar}
+                            name={proj.creatorName}
+                            size={44}
+                            className="proj-creator-thumb"
+                          />
+                          <div>
+                            <span className="proj-creator-role">Creative Partner</span>
+                            <h4 style={{ margin: '2px 0 0', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {proj.creatorName}
+                            </h4>
+                            <span className="proj-creator-name" style={{ color: 'var(--accent-bronze)', fontSize: '0.78rem', fontWeight: 600 }}>
+                              {proj.campaignTitle}
+                            </span>
+                          </div>
+                        </div>
+                        <span className={`status-pill ${statusClass}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+
+                      <div className="proj-progress-section">
+                        <div className="progress-labels">
+                          <span className="progress-milestone-text">
+                            <strong>Milestone:</strong> {proj.milestone}
+                          </span>
+                          <span className="progress-percent">{proj.progressPercent}%</span>
+                        </div>
+                        <div className="progress-track">
+                          <div
+                            className="progress-fill"
+                            style={{
+                              width: `${proj.progressPercent}%`,
+                              background: proj.progressPercent === 100 ? '#10B981' : 'linear-gradient(90deg, #99714F 0%, #C7A47B 100%)'
+                            }}
+                          />
                         </div>
                       </div>
-                      <span className={`status-pill ${proj.status}`}>{proj.status}</span>
-                    </div>
 
-                    <div className="proj-progress-section">
-                      <div className="progress-labels">
-                        <span className="progress-milestone-text">{proj.milestone}</span>
-                        <span className="progress-percent">{proj.progressPercent}%</span>
+                      <div className="proj-meta-grid">
+                        <div className="proj-meta-item">
+                          <span className="proj-meta-lbl"><DollarSign size={11} /> Budget</span>
+                          <span className="proj-meta-val">{proj.agreedBudget}</span>
+                        </div>
+                        <div className="proj-meta-item">
+                          <span className="proj-meta-lbl"><Calendar size={11} /> Deadline</span>
+                          <span className="proj-meta-val">{proj.deadline}</span>
+                        </div>
+                        <div className="proj-meta-item">
+                          <span className="proj-meta-lbl"><Layers size={11} /> Scope</span>
+                          <span className="proj-meta-val" title={proj.deliverablesScope}>{proj.deliverablesScope}</span>
+                        </div>
                       </div>
-                      <div className="progress-track">
-                        <div className="progress-fill" style={{ width: `${proj.progressPercent}%` }} />
-                      </div>
-                    </div>
 
-                    <div className="proj-details-box">
-                      <div className="detail-item">
-                        <span className="detail-lbl">Agreed Budget:</span>
-                        <span className="detail-val">{proj.agreedBudget}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-lbl">Deadline:</span>
-                        <span className="detail-val">{proj.deadline}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-lbl">Scope:</span>
-                        <span className="detail-val">{proj.deliverablesScope}</span>
-                      </div>
-                    </div>
-
-                    {proj.latestFeedback && (
-                      <div className="proj-feedback-quote">
-                        <p>{proj.latestFeedback}</p>
-                      </div>
-                    )}
-
-                    <div className="proj-actions-footer">
-                      {proj.status === 'submitted' ? (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={() => {
-                            setReviewModalProject(proj);
-                            setIsReviewModalOpen(true);
-                          }}
-                        >
-                          <Eye size={14} />
-                          <span>Review Submission</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            setSelectedConnectionId(connections.find(c => c.creatorId === proj.creatorId)?.id || connections[0]?.id);
-                            setActiveTab('messages');
-                          }}
-                        >
-                          <MessageSquare size={14} />
-                          <span>Message Creator</span>
-                        </button>
+                      {proj.latestFeedback && (
+                        <div className="proj-feedback-callout">
+                          <p style={{ margin: 0 }}>“{proj.latestFeedback}”</p>
+                        </div>
                       )}
+
+                      <div className="proj-actions-footer" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: 'auto' }}>
+                        {proj.status === 'submitted' ? (
+                          <>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                setSelectedConnectionId(connections.find(c => c.creatorId === proj.creatorId)?.id || connections[0]?.id);
+                                setActiveTab('messages');
+                              }}
+                              title="Message creator in workspace chat"
+                            >
+                              <MessageSquare size={13} />
+                              <span>Message</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => {
+                                setReviewModalProject(proj);
+                                setIsReviewModalOpen(true);
+                              }}
+                              title="Review creative submission files and provide feedback"
+                            >
+                              <Eye size={13} />
+                              <span>Review Submission</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => {
+                              setSelectedConnectionId(connections.find(c => c.creatorId === proj.creatorId)?.id || connections[0]?.id);
+                              setActiveTab('messages');
+                            }}
+                            title="Message creator in workspace chat"
+                          >
+                            <MessageSquare size={13} />
+                            <span>Message Creator</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2089,105 +2264,157 @@ export default function BrandWorkspaceView({
           <div className="studio-deliverables-content fade-in">
             <div className="deliverables-toolbar studio-card">
               <div className="toolbar-filter-tabs">
-                {['all', 'submitted', 'revision-requested', 'approved'].map(st => (
+                {[
+                  { id: 'all', label: 'All Deliverables', count: projects.length },
+                  { id: 'submitted', label: 'Needs Review', count: projects.filter(p => p.status === 'submitted').length },
+                  { id: 'revision-requested', label: 'In Revision', count: projects.filter(p => p.status === 'revision-requested').length },
+                  { id: 'approved', label: 'Approved', count: projects.filter(p => p.status === 'approved').length }
+                ].map(tab => (
                   <button
-                    key={st}
+                    key={tab.id}
                     type="button"
-                    className={`filter-pill-btn ${deliverablesFilter === st ? 'active' : ''}`}
-                    onClick={() => setDeliverablesFilter(st)}
+                    className={`filter-pill-btn ${deliverablesFilter === tab.id ? 'active' : ''}`}
+                    onClick={() => setDeliverablesFilter(tab.id)}
                   >
-                    {st === 'all' ? 'All Deliverables' : st === 'submitted' ? 'Needs Review' : st === 'revision-requested' ? 'In Revision' : 'Approved'}
+                    <span>{tab.label}</span>
+                    <span className="badge badge-subtle" style={{ fontSize: '0.68rem', padding: '2px 6px', marginLeft: '6px' }}>
+                      {tab.count}
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
 
             {filteredDeliverables.length === 0 ? (
-              <div className="empty-state-card studio-card text-center">
-                <CheckCircle2 size={32} className="text-tertiary" />
-                <h3>No deliverables in queue</h3>
-                <p>When creators submit files or previews for review, they will appear in this dedicated evaluation queue.</p>
+              <div className="empty-state-card studio-card text-center" style={{ padding: '48px 24px', maxWidth: '600px', margin: '0 auto' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'var(--bg-secondary, #EEE7DE)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', color: 'var(--accent-bronze, #99714F)' }}>
+                  <CheckCircle2 size={28} />
+                </div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', marginBottom: '8px', color: 'var(--text-primary)' }}>
+                  {deliverablesFilter === 'all' ? 'No Deliverables in Production' :
+                   deliverablesFilter === 'submitted' ? 'No Deliverables Awaiting Review' :
+                   deliverablesFilter === 'revision-requested' ? 'No Deliverables in Revision' :
+                   'No Approved Deliverables Yet'}
+                </h3>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '20px' }}>
+                  {deliverablesFilter === 'submitted'
+                    ? 'All current creator submissions have been reviewed and addressed.'
+                    : 'When creators upload master deliverables, video reels, and still assets, they will appear here for evaluation.'}
+                </p>
+                {deliverablesFilter !== 'all' && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDeliverablesFilter('all')}>
+                    <span>Show All Deliverables</span>
+                  </button>
+                )}
               </div>
             ) : (
               <div className="deliverables-queue-stack">
-                {filteredDeliverables.map(proj => (
-                  <div key={proj.id} className="deliverable-card studio-card">
-                    <div className="deliverable-card-header">
-                      <div>
-                        <span className="deliverable-campaign">{proj.campaignTitle}</span>
-                        <h3 className="deliverable-milestone">{proj.milestone}</h3>
-                        <span className="deliverable-creator">Submitted by: {proj.creatorName}</span>
-                      </div>
-                      <span className={`status-pill ${proj.status}`}>{proj.status}</span>
-                    </div>
-
-                    {proj.submissionNotes && (
-                      <div className="submission-notes-box">
-                        <strong>Creator Notes:</strong>
-                        <p>{proj.submissionNotes}</p>
-                      </div>
-                    )}
-
-                    {/* Previews Strip */}
-                    {proj.submissionPreviews && proj.submissionPreviews.length > 0 && (
-                      <div className="submission-previews-strip">
-                        {proj.submissionPreviews.map((img, i) => (
-                          <div key={i} className="preview-thumb-wrap">
-                            <img src={img} alt={`Preview ${i + 1}`} className="preview-thumb-img" />
+                {filteredDeliverables.map(proj => {
+                  const statusLabel = proj.status === 'submitted' ? 'Needs Review' :
+                                      proj.status === 'revision-requested' ? 'In Revision' :
+                                      proj.status === 'approved' ? 'Approved & Released' : proj.status;
+                  const statusClass = proj.status === 'submitted' ? 'alert' :
+                                      proj.status === 'approved' ? 'active' : 'paused';
+                  return (
+                    <div key={proj.id} className="deliverable-card studio-card">
+                      <div className="deliverable-card-header">
+                        <div>
+                          <span className="deliverable-campaign-tag">
+                            <FileText size={11} />
+                            {proj.campaignTitle}
+                          </span>
+                          <h3 className="deliverable-milestone">{proj.milestone}</h3>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                            <BrandCreatorAvatarWithFallback
+                              avatarUrl={proj.creatorAvatar}
+                              name={proj.creatorName}
+                              size={24}
+                            />
+                            <span className="deliverable-creator" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                              Submitted by <strong>{proj.creatorName}</strong> • Target: {proj.deadline}
+                            </span>
                           </div>
-                        ))}
+                        </div>
+                        <span className={`status-pill ${statusClass}`}>{statusLabel}</span>
                       </div>
-                    )}
 
-                    {proj.submissionUrl && (
-                      <div className="master-link-row">
-                        <ExternalLink size={14} className="text-mint" />
-                        <a href={proj.submissionUrl} target="_blank" rel="noopener noreferrer" className="master-download-link">
-                          {proj.submissionUrl}
-                        </a>
-                      </div>
-                    )}
-
-                    <div className="deliverable-action-row">
-                      {proj.status === 'submitted' && (
-                        <>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => {
-                              setReviewModalProject(proj);
-                              setIsReviewModalRevisionMode(true);
-                              setIsReviewModalOpen(true);
-                            }}
-                          >
-                            <RotateCcw size={14} />
-                            <span>Request Revision</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() => {
-                              setReviewModalProject(proj);
-                              setIsReviewModalRevisionMode(false);
-                              setIsReviewModalOpen(true);
-                            }}
-                          >
-                            <CheckCircle2 size={14} />
-                            <span>Approve & Release Milestone</span>
-                          </button>
-                        </>
-                      )}
-
-                      {proj.status === 'approved' && (
-                        <div className="approved-badge-msg">
-                          <CheckCircle2 size={16} className="text-mint" />
-                          <span>All master assets approved and milestone released.</span>
+                      {proj.submissionNotes && (
+                        <div className="submission-notes-box">
+                          <strong style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--accent-bronze)', display: 'block', marginBottom: '4px' }}>
+                            Creator Notes & Context
+                          </strong>
+                          <p style={{ margin: 0 }}>{proj.submissionNotes}</p>
                         </div>
                       )}
+
+                      {/* Previews Strip */}
+                      {proj.submissionPreviews && proj.submissionPreviews.length > 0 && (
+                        <div className="submission-previews-strip">
+                          {proj.submissionPreviews.map((img, i) => (
+                            <div key={i} className="preview-thumb-wrap">
+                              <img src={img} alt={`Preview ${i + 1}`} className="preview-thumb-img" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {proj.submissionUrl && (
+                        <div className="master-link-row">
+                          <ExternalLink size={14} className="text-mint" />
+                          <a href={proj.submissionUrl} target="_blank" rel="noopener noreferrer" className="master-download-link">
+                            {proj.submissionUrl}
+                          </a>
+                        </div>
+                      )}
+
+                      <div className="deliverable-action-row">
+                        {proj.status === 'submitted' && (
+                          <>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                setReviewModalProject(proj);
+                                setIsReviewModalRevisionMode(true);
+                                setIsReviewModalOpen(true);
+                              }}
+                            >
+                              <RotateCcw size={14} />
+                              <span>Request Revision</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => {
+                                setReviewModalProject(proj);
+                                setIsReviewModalRevisionMode(false);
+                                setIsReviewModalOpen(true);
+                              }}
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>Approve & Release Milestone</span>
+                            </button>
+                          </>
+                        )}
+
+                        {proj.status === 'approved' && (
+                          <div className="approved-badge-msg">
+                            <CheckCircle2 size={16} className="text-mint" />
+                            <span>All master assets approved and milestone released.</span>
+                          </div>
+                        )}
+
+                        {proj.status === 'revision-requested' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: 'var(--accent-yellow-deep)', background: 'var(--accent-yellow-light)', padding: '6px 12px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--accent-yellow-border)' }}>
+                            <RotateCcw size={13} />
+                            <span>Revision requested. Waiting for updated creator deliverable.</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2429,13 +2656,6 @@ export default function BrandWorkspaceView({
                   </div>
                 </div>
 
-                <div className="identity-disclaimer">
-                  <ShieldAlert size={16} className="text-amber" />
-                  <p>
-                    <strong>Data Isolation Notice:</strong> In this prototype, data is strictly isolated by Brand ID and synchronized reactively across tabs. Multi-user accounts require a server authentication layer.
-                  </p>
-                </div>
-
                 <div className="settings-actions-group">
                   <button
                     type="button"
@@ -2547,42 +2767,126 @@ export default function BrandWorkspaceView({
             </div>
 
             <div className="camp-detail-body">
-              <div className="detail-section">
-                <h3>Campaign Brief & Creative Direction</h3>
-                <p>{detailCampaign.description || 'No detailed brief description provided.'}</p>
+              {/* Section 1: Campaign Objective & Focus */}
+              <div className="inspect-brief-section">
+                <div className="inspect-section-header">
+                  <Sparkles size={15} style={{ color: 'var(--accent-bronze)' }} />
+                  <span className="inspect-section-kicker">01 • Campaign Objective & Focus</span>
+                </div>
+                <div className="inspect-overview-grid">
+                  <div className="inspect-meta-box">
+                    <span className="inspect-meta-lbl">Primary Objective</span>
+                    <strong className="inspect-meta-val">{detailCampaign.objective || 'Product Launch'}</strong>
+                  </div>
+                  <div className="inspect-meta-box">
+                    <span className="inspect-meta-lbl">Industry Category</span>
+                    <strong className="inspect-meta-val">{detailCampaign.industry || 'Creative Direction'}</strong>
+                  </div>
+                  {detailCampaign.productOrService && (
+                    <div className="inspect-meta-box">
+                      <span className="inspect-meta-lbl">Product / Service</span>
+                      <strong className="inspect-meta-val">{detailCampaign.productOrService}</strong>
+                    </div>
+                  )}
+                  {detailCampaign.targetAudience && (
+                    <div className="inspect-meta-box">
+                      <span className="inspect-meta-lbl">Target Audience</span>
+                      <strong className="inspect-meta-val">{detailCampaign.targetAudience}</strong>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="detail-grid-specs">
-                <div className="spec-box">
-                  <span className="spec-lbl">Deliverables</span>
-                  <span className="spec-val">
-                    {Array.isArray(detailCampaign.deliverables) ? detailCampaign.deliverables.join(', ') : detailCampaign.deliverables}
-                  </span>
+              {/* Section 2: Creative Direction & Tone */}
+              <div className="inspect-brief-section">
+                <div className="inspect-section-header">
+                  <Film size={15} style={{ color: 'var(--accent-bronze)' }} />
+                  <span className="inspect-section-kicker">02 • Creative Direction & Narrative</span>
                 </div>
-                <div className="spec-box">
-                  <span className="spec-lbl">Budget</span>
-                  <span className="spec-val">{detailCampaign.budget || 'Flexible'}</span>
+                <div className="inspect-creative-box">
+                  <div className="inspect-tags-row">
+                    {detailCampaign.creativeStyle && (
+                      <span className="badge badge-subtle">
+                        <strong>Style:</strong> {detailCampaign.creativeStyle}
+                      </span>
+                    )}
+                    {detailCampaign.toneOfVoice && (
+                      <span className="badge badge-subtle">
+                        <strong>Tone:</strong> {detailCampaign.toneOfVoice}
+                      </span>
+                    )}
+                  </div>
+                  <p className="inspect-desc-text">
+                    {detailCampaign.description || 'No detailed brief description provided.'}
+                  </p>
                 </div>
-                <div className="spec-box">
-                  <span className="spec-lbl">Deadline</span>
-                  <span className="spec-val">
-                    {detailCampaign.isOpenEnded ? 'Open-ended' : (detailCampaign.deadline || detailCampaign.timeline || 'Flexible')}
-                  </span>
+              </div>
+
+              {/* Section 3: Deliverables & Channels */}
+              <div className="inspect-brief-section">
+                <div className="inspect-section-header">
+                  <Layers size={15} style={{ color: 'var(--accent-bronze)' }} />
+                  <span className="inspect-section-kicker">03 • Deliverables & Platforms</span>
                 </div>
-                <div className="spec-box">
-                  <span className="spec-lbl">Slots Remaining</span>
-                  <span className="spec-val">
-                    {detailCampaign.remainingSlots !== undefined ? detailCampaign.remainingSlots : Math.max(0, (detailCampaign.creatorSlots || 1) - (detailCampaign.acceptedApplicationsCount || 0))}
-                  </span>
+                <div className="inspect-deliverables-wrap">
+                  <div className="inspect-deliverables-list">
+                    {Array.isArray(detailCampaign.deliverables) ? (
+                      detailCampaign.deliverables.map((item, idx) => (
+                        <div key={idx} className="inspect-deliverable-item">
+                          <CheckCircle2 size={14} className="text-forest" style={{ flexShrink: 0 }} />
+                          <span>{item}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="inspect-deliverable-item">
+                        <CheckCircle2 size={14} className="text-forest" style={{ flexShrink: 0 }} />
+                        <span>{detailCampaign.deliverables || 'Full Creative Deliverable Package'}</span>
+                      </div>
+                    )}
+                  </div>
+                  {detailCampaign.platforms && (
+                    <div className="inspect-platforms-row">
+                      <span className="spec-lbl" style={{ color: 'var(--text-tertiary)', fontWeight: 600 }}>Target Channels:</span>
+                      <span className="spec-val" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {Array.isArray(detailCampaign.platforms) ? detailCampaign.platforms.join(', ') : detailCampaign.platforms}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                {detailCampaign.fundedAmountRupees > 0 && (
-                  <div className="spec-box" style={{ borderColor: 'rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.08)' }}>
-                    <span className="spec-lbl" style={{ color: '#059669', fontWeight: 700 }}>Total Funded (Test Mode)</span>
-                    <span className="spec-val" style={{ color: '#059669', fontWeight: 700 }}>
-                      ₹{Number(detailCampaign.fundedAmountRupees).toLocaleString('en-IN')} INR
+              </div>
+
+              {/* Section 4: Budget, Timeline & Capacity */}
+              <div className="inspect-brief-section">
+                <div className="inspect-section-header">
+                  <DollarSign size={15} style={{ color: 'var(--accent-bronze)' }} />
+                  <span className="inspect-section-kicker">04 • Budget, Timeline & Escrow</span>
+                </div>
+                <div className="detail-grid-specs" style={{ margin: 0 }}>
+                  <div className="spec-box">
+                    <span className="spec-lbl">Allocated Budget</span>
+                    <span className="spec-val">{detailCampaign.budget || 'Flexible'}</span>
+                  </div>
+                  <div className="spec-box">
+                    <span className="spec-lbl">Production Deadline</span>
+                    <span className="spec-val">
+                      {detailCampaign.isOpenEnded ? 'Open-ended' : (detailCampaign.deadline || detailCampaign.timeline || 'Flexible')}
                     </span>
                   </div>
-                )}
+                  <div className="spec-box">
+                    <span className="spec-lbl">Creator Capacity</span>
+                    <span className="spec-val">
+                      {detailCampaign.remainingSlots !== undefined ? detailCampaign.remainingSlots : Math.max(0, (detailCampaign.creatorSlots || 1) - (detailCampaign.acceptedApplicationsCount || 0))} open of {detailCampaign.creatorSlots || 1} slots
+                    </span>
+                  </div>
+                  {detailCampaign.fundedAmountRupees > 0 && (
+                    <div className="spec-box" style={{ borderColor: 'rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.08)' }}>
+                      <span className="spec-lbl" style={{ color: '#059669', fontWeight: 700 }}>Total Funded Escrow</span>
+                      <span className="spec-val" style={{ color: '#059669', fontWeight: 700 }}>
+                        ₹{Number(detailCampaign.fundedAmountRupees).toLocaleString('en-IN')} INR
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* CREATOR APPLICATIONS & PROPOSALS SECTION */}
@@ -2884,7 +3188,7 @@ export default function BrandWorkspaceView({
                   id="fund-campaign-detail-action-btn"
                 >
                   <CreditCard size={14} />
-                  <span>Fund Campaign (Test Mode)</span>
+                  <span>Fund Campaign</span>
                 </button>
                 {onRunFilteringPipeline && (
                   <button
