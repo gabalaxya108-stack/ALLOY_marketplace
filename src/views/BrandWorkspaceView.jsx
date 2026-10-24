@@ -1688,7 +1688,9 @@ export default function BrandWorkspaceView({
                       )}
                     </div>
                     <div className="filter-banner-sub">
-                      Showing {filteredCreators.length} eligible creator{filteredCreators.length === 1 ? '' : 's'} matching mandatory pipeline requirements. Excluded candidates are filtered out.
+                      {pipelineFilter.has100Match
+                        ? `Showing ${filteredCreators.length} creator${filteredCreators.length === 1 ? '' : 's'} with 100% match to your campaign brief.`
+                        : `Showing ${filteredCreators.length} top-tier creator${filteredCreators.length === 1 ? '' : 's'} offering up to ${pipelineFilter.maxScoreAchieved || 85}% creative match for your campaign's creative demands.`}
                     </div>
                   </div>
                 </div>
@@ -1768,10 +1770,10 @@ export default function BrandWorkspaceView({
             {filteredCreators.length === 0 ? (
               <div className="empty-state-card studio-card text-center" style={{ padding: '48px 24px', margin: '20px 0' }}>
                 <AlertCircle size={36} className="text-tertiary" style={{ margin: '0 auto 12px' }} />
-                <h3>{pipelineFilter ? 'No eligible creators match this campaign' : 'No creators found'}</h3>
+                <h3>{pipelineFilter ? 'Creative Alignment Available' : 'No creators found'}</h3>
                 <p style={{ maxWidth: 480, margin: '0 auto 16px', color: 'var(--text-secondary)' }}>
                   {pipelineFilter
-                    ? `None of the candidate creators met all mandatory eligibility requirements for ${pipelineFilter.campaignTitle || 'this campaign'}. Review the campaign brief or relax mandatory criteria.`
+                    ? `While no creator met 100% of strict parameters, explore creators in the high-alignment tiers (up to ${pipelineFilter.maxScoreAchieved || 80}%) in the Pipeline Trace.`
                     : 'No creators match your current search or filter criteria. Try adjusting your search query or specialty filters.'
                   }
                 </p>

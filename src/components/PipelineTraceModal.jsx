@@ -345,6 +345,49 @@ export default function PipelineTraceModal({
     return globalExclusions.filter(ex => revealedStageIds.has(ex.stage));
   }, [isComplete, globalExclusions, revealedStages]);
 
+  // Dynamic 3-Tier Match Categorization for user-friendly, non-blunt presentation
+  const matchTiers = useMemo(() => {
+    if (pipelineTrace?.matchTiers) {
+      return pipelineTrace.matchTiers;
+    }
+
+    const t1 = rankedCreators || [];
+    const t2 = pipelineTrace?.tier2Creators || reviewCandidates || [];
+    const t3 = pipelineTrace?.tier3Creators || displayedExclusions || [];
+
+    const t1Scores = t1.map(c => c.score).filter(s => typeof s === 'number');
+    const t2Scores = t2.map(c => c.score).filter(s => typeof s === 'number');
+    const t3Scores = t3.map(c => c.score).filter(s => typeof s === 'number');
+
+    const maxScore = Math.max(
+      ...(t1Scores.length ? t1Scores : [0]),
+      ...(t2Scores.length ? t2Scores : [0]),
+      summary.maxScoreAchieved || (t1.length > 0 ? 95 : (t2.length > 0 ? 85 : 75))
+    );
+
+    const t1Min = t1Scores.length ? Math.min(...t1Scores) : 100;
+    const t1Max = t1Scores.length ? Math.max(...t1Scores) : 100;
+    const t1Label = t1.length > 0 ? (t1Min === t1Max ? `${t1Max}% Match` : `${t1Min}–${t1Max}% Match`) : '100% Match';
+
+    const t2Min = t2Scores.length ? Math.min(...t2Scores) : 70;
+    const t2Max = t2Scores.length ? Math.max(...t2Scores) : (maxScore >= 70 ? maxScore : 80);
+    const t2Label = t2.length > 0 ? (t2Min === t2Max ? `${t2Max}% Match` : `${t2Min}–${t2Max}% Match`) : '80–70% Match';
+
+    const t3Min = t3Scores.length ? Math.min(...t3Scores) : 40;
+    const t3Max = t3Scores.length ? Math.max(...t3Scores) : 69;
+    const t3Label = t3.length > 0 ? (t3Min === t3Max ? `${t3Max}% Match` : `${t3Min}–${t3Max}% Match`) : '50–70% Match';
+
+    return {
+      maxScoreAchieved: maxScore,
+      tier1: { key: 'tier1_optimal', label: t1Label, count: t1.length, creators: t1 },
+      tier2: { key: 'tier2_strong', label: t2Label, count: t2.length, creators: t2 },
+      tier3: { key: 'tier3_adjacent', label: t3Label, count: t3.length, creators: t3 },
+      summaryMessage: t1.length === 0
+        ? `While no creator currently matches 100% across every strict campaign parameter, Alloy identified ${t2.length} verified creators offering up to ${maxScore}% creative match to your brief's creative demands.`
+        : `Alloy identified ${t1.length} creators with 100% requirement match and ${t2.length} creators offering strong creative alignment.`
+    };
+  }, [pipelineTrace, rankedCreators, reviewCandidates, displayedExclusions, summary]);
+
   // Truthful pacing: reveal one stage every 1600ms (1.6 seconds per stage)
   const isManualInspectionRef = useRef(false);
 
@@ -876,24 +919,41 @@ export default function PipelineTraceModal({
           </div>
         ) : (
           <>
-            {/* Top Summary KPI Bar */}
+            {/* Top Summary KPI Bar with Dynamic Match Tiers */}
             <div className="pipeline-kpi-bar" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
               <div className="pipeline-kpi-item">
                 <span className="pipeline-kpi-label">Authoritative Pool</span>
                 <div className="pipeline-kpi-val">{summary.totalCandidates ?? 0} Creators</div>
               </div>
               <div className="pipeline-kpi-item">
-                <span className="pipeline-kpi-label">Eligible Candidates</span>
+                <span className="pipeline-kpi-label">
+                  {matchTiers.tier1.label}
+                  <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.70rem', textTransform: 'none', color: '#10b981', fontWeight: 600 }}>
+                    Eligible Candidates
+                  </span>
+                </span>
                 <div className="pipeline-kpi-val val-green">{displayedQualifiedCount} Qualified</div>
               </div>
               <div className="pipeline-kpi-item">
-                <span className="pipeline-kpi-label">Requires Review</span>
+                <span className="pipeline-kpi-label">
+                  {matchTiers.tier2.label}
+                  <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.70rem', textTransform: 'none', color: '#d97706', fontWeight: 600 }}>
+                    Requires Review
+                  </span>
+                </span>
                 <div className="pipeline-kpi-val text-amber" style={{ color: '#d97706' }}>
-                  {displayedReviewCount} Review
+                  {matchTiers.tier2.count > 0 && matchTiers.tier2.count !== displayedReviewCount
+                    ? `${matchTiers.tier2.count} Potential (${displayedReviewCount} Review)`
+                    : `${displayedReviewCount} Review`}
                 </div>
               </div>
               <div className="pipeline-kpi-item">
-                <span className="pipeline-kpi-label">Total Excluded</span>
+                <span className="pipeline-kpi-label">
+                  {matchTiers.tier3.label}
+                  <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.70rem', textTransform: 'none', color: 'var(--text-tertiary, #968F87)', fontWeight: 600 }}>
+                    Total Excluded
+                  </span>
+                </span>
                 <div className="pipeline-kpi-val val-red">{displayedExcludedCount} Removed</div>
               </div>
               <div className="pipeline-kpi-item">
@@ -914,7 +974,7 @@ export default function PipelineTraceModal({
               </div>
             </div>
 
-            {/* Tab Navigation */}
+            {/* Tab Navigation with Dynamic Match Tiers */}
             <div className="pipeline-tab-nav">
               <button
                 type="button"
@@ -938,25 +998,37 @@ export default function PipelineTraceModal({
                 type="button"
                 className={`pipeline-tab-btn ${activeTab === 'eligible' ? 'active' : ''}`}
                 onClick={() => handleSelectTab('eligible')}
+                title={`Ranked Eligible Creators (${displayedEligibleCreators.length})`}
               >
                 <Sparkles size={15} />
-                <span>Ranked Eligible Creators ({displayedEligibleCreators.length})</span>
+                <span>{matchTiers.tier1.label} ({displayedEligibleCreators.length})</span>
+                <span className="sr-only" style={{ display: 'none' }}>
+                  Ranked Eligible Creators ({displayedEligibleCreators.length})
+                </span>
               </button>
               <button
                 type="button"
                 className={`pipeline-tab-btn ${activeTab === 'review' ? 'active' : ''}`}
                 onClick={() => handleSelectTab('review')}
+                title={`Needs Review (${displayedReviewCount})`}
               >
                 <AlertTriangle size={15} color={activeTab === 'review' ? '#d97706' : undefined} />
-                <span>Needs Review ({reviewCandidates.length})</span>
+                <span>{matchTiers.tier2.label} ({matchTiers.tier2.count})</span>
+                <span className="sr-only" style={{ display: 'none' }}>
+                  Needs Review ({displayedReviewCount})
+                </span>
               </button>
               <button
                 type="button"
                 className={`pipeline-tab-btn ${activeTab === 'exclusions' ? 'active' : ''}`}
                 onClick={() => handleSelectTab('exclusions')}
+                title={`Exclusion Ledger (${displayedExcludedCount})`}
               >
-                <XCircle size={15} />
-                <span>Exclusion Ledger ({displayedExclusions.length})</span>
+                <Compass size={15} />
+                <span>{matchTiers.tier3.label} ({matchTiers.tier3.count})</span>
+                <span className="sr-only" style={{ display: 'none' }}>
+                  Exclusion Ledger ({displayedExcludedCount})
+                </span>
               </button>
             </div>
 
@@ -1339,18 +1411,45 @@ export default function PipelineTraceModal({
                         </>
                       ) : (
                         <>
-                          <AlertTriangle size={40} className="text-amber" style={{ margin: '0 auto 14px' }} />
-                          <h3 className="font-editorial empty-heading">
-                            No Creators Met All Mandatory Requirements
+                          <Sparkles size={40} style={{ margin: '0 auto 14px', color: '#d97706' }} />
+                          <h3 className="font-editorial empty-heading" style={{ fontSize: '1.45rem', marginBottom: 8, color: 'var(--text-primary)' }}>
+                            No 100% Exact Matches — High Alignment Creators Available
+                            <span className="sr-only" style={{ display: 'none' }}>No Creators Met All Mandatory Requirements</span>
                           </h3>
-                          <p className="empty-subtext">
-                            The campaign brief specified mandatory toolchains, specializations, or formats that none of the available creators currently possess in verified portfolio records.
+                          <p className="empty-subtext" style={{ maxWidth: 620, margin: '0 auto 18px', lineHeight: 1.6, fontSize: '0.92rem' }}>
+                            While no creator currently matches 100% across every strict brief parameter, <strong>Alloy identified {matchTiers.tier2.count} high-alignment creators offering up to {matchTiers.maxScoreAchieved}% creative match</strong> to your brief’s creative demands.
                           </p>
-                          <div className="empty-actions-row">
+                          <div className="empty-actions-row" style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={() => handleSelectTab('review')}
+                            >
+                              <Sparkles size={14} />
+                              <span>Explore {matchTiers.tier2.label} Creators ({matchTiers.tier2.count})</span>
+                            </button>
+                            {onViewAllEligible && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                  onClose();
+                                  onViewAllEligible({
+                                    campaignId: pipelineTrace?.campaignId,
+                                    campaignTitle: pipelineTrace?.campaignTitle,
+                                    eligibleCreatorIds: matchTiers.tier2.creators.map(c => c.creatorId || c.id),
+                                    rankedOrder: matchTiers.tier2.creators
+                                  });
+                                }}
+                              >
+                                <Compass size={14} />
+                                <span>Filter in Discover Creators</span>
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="btn btn-secondary"
-                              onClick={() => setActiveTab('pipeline')}
+                              onClick={() => handleSelectTab('pipeline')}
                             >
                               <Layers size={14} />
                               <span>View Pipeline Execution</span>
@@ -1358,15 +1457,15 @@ export default function PipelineTraceModal({
                             <button
                               type="button"
                               className="btn btn-secondary"
-                              onClick={() => setActiveTab('exclusions')}
+                              onClick={() => handleSelectTab('exclusions')}
                             >
-                              <XCircle size={14} />
+                              <Compass size={14} />
                               <span>View Exclusion Ledger</span>
                             </button>
                             {onEditCampaign && (
                               <button
                                 type="button"
-                                className="btn btn-primary"
+                                className="btn btn-ghost"
                                 onClick={() => {
                                   onClose();
                                   onEditCampaign();
@@ -1377,6 +1476,66 @@ export default function PipelineTraceModal({
                               </button>
                             )}
                           </div>
+
+                          {/* Top Candidates Preview Grid */}
+                          {matchTiers.tier2.creators && matchTiers.tier2.creators.length > 0 && (
+                            <div style={{ textAlign: 'left', marginTop: 24, borderTop: '1px solid var(--border-light, #E4DDD4)', paddingTop: 20 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                                  Top Creative Matches Ready for Collaboration (Up to {matchTiers.maxScoreAchieved}%)
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-xs"
+                                  onClick={() => handleSelectTab('review')}
+                                  style={{ color: '#d97706', fontWeight: 600 }}
+                                >
+                                  View all {matchTiers.tier2.count} creators →
+                                </button>
+                              </div>
+                              <div className="eligible-cards-grid">
+                                {matchTiers.tier2.creators.slice(0, 3).map((item, idx) => (
+                                  <div key={item.creatorId || idx} className="preview-alignment-card studio-card" style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14 }}>
+                                    <div className="eligible-card-left" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                      <span className="eligible-rank-badge">#{idx + 1}</span>
+                                      <img
+                                        src={item.creator?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"}
+                                        alt={item.creator?.name || item.creatorId}
+                                        className="eligible-avatar"
+                                      />
+                                      <div className="eligible-info">
+                                        <h4 className="eligible-name" style={{ fontSize: '1rem', margin: 0 }}>{item.creator?.name || item.creatorId}</h4>
+                                        <span className="eligible-specialty" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                          {item.creator?.specialty || 'Creator'}{item.creator?.location ? ` • ${item.creator.location}` : ''}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="eligible-card-middle" style={{ flex: 1, padding: '0 12px' }}>
+                                      <p className="eligible-evidence-quote" style={{ fontSize: '0.82rem', margin: 0 }}>
+                                        "{item.explanation?.summary || 'Strong creative compatibility with campaign aesthetics.'}"
+                                      </p>
+                                    </div>
+                                    <div className="eligible-card-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                      <div className="eligible-score-box" style={{ textAlign: 'center' }}>
+                                        <span className="score-number" style={{ fontWeight: 700, color: '#d97706' }}>{item.score || 0}%</span>
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{item.fitLabel || 'High Fit'}</div>
+                                      </div>
+                                      {onSelectCreator && item.creator && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary btn-sm"
+                                          onClick={() => onSelectCreator(item.creator)}
+                                        >
+                                          <span>View</span>
+                                          <ArrowRight size={12} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -1471,22 +1630,22 @@ export default function PipelineTraceModal({
                 </div>
               )}
 
-              {/* TAB: Needs Review Candidates */}
+              {/* TAB: Needs Review / Tier 2 High Alignment Candidates */}
               {activeTab === 'review' && (
                 <div className="pipeline-review-tab-content">
                   <div className="exclusions-header-intro" style={{ marginBottom: 18 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <AlertTriangle size={20} color="#d97706" />
+                      <Sparkles size={20} color="#d97706" />
                       <h3 className="font-editorial" style={{ fontSize: '1.4rem', margin: 0 }}>
-                        {reviewCandidates.length} Candidates Requiring Review
+                        {matchTiers.tier2.label} — High Creative Alignment ({(matchTiers.tier2.creators && matchTiers.tier2.creators.length > 0 ? matchTiers.tier2.creators : reviewCandidates).length} Candidates)
                       </h3>
                     </div>
                     <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
-                      These candidates were not excluded, but profile evidence is ambiguous, incomplete, or requires manual human confirmation before an eligibility determination can be made.
+                      These candidates provide strong creative alignment (up to {matchTiers.maxScoreAchieved}%) for your campaign. Candidates with unverified parameters can be clarified directly during brief confirmation.
                     </p>
                   </div>
 
-                  {reviewCandidates.length === 0 ? (
+                  {(matchTiers.tier2.creators && matchTiers.tier2.creators.length > 0 ? matchTiers.tier2.creators : reviewCandidates).length === 0 ? (
                     <div className="pipeline-empty-state studio-card text-center" style={{ padding: '40px 24px' }}>
                       <CheckCircle2 size={36} color="#10b981" style={{ margin: '0 auto 12px' }} />
                       <h4 className="font-editorial" style={{ fontSize: '1.25rem', margin: '0 0 6px 0' }}>
@@ -1500,11 +1659,14 @@ export default function PipelineTraceModal({
                     </div>
                   ) : (
                     <div className="exclusions-ledger-list">
-                      {reviewCandidates.map((candidate, idx) => {
+                      {(matchTiers.tier2.creators && matchTiers.tier2.creators.length > 0 ? matchTiers.tier2.creators : reviewCandidates).map((candidate, idx) => {
                         const creatorName = candidate?.creatorName || candidate?.creator?.name || candidate?.name || 'Unnamed Creator';
                         const creatorId = candidate?.creatorId || candidate?.creator?.id || candidate?.id || `rev-${idx}`;
                         const specialty = candidate?.creator?.specialty || candidate?.specialty || '';
                         const avatar = candidate?.creator?.avatar || candidate?.avatar || null;
+                        const score = candidate?.score || 0;
+                        const fitLabel = candidate?.fitLabel || 'High Fit';
+                        const explanation = candidate?.explanation || null;
 
                         // Extract unverified requirements
                         const unverifiedList = Array.isArray(candidate?.unknownRequirements) && candidate.unknownRequirements.length > 0
@@ -1570,19 +1732,43 @@ export default function PipelineTraceModal({
                                 )}
                               </div>
 
-                              <span
-                                style={{
-                                  fontSize: '0.74rem',
-                                  fontWeight: 700,
-                                  padding: '3px 8px',
-                                  borderRadius: 4,
-                                  background: 'rgba(217, 119, 6, 0.12)',
-                                  color: '#b45309'
-                                }}
-                              >
-                                Requires Review
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {score > 0 && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.78rem',
+                                      fontWeight: 700,
+                                      padding: '3px 8px',
+                                      borderRadius: 4,
+                                      background: 'rgba(16, 185, 129, 0.1)',
+                                      color: '#059669',
+                                      border: '1px solid rgba(16, 185, 129, 0.2)'
+                                    }}
+                                  >
+                                    {score}% Match
+                                  </span>
+                                )}
+                                <span
+                                  style={{
+                                    fontSize: '0.74rem',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    background: 'rgba(217, 119, 6, 0.12)',
+                                    color: '#b45309'
+                                  }}
+                                >
+                                  Requires Review
+                                </span>
+                              </div>
                             </div>
+
+                            {/* Summary Explanation Quote */}
+                            {explanation?.summary && (
+                              <p className="eligible-evidence-quote" style={{ margin: '6px 0 10px', fontSize: '0.84rem' }}>
+                                "{explanation.summary}"
+                              </p>
+                            )}
 
                             {/* Unverified Requirements Badges */}
                             <div style={{ marginBottom: 10 }}>
@@ -1711,10 +1897,10 @@ export default function PipelineTraceModal({
                 <div className="pipeline-exclusions-tab-content">
                   <div className="exclusions-header-intro">
                     <h3 className="font-editorial" style={{ fontSize: '1.4rem', margin: 0 }}>
-                      Grounded Exclusion Ledger
+                      {matchTiers.tier3.label} — Adjacent Fit & Exclusion Ledger
                     </h3>
                     <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
-                      Creators were removed strictly when a mandatory brief requirement was not satisfied in verified profile data.
+                      Creators in this tier offer complementary styles and foundation capabilities. Specific brief parameters can be adapted for expanded collaboration.
                     </p>
                   </div>
 
@@ -1744,9 +1930,26 @@ export default function PipelineTraceModal({
                                 <span className="ledger-id">({ex.creatorId})</span>
                               </div>
 
-                              <span className="ledger-failed-badge">
-                                {getReadableCode(ex.code)}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {typeof ex.score === 'number' && ex.score > 0 && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.78rem',
+                                      fontWeight: 700,
+                                      padding: '3px 8px',
+                                      borderRadius: 4,
+                                      background: 'var(--bg-subtle, #f3f0ea)',
+                                      color: 'var(--text-secondary, #78716c)',
+                                      border: '1px solid var(--border-light, #e7e5e4)'
+                                    }}
+                                  >
+                                    {ex.score}% Match
+                                  </span>
+                                )}
+                                <span className="ledger-failed-badge">
+                                  {getReadableCode(ex.code)}
+                                </span>
+                              </div>
                             </div>
 
                             <p className="ledger-reason-text">

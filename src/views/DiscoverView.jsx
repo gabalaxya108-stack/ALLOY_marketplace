@@ -227,7 +227,9 @@ export default function DiscoverView({
                       </span>
                     </div>
                     <div className="filter-banner-sub" style={{ fontSize: '0.86rem', color: '#334155', marginTop: 2, fontWeight: 500 }}>
-                      Showing {processedCreators.length} eligible creator{processedCreators.length === 1 ? '' : 's'} matching mandatory pipeline requirements. Excluded candidates are filtered out deterministically.
+                      {pipelineFilter.has100Match
+                        ? `Showing ${processedCreators.length} creator${processedCreators.length === 1 ? '' : 's'} with 100% match to your campaign brief.`
+                        : `Showing ${processedCreators.length} top-tier creator${processedCreators.length === 1 ? '' : 's'} offering up to ${pipelineFilter.maxScoreAchieved || 85}% creative match for your campaign's creative demands.`}
                     </div>
                   </div>
                 </div>

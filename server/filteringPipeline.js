@@ -644,14 +644,53 @@ function stageLicensingVerificationFilter(mandatoryConfig, candidatePool) {
 }
 
 /**
- * STAGE 7: Creative Fit & Compatibility Ranking (Executes ONLY on eligible creators)
+ * STAGE 7: Creative Fit & Compatibility Ranking
  */
+export function formatCandidateMatch(campaign, creator) {
+  const match = calculateCreaMatch(campaign, creator);
+  const explanation = explainMatch(campaign, creator);
+
+  return {
+    creatorId: creator.id,
+    creator: {
+      id: creator.id,
+      name: creator.name,
+      handle: creator.handle,
+      avatar: creator.avatar,
+      specialty: creator.specialty,
+      creativeIdentity: creator.creativeIdentity,
+      bio: creator.bio,
+      location: creator.location,
+      availability: creator.availability,
+      statusBadge: creator.statusBadge,
+      styles: creator.styles,
+      industries: creator.industries,
+      capabilities: creator.capabilities,
+      tools: creator.tools,
+      heroWork: creator.heroWork,
+      projects: (creator.projects || []).slice(0, 3)
+    },
+    score: match.score,
+    fitLabel: match.fitLabel,
+    confidence: match.confidence,
+    evidenceTier: match.evidenceTier,
+    isSufficient: match.isSufficient,
+    breakdown: match.breakdown,
+    explanation: {
+      summary: explanation?.summary || `Compatible across ${creator.specialty} and ${(creator.styles || []).slice(0, 2).join(', ')}.`,
+      highlights: explanation?.highlights || [],
+      potentialGap: explanation?.potentialGap || '',
+      dimensions: explanation?.dimensions || {}
+    }
+  };
+}
+
 function stageCreativeFitRanking(campaign, eligibleCandidates) {
   const stageId = 'stage_07_ranking_engine';
-  const stageName = 'Creative Fit & Compatibility Scoring';
-  const description = 'Score and rank eligible candidates using deterministic CreaMatch compatibility and evidence explanations.';
+  const stageName = 'Stage 7: Creative Fit Ranking & Explanations';
+  const description = 'Evaluates 6 transparent dimensions based on actual campaign requirements and creator portfolio evidence, producing an explainable ranking score.';
 
-  if (eligibleCandidates.length === 0) {
+  if (!Array.isArray(eligibleCandidates) || eligibleCandidates.length === 0) {
     return {
       stageId,
       stageName,
@@ -663,44 +702,7 @@ function stageCreativeFitRanking(campaign, eligibleCandidates) {
     };
   }
 
-  const rankedResults = eligibleCandidates.map(creator => {
-    const match = calculateCreaMatch(campaign, creator);
-    const explanation = explainMatch(campaign, creator);
-
-    return {
-      creatorId: creator.id,
-      creator: {
-        id: creator.id,
-        name: creator.name,
-        handle: creator.handle,
-        avatar: creator.avatar,
-        specialty: creator.specialty,
-        creativeIdentity: creator.creativeIdentity,
-        bio: creator.bio,
-        location: creator.location,
-        availability: creator.availability,
-        statusBadge: creator.statusBadge,
-        styles: creator.styles,
-        industries: creator.industries,
-        capabilities: creator.capabilities,
-        tools: creator.tools,
-        heroWork: creator.heroWork,
-        projects: (creator.projects || []).slice(0, 3)
-      },
-      score: match.score,
-      fitLabel: match.fitLabel,
-      confidence: match.confidence,
-      evidenceTier: match.evidenceTier,
-      isSufficient: match.isSufficient,
-      breakdown: match.breakdown,
-      explanation: {
-        summary: explanation?.summary || `Compatible across ${creator.specialty} and ${(creator.styles || []).slice(0, 2).join(', ')}.`,
-        highlights: explanation?.highlights || [],
-        potentialGap: explanation?.potentialGap || '',
-        dimensions: explanation?.dimensions || {}
-      }
-    };
-  });
+  const rankedResults = eligibleCandidates.map(creator => formatCandidateMatch(campaign, creator));
 
   // Sort strictly by compatibility score descending
   rankedResults.sort((a, b) => b.score - a.score);
@@ -905,30 +907,27 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
     }
   }
 
+  // Compute deterministic match scores and grounded explanations for every candidate in pool
+  const candidateMatchMap = new Map();
+  for (const c of candidatePool) {
+    candidateMatchMap.set(c.id, formatCandidateMatch(safeCampaign, c));
+  }
+
   const requiresReview = reviewCandidates.map(c => {
     const evalRes = eligibilityMap.get(c.id);
+    const matchObj = candidateMatchMap.get(c.id) || formatCandidateMatch(safeCampaign, c);
     const unknownReqs = (evalRes?.requirements || []).filter(r => r.status === ELIGIBILITY_OUTCOMES.UNKNOWN);
     return {
       creatorId: c.id,
       creatorName: c.name,
-      creator: {
-        id: c.id,
-        name: c.name,
-        handle: c.handle,
-        avatar: c.avatar,
-        specialty: c.specialty,
-        creativeIdentity: c.creativeIdentity,
-        bio: c.bio,
-        location: c.location,
-        availability: c.availability,
-        statusBadge: c.statusBadge,
-        styles: c.styles,
-        industries: c.industries,
-        capabilities: c.capabilities,
-        tools: c.tools,
-        heroWork: c.heroWork,
-        projects: (c.projects || []).slice(0, 3)
-      },
+      creator: matchObj.creator,
+      score: matchObj.score,
+      fitLabel: matchObj.fitLabel,
+      confidence: matchObj.confidence,
+      evidenceTier: matchObj.evidenceTier,
+      isSufficient: matchObj.isSufficient,
+      breakdown: matchObj.breakdown,
+      explanation: matchObj.explanation,
       eligibility: ELIGIBILITY_STATUS.REQUIRES_REVIEW,
       reasons: evalRes?.reasons || [],
       unknownRequirements: unknownReqs,
@@ -937,9 +936,94 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
     };
   });
 
+  // Enrich cleanExclusions with creative fit scores and portfolio metadata
+  for (const exc of cleanExclusions) {
+    const matchObj = candidateMatchMap.get(exc.creatorId);
+    if (matchObj) {
+      exc.score = matchObj.score;
+      exc.fitLabel = matchObj.fitLabel;
+      exc.creator = matchObj.creator;
+      exc.breakdown = matchObj.breakdown;
+      exc.explanation = matchObj.explanation;
+    }
+  }
+
   // 7. Stage C & D: Creative Fit Ranking & Explanations on Eligible Candidates
   const s7 = stageCreativeFitRanking(safeCampaign, eligibleCandidates);
   stages.push(s7);
+
+  // Dynamic 3-Tier Match Categorization (User-Friendly Percentage Approach)
+  const allScoredCandidates = candidatePool.map(c => candidateMatchMap.get(c.id)).filter(Boolean);
+  allScoredCandidates.sort((a, b) => b.score - a.score);
+  const maxScoreAchieved = allScoredCandidates[0]?.score || 0;
+
+  // Tier 1: 100% Match / Exact Fit
+  // Contains creators who passed 100% of all mandatory criteria
+  const tier1Creators = s7.rankedResults || [];
+  const tier1Count = tier1Creators.length;
+  const tier1Min = tier1Count > 0 ? Math.min(...tier1Creators.map(c => c.score)) : 100;
+  const tier1Max = tier1Count > 0 ? Math.max(...tier1Creators.map(c => c.score)) : 100;
+  const tier1Label = tier1Count > 0
+    ? (tier1Min === tier1Max ? `${tier1Max}% Match` : `${tier1Min}–${tier1Max}% Match`)
+    : '100% Match';
+
+  // Tier 2: Strong Alignment / High Potential (dynamic e.g. 80-70% or 70-93% based on pipeline scores)
+  let tier2Creators = [];
+  const tier1Ids = new Set(tier1Creators.map(c => c.creatorId));
+
+  if (tier1Count > 0) {
+    // When Tier 1 has candidates, Tier 2 contains remaining candidates scoring >= 70% or review candidates
+    tier2Creators = allScoredCandidates.filter(c => !tier1Ids.has(c.creatorId) && (c.score >= 70 || reviewCreatorIds.has(c.creatorId)));
+  } else {
+    // When 0 candidates passed 100% strict constraints, Tier 2 contains top-tier creators offering up to maxScoreAchieved
+    const tier2Cutoff = maxScoreAchieved >= 70 ? 70 : Math.max(30, maxScoreAchieved - 7);
+    tier2Creators = allScoredCandidates.filter(c => c.score >= tier2Cutoff);
+  }
+
+  const tier2Count = tier2Creators.length;
+  const tier2Min = tier2Count > 0 ? Math.min(...tier2Creators.map(c => c.score)) : 70;
+  const tier2Max = tier2Count > 0 ? Math.max(...tier2Creators.map(c => c.score)) : 80;
+  const tier2Label = tier2Count > 0
+    ? (tier2Min === tier2Max ? `${tier2Max}% Match` : `${tier2Min}–${tier2Max}% Match`)
+    : '80–70% Match';
+
+  // Tier 3: Adjacent & Foundational Fit (remaining candidates)
+  const tier2Ids = new Set(tier2Creators.map(c => c.creatorId));
+  const tier3Creators = allScoredCandidates.filter(c => !tier1Ids.has(c.creatorId) && !tier2Ids.has(c.creatorId));
+  const tier3Count = tier3Creators.length;
+  const tier3Min = tier3Count > 0 ? Math.min(...tier3Creators.map(c => c.score)) : 40;
+  const tier3Max = tier3Count > 0 ? Math.max(...tier3Creators.map(c => c.score)) : 69;
+  const tier3Label = tier3Count > 0
+    ? (tier3Min === tier3Max ? `${tier3Max}% Match` : `${tier3Min}–${tier3Max}% Match`)
+    : '50–70% Match';
+
+  const matchTiers = {
+    maxScoreAchieved,
+    tier1: {
+      key: 'tier1_optimal',
+      label: tier1Label,
+      range: [tier1Min, tier1Max],
+      count: tier1Count,
+      creators: tier1Creators
+    },
+    tier2: {
+      key: 'tier2_strong',
+      label: tier2Label,
+      range: [tier2Min, tier2Max],
+      count: tier2Count,
+      creators: tier2Creators
+    },
+    tier3: {
+      key: 'tier3_adjacent',
+      label: tier3Label,
+      range: [tier3Min, tier3Max],
+      count: tier3Count,
+      creators: tier3Creators
+    },
+    summaryMessage: tier1Count === 0
+      ? `While no creator currently matches 100% of all strict campaign parameters, Alloy identified ${tier2Count} verified creators offering up to ${maxScoreAchieved}% creative match to your brief's creative demands.`
+      : `Alloy identified ${tier1Count} creators with 100% requirement match and ${tier2Count} creators offering strong creative alignment.`
+  };
 
   const durationMs = Date.now() - startTime;
   const status = eligibleCandidates.length > 0 ? 'completed' : 'empty';
@@ -959,7 +1043,14 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
       requiresReviewCount: requiresReview.length,
       reviewCount: requiresReview.length,
       isSuccess: true,
-      hasEligibleCreators: eligibleCandidates.length > 0
+      hasEligibleCreators: eligibleCandidates.length > 0,
+      maxScoreAchieved,
+      tier1Count,
+      tier2Count,
+      tier3Count,
+      tier1Label,
+      tier2Label,
+      tier3Label
     },
     normalizedBrief: {
       title: normalizedBrief.title,
@@ -1002,6 +1093,11 @@ export function executeFilteringPipeline({ campaign = {}, creators = null, optio
     })),
     eligibleCreatorIds: eligibleCandidates.map(c => c.id),
     rankedCreators: s7.rankedResults,
+    matchTiers,
+    tier2Creators,
+    tier3Creators,
+    tier2CreatorIds: tier2Creators.map(c => c.creatorId || c.id),
+    topAlignmentCreators: tier2Creators,
     requiresReview,
     requiresReviewCreators: requiresReview,
     exclusions: cleanExclusions,

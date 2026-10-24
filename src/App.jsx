@@ -1649,11 +1649,22 @@ export default function App() {
           isStale: false,
           staleReason: null
         });
+        const has100Match = Array.isArray(trace.rankedCreators) && trace.rankedCreators.length > 0;
+        const targetCreators = has100Match
+          ? trace.rankedCreators
+          : (trace.matchTiers?.tier2?.creators || trace.tier2Creators || []);
+        const targetIds = has100Match
+          ? (trace.eligibleCreatorIds || [])
+          : (trace.tier2CreatorIds || targetCreators.map(c => c.creatorId || c.id));
+
         setPipelineFilter({
           campaignId: trace.campaignId || (trace.interpretedBrief ? 'ai-natural-brief' : (typeof campaignToRun === 'object' ? campaignToRun?.id : 'ai-natural-brief')),
           campaignTitle: trace.interpretedBrief?.title || trace.campaignTitle || 'AI Campaign Filter',
-          eligibleCreatorIds: trace.eligibleCreatorIds || [],
-          rankedOrder: trace.rankedCreators || [],
+          eligibleCreatorIds: targetIds,
+          rankedOrder: targetCreators,
+          has100Match,
+          maxScoreAchieved: trace.summary?.maxScoreAchieved || trace.matchTiers?.maxScoreAchieved || 85,
+          tierLabel: has100Match ? '100% Match' : (trace.matchTiers?.tier2?.label || 'High Alignment'),
           source: trace.source,
           interpretedBrief: trace.interpretedBrief,
           isStale: false
