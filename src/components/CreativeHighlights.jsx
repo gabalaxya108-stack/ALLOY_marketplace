@@ -20,7 +20,7 @@ export default function CreativeHighlights({
       tag: 'Curated Roster',
       accentColor: 'var(--accent-lavender)',
       accentBorder: 'rgba(139, 92, 246, 0.25)',
-      previewImage: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=800&q=85',
+      previewImage: '/portfolios/maya-chen-portfolio.jpg',
       meta: '14 Vetted Creators • Verified Portfolios',
       action: onExploreDiscover
     },
@@ -33,7 +33,7 @@ export default function CreativeHighlights({
       tag: 'CreaMatch & CreaScore',
       accentColor: 'var(--accent-peach)',
       accentBorder: 'rgba(249, 115, 22, 0.25)',
-      previewImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=85',
+      previewImage: '/portfolios/alex-rivera-portfolio.jpg',
       meta: '6-Dimension Evaluation • Zero Astrology',
       action: onExploreDiscover
     },
@@ -46,7 +46,7 @@ export default function CreativeHighlights({
       tag: 'CreaSim Previews',
       accentColor: 'var(--accent-pink)',
       accentBorder: 'rgba(236, 72, 153, 0.25)',
-      previewImage: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=85',
+      previewImage: '/portfolios/elena-rostova-portfolio.jpg',
       meta: '3-Scene Storyboards • Palettes & Turnarounds',
       action: onExploreConcepts
     },

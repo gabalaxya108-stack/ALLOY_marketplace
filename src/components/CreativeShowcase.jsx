@@ -32,7 +32,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       creatorId: 'elena-rostova',
       creatorName: 'Elena Rostova',
       discipline: 'AI Fashion Direction',
-      image: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1000&q=85',
+      image: '/portfolios/elena-rostova-portfolio.jpg',
       span: 'tall'
     },
     {
@@ -43,7 +43,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       creatorId: 'zora-vance',
       creatorName: 'Zora Vance',
       discipline: 'Macro Beauty & Light',
-      image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=1000&q=85',
+      image: '/portfolios/zora-vance-portfolio.jpg',
       span: 'normal'
     },
     {
@@ -54,18 +54,18 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       creatorId: 'alex-rivera',
       creatorName: 'Alex Rivera',
       discipline: '3D Spatial CGI',
-      image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1000&q=85',
+      image: '/portfolios/alex-rivera-portfolio.jpg',
       span: 'normal'
     },
     {
       id: 'gallery-4',
-      title: 'Solarium Atrium Sanctuary',
+      title: 'Sanctuary of the Red Dune',
       category: 'interior',
       categoryLabel: 'Interiors & Architecture',
-      creatorId: 'sofia-rossi',
-      creatorName: 'Sofia Rossi',
-      discipline: 'Architectural Renders',
-      image: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=85',
+      creatorId: 'tariq-al-mansoor',
+      creatorName: 'Tariq Al-Mansoor',
+      discipline: 'Surreal 3D Architecture',
+      image: '/portfolios/tariq-al-mansoor-portfolio.jpg',
       span: 'normal'
     },
     {
@@ -76,18 +76,18 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       creatorId: 'maya-chen',
       creatorName: 'Maya Chen',
       discipline: 'Generative Cinema',
-      image: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1200&q=85',
+      image: '/portfolios/maya-chen-portfolio.jpg',
       span: 'wide'
     },
     {
       id: 'gallery-6',
-      title: 'Organic Botanical Caustics',
+      title: "Éclat d'Or High Jewelry",
       category: 'product',
       categoryLabel: 'Product Campaigns',
-      creatorId: 'kai-sorenson',
-      creatorName: 'Kai Sorenson',
-      discipline: 'Synthetic Physics & VFX',
-      image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1000&q=85',
+      creatorId: 'sophie-mercier',
+      creatorName: 'Sophie Mercier',
+      discipline: 'Luxury Gemstones & Caustics',
+      image: '/portfolios/sophie-mercier-portfolio.jpg',
       span: 'normal'
     }
   ];
