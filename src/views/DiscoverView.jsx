@@ -315,20 +315,6 @@ export default function DiscoverView({
                 <strong className="filter-card-heading" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
                   AI Natural-Language Campaign Filter
                 </strong>
-                <span style={{ 
-                  display: 'inline-flex', 
-                  alignItems: 'center', 
-                  gap: 4, 
-                  padding: '3px 9px', 
-                  borderRadius: '4px', 
-                  fontSize: '0.75rem', 
-                  fontWeight: 600, 
-                  background: 'rgba(5, 150, 105, 0.15)', 
-                  color: '#065f46', 
-                  border: '1px solid #10b981' 
-                }}>
-                  Groq LLM + Supabase Pipeline
-                </span>
               </div>
               <span style={{ 
                 fontSize: '0.75rem', 

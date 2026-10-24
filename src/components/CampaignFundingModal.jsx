@@ -233,7 +233,7 @@ export default function CampaignFundingModal({
               borderRadius: '100px',
               border: '1px solid rgba(16, 185, 129, 0.25)'
             }}>
-              Razorpay Standard Checkout • TEST MODE
+              Razorpay Standard Checkout • Escrow Funding
             </span>
           </div>
 
@@ -245,20 +245,20 @@ export default function CampaignFundingModal({
           </p>
         </div>
 
-        {/* Prominent Test Mode Labeling Banner */}
+        {/* Discreet Test-Mode Sandbox Disclosure */}
         <div style={{
-          background: 'linear-gradient(135deg, rgba(254, 243, 199, 0.8) 0%, rgba(253, 230, 138, 0.4) 100%)',
-          border: '1px solid rgba(245, 158, 11, 0.4)',
-          borderRadius: '14px',
-          padding: '12px 16px',
+          background: 'var(--bg-secondary, #FAF7F2)',
+          border: '1px solid var(--border-light, #E4DDD4)',
+          borderRadius: '12px',
+          padding: '10px 14px',
           marginBottom: '20px',
           display: 'flex',
-          alignItems: 'flex-start',
-          gap: '12px'
+          alignItems: 'center',
+          gap: '10px'
         }}>
-          <AlertTriangle size={18} style={{ color: '#D97706', flexShrink: 0, marginTop: '2px' }} />
-          <div style={{ fontSize: '0.82rem', color: '#92400E', lineHeight: 1.5 }}>
-            <strong>Razorpay Sandbox Mode:</strong> Real money, bank cards, and creator payouts are never touched. You can complete this transaction using Razorpay test credentials.
+          <ShieldCheck size={16} style={{ color: '#059669', flexShrink: 0 }} />
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #77716A)', lineHeight: 1.4 }}>
+            <strong style={{ color: 'var(--text-primary, #191816)' }}>Simulated Escrow Sandbox:</strong> Instant test verification with Razorpay credentials. No live merchant charges occur.
           </div>
         </div>
 
@@ -530,14 +530,14 @@ export default function CampaignFundingModal({
               display: 'inline-block',
               marginBottom: '8px'
             }}>
-              Verified via HMAC-SHA256 • TEST MODE
+              Verified via HMAC-SHA256 • Authorized Escrow
             </span>
 
             <h3 className="font-editorial" style={{ fontSize: '1.9rem', margin: '0 0 6px', color: 'var(--text-primary)' }}>
               Campaign Successfully Funded!
             </h3>
             <p style={{ margin: '0 0 20px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              <strong>₹{verifiedPayment.amount_rupees.toLocaleString('en-IN')} INR</strong> allocated in sandbox to <strong>{campaign.title}</strong>.
+              <strong>₹{verifiedPayment.amount_rupees.toLocaleString('en-IN')} INR</strong> allocated to <strong>{campaign.title}</strong> milestone escrow.
             </p>
 
             {/* Receipt Summary Card */}
