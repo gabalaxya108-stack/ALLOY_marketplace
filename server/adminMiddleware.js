@@ -35,10 +35,12 @@ function getSupabaseUrl() {
   loadFreshEnv();
   return (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
 }
+
 function getSupabaseServiceKey() {
   loadFreshEnv();
   return (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 }
+
 function getSupabaseAnonKey() {
   loadFreshEnv();
   return (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
@@ -1126,12 +1128,17 @@ async function handleRegister(req, res, body) {
 
   const serviceClient = getServiceClient();
   if (!serviceClient) {
-    return sendJson(res, 503, { ok: false, error: 'Database service unavailable' });
+    return sendJson(res, 503, { ok: false, error: 'Database service unavailable', message: 'Database service unavailable. Please try again.' });
   }
 
   try {
-    const { data: usersData } = await serviceClient.auth.admin.listUsers();
-    const existing = (usersData?.users || []).find(u => u.email?.toLowerCase() === email);
+    let existing = null;
+    try {
+      const { data: usersData } = await serviceClient.auth.admin.listUsers();
+      existing = (usersData?.users || []).find(u => u.email?.toLowerCase() === email);
+    } catch (listErr) {
+      console.warn('[handleRegister] listUsers warning:', listErr.message);
+    }
 
     if (existing || MANAGED_CREDENTIALS[email]) {
       return sendJson(res, 409, {
@@ -1153,44 +1160,65 @@ async function handleRegister(req, res, body) {
       }
     });
 
-    if (createErr) throw createErr;
+    if (createErr) {
+      if (
+        createErr.status === 422 || 
+        createErr.message?.toLowerCase().includes('already') ||
+        createErr.code === 'user_already_exists'
+      ) {
+        return sendJson(res, 409, {
+          ok: false,
+          error: 'ACCOUNT_EXISTS',
+          message: 'An account with this email already exists in our database. Please sign in or reset your password.'
+        });
+      }
+      throw createErr;
+    }
     const userId = newUser.user.id;
 
-    // Upsert public.profiles
-    await serviceClient.from('profiles').upsert({
-      id: userId,
-      email,
-      role,
-      display_name: displayName,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
+    // Upsert public.profiles (defensive)
+    try {
+      await serviceClient.from('profiles').upsert({
+        id: userId,
+        email,
+        role,
+        display_name: displayName,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    } catch (profErr) {
+      console.warn('[handleRegister] Profile upsert notice:', profErr.message);
+    }
 
-    // Isolated fresh start: provision brand or creator record
-    if (role === 'creator') {
-      const handle = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}_${userId.slice(0, 4)}`;
-      await serviceClient.from('creator_profiles').upsert({
-        id: `creator-${userId.slice(0, 8)}`,
-        user_id: userId,
-        name: displayName,
-        handle,
-        status: 'Published',
-        visibility: 'published',
-        is_demo: false,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
-    } else {
-      const emailKey = email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
-      const brandId = `brand-${emailKey}`;
-      await serviceClient.from('brands').upsert({
-        id: brandId,
-        user_id: userId,
-        name: displayName,
-        is_demo: false,
-        industry: 'Creative & Digital',
-        description: `${displayName} private studio workspace.`,
-        aesthetic: 'Modern & Editorial',
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+    // Isolated fresh start: provision brand or creator record (defensive)
+    try {
+      if (role === 'creator') {
+        const handle = `@${email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}_${userId.slice(0, 4)}`;
+        await serviceClient.from('creator_profiles').upsert({
+          id: `creator-${userId.slice(0, 8)}`,
+          user_id: userId,
+          name: displayName,
+          handle,
+          status: 'Published',
+          visibility: 'published',
+          is_demo: false,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      } else {
+        const emailKey = email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
+        const brandId = `brand-${emailKey}`;
+        await serviceClient.from('brands').upsert({
+          id: brandId,
+          user_id: userId,
+          name: displayName,
+          is_demo: false,
+          industry: 'Creative & Digital',
+          description: `${displayName} private studio workspace.`,
+          aesthetic: 'Modern & Editorial',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      }
+    } catch (entityErr) {
+      console.warn('[handleRegister] Entity upsert notice:', entityErr.message);
     }
 
     // Log registration
@@ -1225,7 +1253,18 @@ async function handleRegister(req, res, body) {
     });
   } catch (err) {
     console.error('[handleRegister Error]:', err.message);
-    return sendJson(res, 500, { ok: false, error: err.message });
+    if (
+      err.status === 422 || 
+      err.message?.toLowerCase().includes('already') ||
+      err.code === 'user_already_exists'
+    ) {
+      return sendJson(res, 409, {
+        ok: false,
+        error: 'ACCOUNT_EXISTS',
+        message: 'An account with this email already exists in our database. Please sign in or reset your password.'
+      });
+    }
+    return sendJson(res, 500, { ok: false, error: err.message, message: err.message || 'Registration failed.' });
   }
 }
 
