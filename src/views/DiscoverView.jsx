@@ -108,10 +108,10 @@ export default function DiscoverView({
 
       // Horizontal Category Match
       if (selectedCategory !== 'all') {
-        const matchesCategoryTag = (c.categoryTags || []).includes(selectedCategory);
-        const matchesSpecialty = c.specialty.toLowerCase().replace(/\s+/g, '-').includes(selectedCategory);
-        const matchesCapability = (c.capabilities || []).some(cap => 
-          cap.toLowerCase().replace(/\s+/g, '-').includes(selectedCategory)
+        const matchesCategoryTag = Array.isArray(c.categoryTags) && c.categoryTags.includes(selectedCategory);
+        const matchesSpecialty = typeof c.specialty === 'string' && c.specialty.toLowerCase().replace(/\s+/g, '-').includes(selectedCategory);
+        const matchesCapability = Array.isArray(c.capabilities) && c.capabilities.some(cap => 
+          typeof cap === 'string' && cap.toLowerCase().replace(/\s+/g, '-').includes(selectedCategory)
         );
         if (!matchesCategoryTag && !matchesSpecialty && !matchesCapability) {
           return false;
@@ -120,11 +120,11 @@ export default function DiscoverView({
 
       // Popover Filters
       if (filters.industry !== 'All Industries') {
-        if (!c.industries.includes(filters.industry)) return false;
+        if (!Array.isArray(c.industries) || !c.industries.includes(filters.industry)) return false;
       }
 
       if (filters.style !== 'All Styles') {
-        if (!c.styles.includes(filters.style)) return false;
+        if (!Array.isArray(c.styles) || !c.styles.includes(filters.style)) return false;
       }
 
       if (filters.availability !== 'All Availability') {
@@ -315,20 +315,6 @@ export default function DiscoverView({
                 <strong className="filter-card-heading" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
                   AI Natural-Language Campaign Filter
                 </strong>
-                <span style={{ 
-                  display: 'inline-flex', 
-                  alignItems: 'center', 
-                  gap: 4, 
-                  padding: '3px 9px', 
-                  borderRadius: '4px', 
-                  fontSize: '0.75rem', 
-                  fontWeight: 600, 
-                  background: 'rgba(5, 150, 105, 0.15)', 
-                  color: '#065f46', 
-                  border: '1px solid #10b981' 
-                }}>
-                  Groq LLM + Supabase Pipeline
-                </span>
               </div>
               <span style={{ 
                 fontSize: '0.75rem', 

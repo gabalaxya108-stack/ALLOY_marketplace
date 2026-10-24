@@ -75,7 +75,7 @@ runTest('Regression 1: Campaign with "any creator could work" accounts for all 1
       projects: [{ id: 'jl-1', title: 'Studio Stills', aspect: null }]
     }
   ];
-  assert.strictEqual(candidatePool.length, 16, 'Candidate pool must contain exactly 16 creators');
+  assert.strictEqual(candidatePool.length, CREATORS.length + 2, 'Candidate pool must contain all creators plus test candidates');
 
   const result = executeFilteringPipeline({
     campaign,
@@ -90,13 +90,13 @@ runTest('Regression 1: Campaign with "any creator could work" accounts for all 1
   const totalAccountedFor = rankedIds.size + excludedIds.size + reviewIds.size;
   assert.strictEqual(
     totalAccountedFor,
-    16,
-    `Zero candidate loss: expected 16 evaluated creators accounted for, got ${totalAccountedFor}`
+    candidatePool.length,
+    `Zero candidate loss: expected ${candidatePool.length} evaluated creators accounted for, got ${totalAccountedFor}`
   );
   assert.strictEqual(
     result.summary.totalCandidates,
-    16,
-    'Pipeline summary totalCandidates must equal 16'
+    candidatePool.length,
+    `Pipeline summary totalCandidates must equal ${candidatePool.length}`
   );
 
   // 2. Pairwise disjoint sets (no overlap)

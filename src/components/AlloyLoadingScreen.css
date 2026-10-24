@@ -15,7 +15,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #FAF7F2 0%, #F8F5F0 50%, #F4EFE9 100%);
+  background: #F8F5F0;
   color: var(--text-primary, #191816);
   overflow: hidden;
   user-select: none;
@@ -26,8 +26,171 @@
 
 .alloy-loader-overlay.is-exiting {
   opacity: 0;
-  filter: blur(12px);
+  filter: blur(14px);
   transform: scale(1.03);
+  pointer-events: none;
+}
+
+.alloy-loader-overlay.is-exiting .alloy-loader-collage-grid {
+  transform: scale(1.14);
+  filter: blur(42px);
+  transition: transform 0.85s cubic-bezier(0.16, 1, 0.3, 1), filter 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ==========================================================================
+   Aesthetic Blurred Creators & Brands Collage Backdrop
+   ========================================================================== */
+
+.alloy-loader-collage-backdrop {
+  position: absolute;
+  inset: -30px;
+  width: calc(100% + 60px);
+  height: calc(100% + 60px);
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+  user-select: none;
+}
+
+.alloy-loader-collage-grid {
+  position: absolute;
+  inset: -40px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 230px;
+  gap: 18px;
+  padding: 24px;
+  transform: scale(1.05);
+  animation: alloyCollageSlowDrift 28s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes alloyCollageSlowDrift {
+  0% {
+    transform: scale(1.04) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: scale(1.08) translate3d(-1.5%, -1.2%, 0);
+  }
+  100% {
+    transform: scale(1.04) translate3d(1.2%, 1%, 0);
+  }
+}
+
+.alloy-collage-tile {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(26, 25, 24, 0.1);
+  background: #EBE4DA;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.alloy-collage-tile.tile-portrait {
+  grid-row: span 2;
+}
+
+.alloy-collage-tile.tile-landscape {
+  grid-column: span 1;
+}
+
+.alloy-collage-tile.tile-square {
+  grid-row: span 1;
+}
+
+.alloy-collage-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(1.18) contrast(1.06);
+}
+
+/* Subtle editorial floating badge in collage tile */
+.alloy-collage-badge {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(26, 25, 24, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  color: #FFFFFF;
+  font-family: 'Space Grotesk', -apple-system, sans-serif;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  max-width: fit-content;
+}
+
+.alloy-badge-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.alloy-badge-indicator.is-creator {
+  background: #214C35;
+  box-shadow: 0 0 6px rgba(33, 76, 53, 0.8);
+}
+
+.alloy-badge-indicator.is-brand {
+  background: #C7A47B;
+  box-shadow: 0 0 6px rgba(199, 164, 123, 0.8);
+}
+
+.alloy-badge-name {
+  font-weight: 600;
+  color: #FFFFFF;
+}
+
+.alloy-badge-sep {
+  opacity: 0.5;
+  font-size: 0.5rem;
+}
+
+.alloy-badge-cat {
+  opacity: 0.85;
+  font-weight: 400;
+}
+
+/* ==========================================================================
+   Editorial Frosted Glass Veil & Aesthetic Blur Layer
+   ========================================================================== */
+
+.alloy-loader-collage-veil {
+  position: absolute;
+  inset: -20px;
+  z-index: 2;
+  backdrop-filter: blur(28px) saturate(1.35) brightness(0.98);
+  -webkit-backdrop-filter: blur(28px) saturate(1.35) brightness(0.98);
+  background: 
+    radial-gradient(ellipse 65% 65% at 50% 50%, 
+      rgba(250, 247, 242, 0.76) 0%, 
+      rgba(248, 245, 240, 0.86) 45%, 
+      rgba(244, 239, 233, 0.94) 75%, 
+      rgba(238, 231, 222, 0.98) 100%),
+    linear-gradient(180deg, 
+      rgba(33, 76, 53, 0.05) 0%, 
+      transparent 50%, 
+      rgba(153, 113, 79, 0.06) 100%);
+  pointer-events: none;
+}
+
+/* Fine Film Grain on Veil */
+.alloy-loader-collage-grain {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
   pointer-events: none;
 }
 
@@ -35,6 +198,7 @@
 .alloy-loader-ambient {
   position: absolute;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
   overflow: hidden;
 }
@@ -107,13 +271,22 @@
 /* Center Content Core */
 .alloy-loader-content {
   position: relative;
-  z-index: 2;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   max-width: 520px;
-  padding: 0 24px;
+  padding: 34px 40px;
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.48);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 
+    0 24px 60px rgba(33, 76, 53, 0.08),
+    0 6px 20px rgba(26, 25, 24, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 /* Central Emblem Stage */
@@ -281,6 +454,7 @@
 .alloy-loader-footer {
   position: absolute;
   bottom: 28px;
+  z-index: 10;
   font-family: 'Space Grotesk', -apple-system, sans-serif;
   font-size: 0.65rem;
   letter-spacing: 0.22em;
@@ -352,10 +526,47 @@
   }
 }
 
+/* Responsive Collage Breakpoints */
+@media (max-width: 1024px) {
+  .alloy-loader-collage-grid {
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 200px;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 768px) {
+  .alloy-loader-collage-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: 155px;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .alloy-loader-content {
+    padding: 24px 20px;
+    max-width: calc(100vw - 32px);
+    border-radius: 24px;
+  }
+
+  .alloy-collage-badge {
+    padding: 4px 8px;
+    font-size: 0.55rem;
+    bottom: 8px;
+    left: 8px;
+  }
+
+  .alloy-badge-cat,
+  .alloy-badge-sep {
+    display: none;
+  }
+}
+
 /* Reduced Motion Support */
 @media (prefers-reduced-motion: reduce) {
   .alloy-emblem-wrapper,
-  .alloy-emblem-shimmer {
+  .alloy-emblem-shimmer,
+  .alloy-loader-collage-grid {
     animation: none !important;
   }
   .alloy-loader-overlay {
