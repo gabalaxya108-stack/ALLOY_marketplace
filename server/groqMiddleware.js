@@ -9,7 +9,8 @@ import {
   generateCreatorDNA, 
   evaluateCreaMatchAndScore, 
   generateCreaSimConcepts,
-  interpretCampaignRequirements
+  interpretCampaignRequirements,
+  streamAlloyAiChat
 } from './groqService.js';
 import { executeFilteringPipeline } from './filteringPipeline.js';
 import { fetchSupabaseCreators, getSupabaseConfig } from './supabaseCreators.js';
@@ -422,6 +423,76 @@ export function createGroqMiddleware() {
         }
         const conceptsData = await generateCreaSimConcepts(campaign, creator, creatorDNA);
         return sendJson(res, 200, { ok: true, source: 'groq', ...conceptsData });
+      }
+
+      // 6. Alloy AI Real-Time Streaming Chat (Groq Token Streaming)
+      if ((url === '/api/ai/chat/stream' || url === '/api/ai/chat') && req.method === 'POST') {
+        const messages = Array.isArray(body.messages) ? body.messages : [];
+        const role = body.role || req.headers['x-user-role'] || 'brand';
+        const context = body.context || {};
+
+        if (messages.length === 0) {
+          return sendJson(res, 400, { ok: false, error: 'Messages array is required.' });
+        }
+
+        // Establish Server-Sent Events headers
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no'
+        });
+
+        const abortController = new AbortController();
+        req.on('close', () => {
+          abortController.abort();
+        });
+
+        // Stage 1: Initial signal
+        res.write(`data: ${JSON.stringify({ type: 'stage', stage: 'understanding', status: 'Understanding your objective…' })}\n\n`);
+
+        let hasStartedReasoning = false;
+        let hasStartedContent = false;
+
+        try {
+          await streamAlloyAiChat({
+            messages,
+            role,
+            context,
+            signal: abortController.signal,
+            onReasoning: () => {
+              if (!hasStartedReasoning && !hasStartedContent) {
+                hasStartedReasoning = true;
+                res.write(`data: ${JSON.stringify({ type: 'stage', stage: 'processing', status: 'Building your roadmap…' })}\n\n`);
+              }
+            },
+            onChunk: (chunk) => {
+              if (!hasStartedContent) {
+                hasStartedContent = true;
+                res.write(`data: ${JSON.stringify({ type: 'stage', stage: 'generating', status: 'Streaming roadmap…' })}\n\n`);
+              }
+              res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunk })}\n\n`);
+            },
+            onDone: () => {
+              res.write(`data: ${JSON.stringify({ type: 'done', stage: 'completed' })}\n\n`);
+              res.write('data: [DONE]\n\n');
+              res.end();
+            },
+            onError: (streamErr) => {
+              console.error('[Groq Streaming Error]:', streamErr.message);
+              res.write(`data: ${JSON.stringify({ type: 'error', error: streamErr.message || 'Groq stream processing failed.' })}\n\n`);
+              res.write('data: [DONE]\n\n');
+              res.end();
+            }
+          });
+        } catch (callErr) {
+          console.error('[Groq Stream Launch Error]:', callErr.message);
+          res.write(`data: ${JSON.stringify({ type: 'error', error: callErr.message || 'Failed to start AI inference.' })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+        }
+
+        return;
       }
 
       // Route not found

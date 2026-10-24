@@ -30,18 +30,18 @@ async function runPortfolioSocialInteractionTests() {
     }
   }
 
-  const loggedInUser = {
-    id: 'user-maya-chen',
-    name: 'Maya Chen',
-    role: 'creator',
-    creatorId: 'maya-chen'
-  };
-
   const loggedInCreator = CREATORS.find(c => c.id === 'maya-chen');
   const otherCreator = CREATORS.find(c => c.id === 'alex-rivera');
 
-  assert.ok(loggedInCreator, 'Logged-in creator (Maya Chen) must exist');
-  assert.ok(otherCreator, 'Other creator (Alex Rivera) must exist');
+  assert.ok(loggedInCreator, 'Logged-in creator must exist');
+  assert.ok(otherCreator, 'Other creator must exist');
+
+  const loggedInUser = {
+    id: 'user-maya-chen',
+    name: loggedInCreator.name,
+    role: 'creator',
+    creatorId: 'maya-chen'
+  };
 
   // --- Group 1: Priority 1 — Author Identity & Profile Navigation ---
   console.log('--- Group 1: Priority 1 — Author Identity & Profile Navigation ---');
@@ -84,7 +84,7 @@ async function runPortfolioSocialInteractionTests() {
     // When other creator is passed
     const resolvedAuthorDirect = resolveProjectAuthor(rawProject, otherCreator, loggedInCreator, CREATORS);
     assert.strictEqual(resolvedAuthorDirect.id, 'alex-rivera');
-    assert.strictEqual(resolvedAuthorDirect.name, 'Alex Rivera');
+    assert.strictEqual(resolvedAuthorDirect.name, otherCreator.name);
 
     // When creator is omitted but project has creatorId
     const resolvedAuthorFromProject = resolveProjectAuthor(rawProject, null, loggedInCreator, CREATORS);
@@ -199,7 +199,7 @@ async function runPortfolioSocialInteractionTests() {
 
     assert.strictEqual(comment.projectId, otherCreator.projects[0].id);
     assert.strictEqual(comment.authorId, 'maya-chen');
-    assert.strictEqual(comment.authorName, 'Maya Chen');
+    assert.strictEqual(comment.authorName, loggedInCreator.name);
     assert.ok(comment.text.length > 0);
   });
 

@@ -30,7 +30,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'fashion',
       categoryLabel: 'Fashion & Lifestyle',
       creatorId: 'elena-rostova',
-      creatorName: 'Elena Rostova',
+      creatorName: 'Ananya Roy',
       discipline: 'AI Fashion Direction',
       image: '/portfolios/elena-rostova-portfolio.jpg',
       span: 'tall'
@@ -41,7 +41,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'beauty',
       categoryLabel: 'Beauty & Skincare',
       creatorId: 'zora-vance',
-      creatorName: 'Zora Vance',
+      creatorName: 'Zoya Merchant',
       discipline: 'Macro Beauty & Light',
       image: '/portfolios/zora-vance-portfolio.jpg',
       span: 'normal'
@@ -52,7 +52,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'product',
       categoryLabel: 'Product Campaigns',
       creatorId: 'alex-rivera',
-      creatorName: 'Alex Rivera',
+      creatorName: 'Aarav Kapoor',
       discipline: '3D Spatial CGI',
       image: '/portfolios/alex-rivera-portfolio.jpg',
       span: 'normal'
@@ -74,7 +74,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'ai-art',
       categoryLabel: 'Experimental AI Art',
       creatorId: 'maya-chen',
-      creatorName: 'Maya Chen',
+      creatorName: 'Maya Sharma',
       discipline: 'Generative Cinema',
       image: '/portfolios/maya-chen-portfolio.jpg',
       span: 'wide'

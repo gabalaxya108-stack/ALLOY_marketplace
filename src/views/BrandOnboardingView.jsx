@@ -43,7 +43,7 @@ export default function BrandOnboardingView({
     contentFormats: '4K Stills Suite, 9:16 Loops',
     deliverables: '3x Hero Stills, 2x Vertical Reels',
     preferredPlatforms: 'Instagram, TikTok',
-    budget: '$8,000',
+    budget: '₹80,000',
     deadline: '3 weeks',
     requiredCreatorCapabilities: ['Macro Fluid Physics', 'High-Res Lighting']
   });
@@ -91,7 +91,7 @@ export default function BrandOnboardingView({
       contentFormats: '4K Stills Suite, 9:16 Vertical Loops',
       deliverables: '3x Hero Master Stills, 2x 15s Vertical Loops',
       preferredPlatforms: 'Instagram, TikTok',
-      budget: '$6,500',
+      budget: '₹65,000',
       deadline: '3 weeks',
       requiredCreatorCapabilities: ['Macro Viscosity', 'Sub-Surface Light Physics']
     });
@@ -422,7 +422,7 @@ export default function BrandOnboardingView({
               <textarea
                 className="form-textarea"
                 rows={3}
-                placeholder="e.g. We need three short-form videos for a sustainable skincare launch. The audience is young adults interested in simple routines. The content should feel natural, warm, and educational with a budget of $6,500 in 3 weeks."
+                placeholder="e.g. We need three short-form videos for a sustainable skincare launch. The audience is young adults interested in simple routines. The content should feel natural, warm, and educational with a budget of ₹65,000 in 3 weeks."
                 value={naturalPrompt}
                 onChange={(e) => setNaturalPrompt(e.target.value)}
               />
@@ -488,11 +488,11 @@ export default function BrandOnboardingView({
 
             <div className="form-row-2">
               <div className="form-group">
-                <label className="form-label">Budget (USD)</label>
+                <label className="form-label">Budget (INR / ₹)</label>
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. $8,000"
+                  placeholder="e.g. ₹80,000"
                   value={campaignBrief.budget || ''}
                   onChange={(e) => setCampaignBrief({ ...campaignBrief, budget: e.target.value })}
                 />

@@ -155,7 +155,7 @@ export default function AdminPlatformControls({
             </div>
 
             <div className="alloy-admin-input-group mt-3">
-              <label>Unverified Brand Max Campaign Budget ($)</label>
+              <label>Unverified Brand Max Campaign Budget (₹)</label>
               <div className="alloy-admin-input-wrapper">
                 <DollarSign size={15} className="alloy-admin-field-icon" />
                 <input

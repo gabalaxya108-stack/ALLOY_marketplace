@@ -139,23 +139,65 @@ export async function syncUserProfileSafely(user, preferredRole = null) {
 
     // Automatically sync linked creator_profiles or brands table for Table Editor visibility
     try {
+      const details = user.details || user.profileDetails || user.creator || user.brand || {};
       if (resolvedRole === 'creator') {
-        const cleanHandle = `@${(displayName || user.email?.split('@')[0] || 'creator').toLowerCase().replace(/[^a-z0-9_]/g, '')}_${user.id.slice(0, 4)}`;
+        const cleanHandle = details.handle 
+          ? (details.handle.startsWith('@') ? details.handle : `@${details.handle}`)
+          : `@${(displayName || user.email?.split('@')[0] || 'creator').toLowerCase().replace(/[^a-z0-9_]/g, '')}_${user.id.slice(0, 4)}`;
+
+        const experience = details.experience || '3+ years in AI visual arts';
+        const specialty = details.specialty || 'AI Cinematic Direction';
+        const heroWork = details.heroWork || specialty || 'Flagship Studio Showcase';
+        const avatar = details.avatar || avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+        const bio = details.bio || `${displayName || 'Creator'} specializes in ${specialty} and cinematic narrative direction.`;
+        const creativeIdentity = details.creativeIdentity || specialty;
+        const location = details.location || 'Remote / Global';
+        const tools = Array.isArray(details.tools) && details.tools.length ? details.tools : ['Midjourney', 'Runway Gen-3', 'Unreal Engine'];
+        const styles = Array.isArray(details.styles) && details.styles.length ? details.styles : ['Cinematic', 'Editorial', 'Hyperreal'];
+
         await supabase.from('creator_profiles').upsert({
           id: `creator-${user.id.slice(0, 8)}`,
           user_id: user.id,
           name: displayName || 'Creator Studio',
           handle: cleanHandle,
+          experience,
+          specialty,
+          hero_work: heroWork,
+          avatar,
+          bio,
+          creative_identity: creativeIdentity,
+          location,
+          tools,
+          styles,
+          availability: 'Available for projects',
+          status_badge: 'Available now',
+          turnaround: '48h concept frames',
           status: 'Published',
           visibility: 'published',
           is_demo: false,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
       } else if (resolvedRole === 'brand') {
+        const emailKey = (user.email || user.id || 'custom').toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
+        const handle = details.handle 
+          ? (details.handle.startsWith('@') ? details.handle : `@${details.handle}`)
+          : `@${(displayName || user.email?.split('@')[0] || 'brand').toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+        const industry = details.industry || 'Beverages & Drinks';
+        const description = details.description || details.productFocus || `${displayName || 'Brand'} private studio workspace.`;
+        const website = details.website || '';
+        const logo = details.logo || avatarUrl || '';
+        const aesthetic = details.aesthetic || 'Modern & Editorial';
+
         await supabase.from('brands').upsert({
-          id: `brand-${user.id.slice(0, 8)}`,
+          id: `brand-${emailKey}`,
           user_id: user.id,
           name: displayName || 'Brand Studio',
+          handle,
+          industry,
+          description,
+          website,
+          logo,
+          aesthetic,
           is_demo: false,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
@@ -613,7 +655,7 @@ export async function resetPassword(email, newPassword) {
   return data;
 }
 
-export async function registerAccount(email, password, role = 'brand', displayName = '') {
+export async function registerAccount(email, password, role = 'brand', displayName = '', details = {}) {
   let serverResult = null;
   let serverError = null;
 
@@ -621,7 +663,7 @@ export async function registerAccount(email, password, role = 'brand', displayNa
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, role, displayName })
+      body: JSON.stringify({ email, password, role, displayName, details })
     });
     const data = await res.json();
     if (res.ok && data.ok) {

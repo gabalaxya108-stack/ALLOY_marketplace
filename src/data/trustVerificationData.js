@@ -436,7 +436,7 @@ export function createInitialTrustVerification(creator = {}, currentUser = null)
       {
         id: 'pe-maya-2',
         projectId: 'maya-proj-2',
-        projectTitle: 'Lumina Botanica — Bio-Luminescent Serums',
+        projectTitle: 'Veda Botanics — Bio-Luminescent Serums',
         evidenceType: 'Model Seed Logs & Depth Map Passes',
         description: 'Midjourney v6 seed reference sheet, ControlNet depth map passes for fluid droplets, and raw PSD layers separating lighting reflections.',
         artifactUrl: 'https://vault.alloy.market/audit/lumina_depth_passes.zip',
@@ -462,7 +462,7 @@ export function createInitialTrustVerification(creator = {}, currentUser = null)
         id: 'td-2',
         toolName: 'Midjourney v6.1',
         useCase: 'Initial lighting concept boards and botanical macro texture generation.',
-        associatedWork: 'Lumina Botanica Serums',
+        associatedWork: 'Veda Botanics Serums',
         provenance: PROVENANCE_LEVELS.EVIDENCE_ATTACHED.key,
         status: VERIFICATION_STATUSES.PENDING_REVIEW,
         evidenceNote: 'Seed logs attached in portfolio evidence.'
@@ -511,7 +511,7 @@ export function createInitialTrustVerification(creator = {}, currentUser = null)
         {
           id: 'eng-1',
           campaignTitle: 'Summer Skincare & Radiant Hydration Launch',
-          brandName: 'Lumina Botanica',
+          brandName: 'Veda Botanics',
           deliverablesSubmitted: 3,
           completedAt: 'Oct 01, 2026',
           status: 'Completed & Released'
@@ -519,7 +519,7 @@ export function createInitialTrustVerification(creator = {}, currentUser = null)
         {
           id: 'eng-2',
           campaignTitle: 'Solar Amber Eau de Parfum Visuals',
-          brandName: 'Lumina Botanica',
+          brandName: 'Veda Botanics',
           deliverablesSubmitted: 3,
           completedAt: 'Sep 22, 2026',
           status: 'Completed & Released'
@@ -543,7 +543,7 @@ export function createInitialTrustVerification(creator = {}, currentUser = null)
       {
         id: 'aud-1',
         timestamp: 'Oct 06, 2026 • 14:22 UTC',
-        reviewer: 'Elena Rostova (Lead Visual Auditor)',
+        reviewer: 'Ananya Roy (Lead Visual Auditor)',
         category: 'Portfolio Authenticity',
         action: 'APPROVED',
         notes: 'Verified original ComfyUI node graph and ProRes 4444 timeline metadata for Echoes of the Solarium.'
@@ -551,7 +551,7 @@ export function createInitialTrustVerification(creator = {}, currentUser = null)
       {
         id: 'aud-2',
         timestamp: 'Oct 06, 2026 • 15:10 UTC',
-        reviewer: 'Elena Rostova (Lead Visual Auditor)',
+        reviewer: 'Ananya Roy (Lead Visual Auditor)',
         category: 'Creative Workflow',
         action: 'APPROVED',
         notes: 'Verified human involvement checkpoints in Premium Skincare Campaign Pipeline.'

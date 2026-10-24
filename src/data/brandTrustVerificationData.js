@@ -414,10 +414,10 @@ export function createInitialBrandTrustVerification(brand = {}, currentUser = nu
     },
     entity: {
       status: isLuminaDemo ? VERIFICATION_STATUSES.VERIFIED : (brand.website ? VERIFICATION_STATUSES.SELF_DECLARED : VERIFICATION_STATUSES.NOT_SUBMITTED),
-      legalName: isLuminaDemo ? 'Lumina Botanica Labs Ltd' : (brand.name || 'Brand Partner'),
-      jurisdiction: isLuminaDemo ? 'United Kingdom (Companies House #11948201)' : 'Global Commercial Entity',
+      legalName: isLuminaDemo ? 'Veda Botanics Labs Ltd' : (brand.name || 'Brand Partner'),
+      jurisdiction: isLuminaDemo ? 'Ministry of Corporate Affairs (MCA #U74999DL2024PTC123456)' : 'Global Commercial Entity',
       documentType: 'Certificate of Incorporation',
-      website: brand.website || (isLuminaDemo ? 'https://luminabotanica.com' : ''),
+      website: brand.website || (isLuminaDemo ? 'https://vedabotanics.in' : ''),
       reviewedAt: isLuminaDemo ? '2026-09-10T14:30:00Z' : null,
       notes: isLuminaDemo ? 'Verified corporate entity in active standing.' : 'Awaiting corporate registration upload.'
     },
