@@ -43,6 +43,8 @@ ALTER TABLE IF EXISTS public.collaborations ADD COLUMN IF NOT EXISTS revision_hi
 ALTER TABLE IF EXISTS public.collaborations ADD COLUMN IF NOT EXISTS application_id TEXT;
 ALTER TABLE IF EXISTS public.campaigns ADD COLUMN IF NOT EXISTS creator_slots INT DEFAULT 1;
 ALTER TABLE IF EXISTS public.campaigns ADD COLUMN IF NOT EXISTS remaining_slots INT DEFAULT 1;
+ALTER TABLE IF EXISTS public.creator_profiles ADD COLUMN IF NOT EXISTS dna_summary JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE IF EXISTS public.creator_profiles ADD COLUMN IF NOT EXISTS dna_last_analyzed_at TIMESTAMPTZ;
 
 -- ============================================================================
 -- 1. USER PROFILES TABLE (Linked to Supabase Auth auth.users)
