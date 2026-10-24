@@ -2196,5 +2196,10 @@
   .alloy-admin-crest-desc {
     font-size: 12px !important;
   }
+
+  .alloy-admin-modal-card {
+    padding: 20px 16px !important;
+    border-radius: 14px !important;
+  }
 }
 

@@ -16905,6 +16905,12 @@ img, video {
   margin-left: 2px;
 }
 
+.hero-stats-strip .stat-placeholder {
+  color: #B5AFA6;
+  display: inline-block;
+  opacity: 0.6;
+}
+
 .hero-stats-strip .stat-caption {
   font-size: 0.68rem;
   letter-spacing: 0.14em;
