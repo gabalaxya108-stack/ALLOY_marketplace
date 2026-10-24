@@ -473,10 +473,10 @@ export async function fetchAdminCollaborations({ page = 1, limit = 20, search = 
       {
         id: 'collab-demo-01',
         campaign_title: 'Botanical Elegance Visuals',
-        brand_name: 'Lumina Botanica',
-        creator_name: 'Elena Rostova',
+        brand_name: 'Veda Botanics',
+        creator_name: 'Ananya Roy',
         status: 'in-progress',
-        budget: 6500,
+        budget: 65000,
         milestones_completed: 2,
         total_milestones: 4,
         created_at: new Date(Date.now() - 86400000 * 3).toISOString()
@@ -484,8 +484,8 @@ export async function fetchAdminCollaborations({ page = 1, limit = 20, search = 
       {
         id: 'collab-demo-02',
         campaign_title: 'Titanium Timepiece CGI',
-        brand_name: 'Vanguard Horology',
-        creator_name: 'Maya Lin',
+        brand_name: 'Kailash Horology',
+        creator_name: 'Maya Sharma',
         status: 'submitted',
         budget: 9200,
         milestones_completed: 3,
@@ -503,19 +503,19 @@ const FALLBACK_TRUST_REPORTS = [
   {
     id: 'tr-rep-001',
     entity_id: 'brand-demo-lumina',
-    entity_name: 'Lumina Botanica',
+    entity_name: 'Veda Botanics',
     entity_type: 'brand',
     risk_score: 18,
     risk_category: 'low',
     status: 'needs_review',
-    summary: 'Routine verification audit: campaign escrow allocation ($12,000) queued for initial platform clearance.',
+    summary: 'Routine verification audit: campaign escrow allocation (₹1,20,000) queued for initial platform clearance.',
     signals: ['high_escrow_deposit', 'new_campaign_created'],
     created_at: new Date(Date.now() - 3600000 * 4).toISOString()
   },
   {
     id: 'tr-rep-002',
     entity_id: 'c1',
-    entity_name: 'Elena Rostova',
+    entity_name: 'Ananya Roy',
     entity_type: 'creator',
     risk_score: 12,
     risk_category: 'low',
@@ -527,7 +527,7 @@ const FALLBACK_TRUST_REPORTS = [
   {
     id: 'tr-rep-003',
     entity_id: 'brand-demo-vanguard',
-    entity_name: 'Vanguard Horology',
+    entity_name: 'Kailash Horology',
     entity_type: 'brand',
     risk_score: 42,
     risk_category: 'medium',

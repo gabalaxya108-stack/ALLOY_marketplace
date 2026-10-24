@@ -13,28 +13,28 @@ export default function VideoHero({ onExploreClick }) {
     {
       id: 'fashion',
       label: '01 Fashion & Haute Couture',
-      creator: 'Elena Rostova',
+      creator: 'Ananya Roy',
       role: 'AI Fashion Director',
       poster: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1400&q=85'
     },
     {
       id: 'cinematic',
       label: '02 Cinematic Brand Worlds',
-      creator: 'Maya Chen',
+      creator: 'Maya Sharma',
       role: 'Cinematic AI Director',
       poster: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1400&q=85'
     },
     {
       id: 'product',
       label: '03 Precision Hardware & 3D',
-      creator: 'Alex Rivera',
+      creator: 'Aarav Kapoor',
       role: 'AI Product Advertiser',
       poster: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1400&q=85'
     },
     {
       id: 'characters',
       label: '04 Digital Humans & Editorial',
-      creator: 'Kenji Takahashi',
+      creator: 'Karan Taneja',
       role: 'AI Character Sculptor',
       poster: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1400&q=85'
     }

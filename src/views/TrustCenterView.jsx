@@ -177,7 +177,7 @@ export default function TrustCenterView({
   const [reviewActionForm, setReviewActionForm] = useState({
     decision: 'APPROVE', // 'APPROVE' | 'REJECT' | 'REQUEST_INFO'
     notes: '',
-    reviewerName: currentUser?.profile?.display_name || currentUser?.display_name || 'Elena Rostova (Lead Visual Auditor)'
+    reviewerName: currentUser?.profile?.display_name || currentUser?.display_name || 'Ananya Roy (Lead Visual Auditor)'
   });
 
   // =========================================================================
@@ -1090,7 +1090,7 @@ export default function TrustCenterView({
                             setReviewActionForm({
                               decision: 'APPROVE',
                               notes: claim.reviewerNotes || '',
-                              reviewerName: currentUser?.profile?.display_name || 'Elena Rostova (Lead Visual Auditor)'
+                              reviewerName: currentUser?.profile?.display_name || 'Ananya Roy (Lead Visual Auditor)'
                             });
                             setActiveModal('review-action');
                           }}
@@ -1401,7 +1401,7 @@ export default function TrustCenterView({
                           setReviewActionForm({
                             decision: 'APPROVE',
                             notes: claim.reviewerNotes || '',
-                            reviewerName: currentUser?.profile?.display_name || 'Elena Rostova (Lead Visual Auditor)'
+                            reviewerName: currentUser?.profile?.display_name || 'Ananya Roy (Lead Visual Auditor)'
                           });
                           setActiveModal('review-action');
                         }}

@@ -30,7 +30,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'fashion',
       categoryLabel: 'Fashion & Lifestyle',
       creatorId: 'elena-rostova',
-      creatorName: 'Elena Rostova',
+      creatorName: 'Ananya Roy',
       discipline: 'AI Fashion Direction',
       image: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1000&q=85',
       span: 'tall'
@@ -41,7 +41,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'beauty',
       categoryLabel: 'Beauty & Skincare',
       creatorId: 'zora-vance',
-      creatorName: 'Zora Vance',
+      creatorName: 'Zoya Merchant',
       discipline: 'Macro Beauty & Light',
       image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=1000&q=85',
       span: 'normal'
@@ -52,7 +52,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'product',
       categoryLabel: 'Product Campaigns',
       creatorId: 'alex-rivera',
-      creatorName: 'Alex Rivera',
+      creatorName: 'Aarav Kapoor',
       discipline: '3D Spatial CGI',
       image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1000&q=85',
       span: 'normal'
@@ -63,7 +63,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'interior',
       categoryLabel: 'Interiors & Architecture',
       creatorId: 'sofia-rossi',
-      creatorName: 'Sofia Rossi',
+      creatorName: 'Suhana Rao',
       discipline: 'Architectural Renders',
       image: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=85',
       span: 'normal'
@@ -74,7 +74,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'ai-art',
       categoryLabel: 'Experimental AI Art',
       creatorId: 'maya-chen',
-      creatorName: 'Maya Chen',
+      creatorName: 'Maya Sharma',
       discipline: 'Generative Cinema',
       image: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1200&q=85',
       span: 'wide'
@@ -85,7 +85,7 @@ export default function CreativeShowcase({ creators = [], onSelectCreator, onExp
       category: 'product',
       categoryLabel: 'Product Campaigns',
       creatorId: 'kai-sorenson',
-      creatorName: 'Kai Sorenson',
+      creatorName: 'Kabir Sengupta',
       discipline: 'Synthetic Physics & VFX',
       image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1000&q=85',
       span: 'normal'

@@ -21,7 +21,7 @@ export default function ProductPreview({ onSelectCreator, onExploreMarketplace }
     category: "Consumer Lifestyle & Travel",
     targetAudience: "Design-conscious creators & urban commuters",
     deliverables: "4K Hero Key Visuals • 60s Film • 2x 9:16 Social Loops",
-    budget: "$8,000 – $12,000"
+    budget: "₹80,000 – ₹1,20,000"
   };
 
   const directions = [
@@ -30,8 +30,8 @@ export default function ProductPreview({ onSelectCreator, onExploreMarketplace }
       tabLabel: "Cinematic Narrative",
       creator: {
         id: "maya-chen",
-        name: "Maya Chen",
-        handle: "@mayachen.ai",
+        name: "Maya Sharma",
+        handle: "@mayasharma.ai",
         role: "Cinematic AI Director",
         avatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80",
         matchScore: "98%",
@@ -54,8 +54,8 @@ export default function ProductPreview({ onSelectCreator, onExploreMarketplace }
       tabLabel: "Precision 3D Spatial",
       creator: {
         id: "alex-rivera",
-        name: "Alex Rivera",
-        handle: "@alexrivera.cgi",
+        name: "Aarav Kapoor",
+        handle: "@aaravkapoor.3d",
         role: "Product Visuals Specialist",
         avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
         matchScore: "95%",
@@ -78,8 +78,8 @@ export default function ProductPreview({ onSelectCreator, onExploreMarketplace }
       tabLabel: "Haute Couture Form",
       creator: {
         id: "elena-rostova",
-        name: "Elena Rostova",
-        handle: "@elena.atelier",
+        name: "Ananya Roy",
+        handle: "@ananya.atelier",
         role: "AI Fashion Director",
         avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=200&q=80",
         matchScore: "92%",

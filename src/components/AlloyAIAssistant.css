@@ -1,0 +1,1312 @@
+/* src/components/AlloyAIAssistant.css */
+/* ALLOY AI — Arctic White + Deep Forest Green + Soft Sage Design System */
+/* Clean, calm, premium, intelligent, and professional SaaS identity */
+
+:root {
+  --alloy-forest-primary: #203B32;     /* Primary forest green */
+  --alloy-forest-secondary: #386B53;   /* Secondary forest green */
+  --alloy-sage: #527464;               /* Sage green */
+  --alloy-soft-sage: #F2F5F1;          /* Soft sage background */
+  --alloy-white: #FFFFFF;              /* Pure white */
+  --alloy-text-primary: #25332C;       /* Primary text */
+  --alloy-text-secondary: #738078;     /* Secondary text */
+  --alloy-text-muted: #929D95;         /* Muted text */
+  --alloy-border: #DFE7E0;             /* Borders */
+  --alloy-surface-secondary: #F7F9F6;  /* Secondary surfaces */
+  --alloy-hover-bg: #E9F0E9;           /* Hover background */
+}
+
+/* ==========================================================================
+   1. FLOATING WRAPPER (Bottom-Right Anchor)
+   ========================================================================== */
+.alloy-assistant-root {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9995;
+  pointer-events: none;
+  font-family: inherit;
+}
+
+.alloy-sculptural-avatar-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: auto;
+}
+
+/* ==========================================================================
+   2. EDITORIAL HOVER PILL ("Ask Alloy AI")
+   ========================================================================== */
+.alloy-avatar-hover-label {
+  position: absolute;
+  right: calc(100% + 14px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 12px;
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  border-radius: 9999px;
+  box-shadow: 0 8px 24px rgba(32, 59, 50, 0.1), 0 2px 6px rgba(32, 59, 50, 0.04);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(12px) scale(0.96);
+  pointer-events: none;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.alloy-avatar-hover-label.is-visible {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+
+.hover-label-sparkle {
+  color: var(--alloy-forest-secondary);
+  font-size: 0.85rem;
+  line-height: 1;
+  animation: sparkleGlint 3s ease-in-out infinite alternate;
+}
+
+.hover-label-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--alloy-text-primary);
+  letter-spacing: -0.01em;
+}
+
+/* ==========================================================================
+   3. ABSTRACT SCULPTURAL AVATAR (Idle & Hover)
+   ========================================================================== */
+.alloy-sculptural-avatar-btn {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--alloy-white);
+  border: 1.5px solid var(--alloy-border);
+  box-shadow: 
+    0 10px 28px -4px rgba(32, 59, 50, 0.16),
+    0 2px 8px rgba(32, 59, 50, 0.08);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s ease,
+              box-shadow 0.25s ease;
+  animation: alloyAvatarFloat 4.2s ease-in-out infinite alternate;
+}
+
+.alloy-sculptural-avatar-btn:hover {
+  transform: translateY(-3px) scale(1.04);
+  border-color: var(--alloy-sage);
+  box-shadow: 
+    0 14px 34px -4px rgba(32, 59, 50, 0.22),
+    0 4px 12px rgba(32, 59, 50, 0.1);
+}
+
+.alloy-sculptural-avatar-btn:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+/* Ambient Soft Sage Halo */
+.avatar-ambient-halo {
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(82, 116, 100, 0.22) 0%, transparent 70%);
+  pointer-events: none;
+  animation: ambientHaloBreathe 4.2s ease-in-out infinite alternate;
+}
+
+/* Orbiting Shards */
+.avatar-orbit-track {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1px dashed rgba(82, 116, 100, 0.25);
+  pointer-events: none;
+  animation: orbitTrackSpin 18s linear infinite;
+}
+
+.orbiting-glass-shard {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: var(--alloy-forest-secondary);
+  border-radius: 1px;
+  opacity: 0.75;
+  transform: rotate(45deg);
+}
+
+.shard-1 { top: -2px; left: 50%; }
+.shard-2 { bottom: 6px; right: -2px; width: 3.5px; height: 3.5px; }
+.shard-3 { bottom: -2px; left: 30%; width: 3.5px; height: 3.5px; opacity: 0.5; }
+
+.orbiting-gold-bead {
+  position: absolute;
+  top: 45%;
+  left: -3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--alloy-sage);
+}
+
+.avatar-sculpture-wrapper {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.avatar-sculpture-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.avatar-specular-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.6) 50%,
+    transparent 100%
+  );
+  transform: translateX(-120%) rotate(25deg);
+  pointer-events: none;
+  animation: specularSweepPass 6.5s ease-in-out infinite;
+}
+
+.avatar-glass-lens {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.4) 0%, transparent 80%);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.avatar-presence-indicator {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--alloy-forest-secondary);
+  border: 2px solid var(--alloy-white);
+  box-shadow: 0 0 4px rgba(56, 107, 83, 0.6);
+  z-index: 4;
+}
+
+/* ==========================================================================
+   4. EXPANDED CHAT PANEL
+   ========================================================================== */
+.alloy-ai-chat-panel {
+  pointer-events: auto;
+  position: relative;
+  width: 430px;
+  max-width: calc(100vw - 32px);
+  height: 590px;
+  max-height: calc(100vh - 100px);
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  border-radius: 16px;
+  box-shadow: 
+    0 20px 48px -8px rgba(32, 59, 50, 0.14),
+    0 4px 16px rgba(32, 59, 50, 0.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: panelSlideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Header */
+.chat-panel-header {
+  padding: 12px 16px;
+  background: var(--alloy-white);
+  border-bottom: 1px solid var(--alloy-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header-brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-mini-sculpture {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--alloy-surface-secondary);
+  border: 1px solid var(--alloy-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+}
+
+.header-mini-sculpture.is-processing {
+  border-color: var(--alloy-sage);
+  box-shadow: 0 0 10px rgba(82, 116, 100, 0.3);
+  animation: miniSculpturePulse 2s ease-in-out infinite alternate;
+}
+
+.header-mini-img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.header-meta-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.header-title {
+  margin: 0;
+  font-size: 0.98rem;
+  color: var(--alloy-forest-primary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.header-subtitle {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--alloy-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.2;
+}
+
+.status-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--alloy-forest-secondary);
+  box-shadow: 0 0 4px rgba(56, 107, 83, 0.5);
+  display: inline-block;
+}
+
+.status-live-dot.is-pulsing {
+  animation: statusPulsing 1.2s infinite alternate;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.header-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--alloy-text-secondary);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.header-icon-btn:hover {
+  background: var(--alloy-hover-bg);
+  color: var(--alloy-forest-primary);
+  border-color: var(--alloy-border);
+}
+
+.header-icon-btn.close-btn:hover {
+  background: var(--alloy-hover-bg);
+  color: var(--alloy-forest-primary);
+}
+
+/* ==========================================================================
+   5. PROCESSING STAGE BANNER
+   ========================================================================== */
+.ai-processing-stage-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--alloy-surface-secondary);
+  border-bottom: 1px solid var(--alloy-border);
+  animation: stageStripFade 0.2s ease-out;
+}
+
+.stage-symbol-indicator {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stage-symbol-glow {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(82, 116, 100, 0.3) 0%, transparent 70%);
+  animation: stageGlowPulse 1.8s infinite alternate;
+}
+
+.stage-symbol-icon {
+  font-size: 0.8rem;
+  color: var(--alloy-forest-secondary);
+  z-index: 1;
+}
+
+.stage-status-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+
+.stage-status-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--alloy-forest-primary);
+  letter-spacing: 0.02em;
+}
+
+.stage-status-detail {
+  font-size: 0.72rem;
+  color: var(--alloy-text-secondary);
+}
+
+.btn-stop-generating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  border-radius: 6px;
+  color: var(--alloy-text-secondary);
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-stop-generating:hover {
+  background: var(--alloy-hover-bg);
+  border-color: var(--alloy-sage);
+  color: var(--alloy-forest-primary);
+}
+
+/* ==========================================================================
+   6. NAVIGATION SHORTCUTS (Quick-Action Chips)
+   ========================================================================== */
+.chat-suggestions-bar {
+  padding: 10px 14px;
+  background: var(--alloy-white);
+  border-bottom: 1px solid var(--alloy-border);
+}
+
+.suggestions-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.suggestions-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.suggestion-chip {
+  background: var(--alloy-soft-sage);
+  border: 1px solid var(--alloy-border);
+  color: var(--alloy-forest-primary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.3;
+}
+
+.suggestion-chip:hover {
+  background: var(--alloy-white);
+  border-color: var(--alloy-sage);
+  color: var(--alloy-forest-primary);
+  box-shadow: 0 1px 4px rgba(32, 59, 50, 0.06);
+}
+
+.suggestion-chip:active {
+  background: var(--alloy-forest-primary);
+  border-color: var(--alloy-forest-primary);
+  color: var(--alloy-white);
+}
+
+/* ==========================================================================
+   7. MESSAGE STREAM & PROGRESSIVE BUBBLES
+   ========================================================================== */
+.chat-stream-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--alloy-surface-secondary);
+}
+
+.chat-bubble-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 96%;
+}
+
+.chat-bubble-row.is-user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+  max-width: 88%;
+}
+
+.chat-bubble-row.is-ai {
+  align-self: flex-start;
+}
+
+.chat-bubble-avatar {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  box-shadow: 0 1px 3px rgba(32, 59, 50, 0.05);
+}
+
+.chat-bubble-avatar.avatar-streaming {
+  border-color: var(--alloy-sage);
+  box-shadow: 0 0 8px rgba(82, 116, 100, 0.35);
+}
+
+.bubble-avatar-core-halo {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1px dashed rgba(82, 116, 100, 0.5);
+  animation: orbitTrackSpin 6s linear infinite;
+}
+
+.bubble-avatar-img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.chat-bubble-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.chat-bubble-row.is-user .chat-bubble-content {
+  align-items: flex-end;
+}
+
+/* Pre-token Loading State */
+.stream-pre-token-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  border-radius: 12px;
+  border-top-left-radius: 3px;
+  box-shadow: 0 1px 3px rgba(32, 59, 50, 0.03);
+}
+
+.pre-token-symbol {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--alloy-hover-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pre-token-core {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--alloy-sage);
+  box-shadow: 0 0 4px rgba(82, 116, 100, 0.5);
+  animation: preTokenBreathe 1.2s infinite alternate;
+}
+
+.pre-token-text {
+  font-size: 0.78rem;
+  color: var(--alloy-text-secondary);
+}
+
+/* Bubble Text */
+.bubble-text {
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--alloy-text-primary);
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  word-break: break-word;
+  box-shadow: 0 1px 3px rgba(32, 59, 50, 0.03);
+}
+
+/* User Messages: Soft sage background, dark forest text */
+.chat-bubble-row.is-user .bubble-text {
+  background: var(--alloy-soft-sage);
+  border-color: var(--alloy-border);
+  color: var(--alloy-forest-primary);
+  border-bottom-right-radius: 3px;
+  font-weight: 500;
+}
+
+/* AI Messages: White background, subtle border */
+.chat-bubble-row.is-ai .bubble-text {
+  border-top-left-radius: 3px;
+  border-color: var(--alloy-border);
+  background: var(--alloy-white);
+}
+
+.bubble-text-error {
+  border-color: #F0D5D5 !important;
+  background: #FDF6F6 !important;
+  color: var(--alloy-text-primary) !important;
+}
+
+.error-strip-icon {
+  color: #B85328;
+}
+
+/* Streaming Cursor */
+.streaming-cursor {
+  display: inline-block;
+  color: var(--alloy-forest-secondary);
+  font-weight: 700;
+  margin-left: 2px;
+  animation: cursorBlink 0.8s infinite;
+}
+
+/* ==========================================================================
+   8. MARKDOWN TYPOGRAPHY (AI Messages)
+   ========================================================================== */
+.formatted-paragraph {
+  margin-bottom: 10px;
+}
+
+.formatted-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.standard-line {
+  margin: 0 0 5px 0;
+  color: var(--alloy-text-primary);
+}
+
+.standard-line:last-child {
+  margin-bottom: 0;
+}
+
+.formatted-heading-1 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--alloy-forest-primary);
+  margin: 10px 0 6px 0;
+}
+
+.formatted-heading-2 {
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: var(--alloy-forest-primary);
+  margin: 8px 0 5px 0;
+}
+
+.formatted-heading-3 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--alloy-forest-primary);
+  margin: 8px 0 4px 0;
+}
+
+.markdown-bold {
+  color: var(--alloy-forest-primary);
+  font-weight: 600;
+}
+
+.bullet-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 5px 0;
+}
+
+.bullet-symbol {
+  color: var(--alloy-forest-secondary);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  flex-shrink: 0;
+}
+
+.bullet-text {
+  flex: 1;
+  color: var(--alloy-text-primary);
+}
+
+.num-list-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 5px 0;
+}
+
+.num-counter {
+  color: var(--alloy-forest-secondary);
+  font-weight: 600;
+  font-size: 0.84rem;
+  flex-shrink: 0;
+}
+
+.num-text {
+  flex: 1;
+  color: var(--alloy-text-primary);
+  font-size: 0.84rem;
+}
+
+.inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+  padding: 1px 5px;
+  background: var(--alloy-soft-sage);
+  border: 1px solid var(--alloy-border);
+  border-radius: 4px;
+  color: var(--alloy-forest-primary);
+}
+
+.alloy-code-block {
+  position: relative;
+  background: var(--alloy-soft-sage);
+  border: 1px solid var(--alloy-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--alloy-forest-primary);
+  line-height: 1.45;
+}
+
+.code-lang-tag {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  color: var(--alloy-sage);
+  opacity: 0.8;
+}
+
+/* Markdown Table */
+.alloy-table-wrapper {
+  overflow-x: auto;
+  margin: 8px 0;
+  border-radius: 8px;
+  border: 1px solid var(--alloy-border);
+}
+
+.alloy-markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.alloy-markdown-table th {
+  background: var(--alloy-hover-bg);
+  color: var(--alloy-forest-primary);
+  padding: 7px 10px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--alloy-border);
+}
+
+.alloy-markdown-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--alloy-border);
+  color: var(--alloy-text-primary);
+  background: var(--alloy-white);
+}
+
+.alloy-markdown-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Contextual Actions inside bubbles */
+.bubble-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.bubble-action-btn {
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  color: var(--alloy-forest-primary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bubble-action-btn:hover {
+  background: var(--alloy-forest-primary);
+  border-color: var(--alloy-forest-primary);
+  color: var(--alloy-white);
+}
+
+/* Message Meta & Action Bar */
+.bubble-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 4px;
+}
+
+.bubble-timestamp {
+  font-size: 0.62rem;
+  color: var(--alloy-text-muted);
+}
+
+.message-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.msg-action-pill {
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  color: var(--alloy-text-secondary);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.64rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.msg-action-pill:hover {
+  background: var(--alloy-hover-bg);
+  color: var(--alloy-forest-primary);
+  border-color: var(--alloy-sage);
+}
+
+.text-forest-copied {
+  color: var(--alloy-forest-secondary) !important;
+}
+
+/* Error Retry Strip */
+.chat-error-retry-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #FDF6F6;
+  border: 1px solid #F0D5D5;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+.error-strip-text {
+  font-size: 0.72rem;
+  color: var(--alloy-text-primary);
+}
+
+.btn-retry-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--alloy-forest-primary);
+  border: none;
+  border-radius: 6px;
+  color: var(--alloy-white);
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-retry-action:hover {
+  background: var(--alloy-forest-secondary);
+}
+
+/* ==========================================================================
+   9. ROADMAP DESIGN (Arctic White + Deep Forest Green + Soft Sage)
+   ========================================================================== */
+.chat-bubble-row.is-roadmap-bubble .chat-bubble-content {
+  max-width: 100%;
+  width: 100%;
+}
+
+.alloy-visual-roadmap-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  background: var(--alloy-soft-sage);
+  border: 1px solid var(--alloy-border);
+  border-radius: 12px;
+  padding: 14px;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+/* Header Card */
+.roadmap-header-card {
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(32, 59, 50, 0.03);
+}
+
+.roadmap-header-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.roadmap-badge-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--alloy-forest-primary);
+  background: var(--alloy-hover-bg);
+  border: 1px solid var(--alloy-border);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.roadmap-goal-title {
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--alloy-forest-primary);
+  line-height: 1.36;
+  margin: 6px 0 0 0;
+  letter-spacing: -0.01em;
+}
+
+.roadmap-starting-point {
+  font-size: 0.82rem;
+  color: var(--alloy-text-secondary);
+  line-height: 1.55;
+  margin: 6px 0 0 0;
+}
+
+
+/* Steps List */
+.roadmap-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roadmap-step-card {
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(32, 59, 50, 0.03);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.roadmap-step-card:hover {
+  border-color: var(--alloy-sage);
+  box-shadow: 0 2px 6px rgba(32, 59, 50, 0.06);
+}
+
+.step-card-header {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  background: var(--alloy-white);
+  user-select: none;
+}
+
+.step-title-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+
+.step-num-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--alloy-sage) !important;
+}
+
+.step-title-text {
+  font-size: 0.94rem;
+  font-weight: 600;
+  color: var(--alloy-forest-primary) !important;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.step-expand-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--alloy-text-secondary);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.step-expand-toggle-btn:hover {
+  color: var(--alloy-forest-primary);
+}
+
+.step-card-body {
+  padding: 0 14px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--alloy-soft-sage);
+  padding-top: 10px;
+}
+
+.step-instruction-text {
+  font-size: 0.84rem;
+  color: var(--alloy-text-secondary) !important;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.step-action-row {
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.step-feature-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--alloy-surface-secondary);
+  border: 1px solid var(--alloy-border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--alloy-forest-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.step-feature-link-btn:hover {
+  background: var(--alloy-forest-primary);
+  border-color: var(--alloy-forest-primary);
+  color: var(--alloy-white);
+}
+
+/* Footer Note Card */
+.roadmap-footer-note-card {
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roadmap-footer-note-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.footer-note-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--alloy-forest-secondary);
+}
+
+.footer-note-text {
+  font-size: 0.82rem;
+  color: var(--alloy-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ==========================================================================
+   10. MESSAGE COMPOSER
+   ========================================================================== */
+.chat-composer-footer {
+  padding: 12px 14px;
+  background: var(--alloy-white);
+  border-top: 1px solid var(--alloy-border);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.chat-composer-input {
+  flex: 1;
+  background: var(--alloy-white);
+  border: 1px solid var(--alloy-border);
+  border-radius: 10px;
+  padding: 9px 13px;
+  color: var(--alloy-text-primary);
+  font-size: 0.82rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chat-composer-input:focus {
+  border-color: var(--alloy-forest-primary);
+  box-shadow: 0 0 0 2px rgba(32, 59, 50, 0.12);
+}
+
+.chat-composer-input:disabled {
+  opacity: 0.7;
+}
+
+.chat-composer-input::placeholder {
+  color: var(--alloy-text-muted);
+}
+
+.chat-composer-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--alloy-forest-primary);
+  border: none;
+  color: var(--alloy-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.chat-composer-send-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: var(--alloy-forest-secondary);
+  box-shadow: 0 3px 10px rgba(32, 59, 50, 0.2);
+}
+
+.chat-composer-send-btn:disabled {
+  background: var(--alloy-border);
+  color: var(--alloy-text-muted);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.chat-composer-stop-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--alloy-soft-sage);
+  border: 1px solid var(--alloy-border);
+  color: var(--alloy-forest-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.chat-composer-stop-btn:hover {
+  background: var(--alloy-hover-bg);
+  border-color: var(--alloy-sage);
+}
+
+/* ==========================================================================
+   11. FOOTER IDENTITY SUB-NOTE
+   ========================================================================== */
+.chat-panel-footer-note {
+  padding: 8px 14px;
+  background: var(--alloy-white);
+  border-top: 1px solid var(--alloy-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  color: var(--alloy-text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* ==========================================================================
+   12. KEYFRAME ANIMATIONS
+   ========================================================================== */
+@keyframes alloyAvatarFloat {
+  0% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(0.6deg); }
+  100% { transform: translateY(0px) rotate(0deg); }
+}
+
+@keyframes ambientHaloBreathe {
+  0% { opacity: 0.5; transform: scale(0.95); }
+  100% { opacity: 0.9; transform: scale(1.06); }
+}
+
+@keyframes orbitTrackSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes specularSweepPass {
+  0% { transform: translateX(-120%) rotate(25deg); opacity: 0; }
+  15% { opacity: 0.7; }
+  30% { transform: translateX(130%) rotate(25deg); opacity: 0; }
+  100% { transform: translateX(130%) rotate(25deg); opacity: 0; }
+}
+
+@keyframes sparkleGlint {
+  0% { opacity: 0.6; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes panelSlideUp {
+  0% { opacity: 0; transform: translateY(16px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes statusPulsing {
+  0% { opacity: 0.4; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes miniSculpturePulse {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.05); }
+}
+
+@keyframes preTokenBreathe {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.2); opacity: 1; }
+}
+
+@keyframes stageGlowPulse {
+  0% { transform: scale(0.85); opacity: 0.4; }
+  100% { transform: scale(1.2); opacity: 0.8; }
+}
+
+@keyframes stageStripFade {
+  0% { opacity: 0; transform: translateY(-3px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   13. RESPONSIVE ADAPTATION (Mobile & Tablet)
+   ========================================================================== */
+@media (max-width: 768px) {
+  .alloy-assistant-root {
+    bottom: 16px;
+    right: 16px;
+  }
+
+  .alloy-sculptural-avatar-btn {
+    width: 52px;
+    height: 52px;
+  }
+
+  .avatar-sculpture-wrapper {
+    width: 34px;
+    height: 34px;
+  }
+
+  .alloy-ai-chat-panel {
+    width: calc(100vw - 24px);
+    height: 520px;
+    max-height: calc(100vh - 80px);
+    right: 0;
+    bottom: 0;
+    border-radius: 14px;
+  }
+
+  .alloy-avatar-hover-label {
+    display: none;
+  }
+}

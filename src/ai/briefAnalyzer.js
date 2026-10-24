@@ -170,7 +170,7 @@ function extractStructuredBriefDeterministic(text, lower) {
       missingInformation: [
         { field: 'industry', label: 'Industry & Category', prompt: 'Specify your product category (e.g., Skincare, Luxury Fashion, Tech)' },
         { field: 'contentFormat', label: 'Deliverables & Format', prompt: 'Specify desired output formats (e.g., 4K Stills, 9:16 Video Loops)' },
-        { field: 'budget', label: 'Budget Tier', prompt: 'Specify target budget (e.g., $5,000 – $10,000)' },
+        { field: 'budget', label: 'Budget Tier', prompt: 'Specify target budget (e.g., ₹50,000 – ₹1,00,000)' },
         { field: 'timeline', label: 'Turnaround Timeline', prompt: 'Specify completion target (e.g., 2–3 weeks)' }
       ],
       styleTokens: [],
@@ -313,7 +313,7 @@ function extractStructuredBriefDeterministic(text, lower) {
     missingInformation.push({
       field: 'budget',
       label: 'Budget Tier',
-      prompt: 'Budget was not specified in your prompt. (e.g. $5,000 – $10,000)'
+      prompt: 'Budget was not specified in your prompt. (e.g. ₹50,000 – ₹1,00,000)'
     });
   }
   if (!timeline && !isFlexibleBrief) {

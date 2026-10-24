@@ -69,8 +69,8 @@ export default function BrandTrustCenterView({
   // Brand entity resolution
   const activeBrand = brand || {
     id: 'brand-demo-lumina',
-    name: 'Lumina Botanica',
-    website: 'https://luminabotanica.com',
+    name: 'Veda Botanics',
+    website: 'https://vedabotanics.in',
     industry: 'Beauty & Cosmetics',
     is_demo: true
   };
@@ -188,7 +188,7 @@ export default function BrandTrustCenterView({
   const [reviewActionForm, setReviewActionForm] = useState({
     decision: 'APPROVE', // 'APPROVE' | 'REJECT' | 'REQUEST_INFO'
     notes: '',
-    reviewerName: currentUser?.profile?.display_name || currentUser?.display_name || 'Elena Rostova (Compliance Reviewer)'
+    reviewerName: currentUser?.profile?.display_name || currentUser?.display_name || 'Ananya Roy (Compliance Reviewer)'
   });
 
   // =========================================================================
@@ -1052,7 +1052,7 @@ export default function BrandTrustCenterView({
                             setReviewActionForm({
                               decision: 'APPROVE',
                               notes: claim.reviewerNotes || '',
-                              reviewerName: currentUser?.profile?.display_name || 'Elena Rostova (Compliance Reviewer)'
+                              reviewerName: currentUser?.profile?.display_name || 'Ananya Roy (Compliance Reviewer)'
                             });
                             setActiveModal('review-action');
                           }}
@@ -1332,7 +1332,7 @@ export default function BrandTrustCenterView({
                             setReviewActionForm({
                               decision: 'APPROVE',
                               notes: claim.reviewerNotes || '',
-                              reviewerName: currentUser?.profile?.display_name || 'Elena Rostova (Compliance Reviewer)'
+                              reviewerName: currentUser?.profile?.display_name || 'Ananya Roy (Compliance Reviewer)'
                             });
                             setActiveModal('review-action');
                           }}
@@ -1380,7 +1380,7 @@ export default function BrandTrustCenterView({
                     className="form-input"
                     value={entityForm.legalName}
                     onChange={(e) => setEntityForm({ ...entityForm, legalName: e.target.value })}
-                    placeholder="e.g. Lumina Botanica Labs Ltd"
+                    placeholder="e.g. Veda Botanics Labs Ltd"
                     required
                   />
                 </div>

@@ -35,11 +35,14 @@ function formatInvitationField(...values) {
 function formatBudgetDisplay(budget) {
   if (!budget) return 'In Discussion';
   if (typeof budget === 'number') {
-    return `$${budget.toLocaleString()}`;
+    return `₹${budget.toLocaleString('en-IN')}`;
   }
   const str = String(budget).trim();
-  if (!str.startsWith('$') && !isNaN(Number(str.replace(/,/g, '')))) {
-    return `$${Number(str.replace(/,/g, '')).toLocaleString()}`;
+  if (str.startsWith('$') || str.includes('$')) {
+    return str.replace(/\$/g, '₹');
+  }
+  if (!str.startsWith('₹') && !isNaN(Number(str.replace(/,/g, '')))) {
+    return `₹${Number(str.replace(/,/g, '')).toLocaleString('en-IN')}`;
   }
   return str;
 }
@@ -229,7 +232,8 @@ export default function CreatorWorkspaceView({
   onRespondCounterOffer,
   onReevaluateApplication,
   campaigns = [],
-  brands = []
+  brands = [],
+  shortlists = {}
 }) {
   const [activeCreator, setActiveCreator] = useState(creator || {});
   const [activeTab, setActiveTab] = useState(initialTab || 'home'); // 'home' | 'overview' | 'portfolio' | 'workflows' | 'opportunities' | 'invitations' | 'projects' | 'messages' | 'profile' | 'trust'
@@ -430,20 +434,20 @@ export default function CreatorWorkspaceView({
         creatorId: "maya-chen",
         campaignId: "camp-summer-skincare",
         campaignTitle: "Summer Skincare & Radiant Hydration Launch",
-        brandName: "Lumina Botanica",
+        brandName: "Veda Botanics",
         status: "connected",
         messages: [
           {
             id: "msg-1",
             sender: "brand",
-            senderName: "Lumina Botanica",
+            senderName: "Veda Botanics",
             text: "Hi Maya, we loved your cinematic product work. We'd love to explore this direction for our summer launch.",
             timestamp: "Yesterday, 3:45 PM"
           },
           {
             id: "msg-2",
             sender: "creator",
-            senderName: activeCreator.name || "Maya Chen",
+            senderName: activeCreator.name || "Maya Sharma",
             text: "Thanks! I'd love to work on it. I'm especially interested in the visual storytelling direction and warm Mediterranean sunlight.",
             timestamp: "Today, 10:15 AM"
           }
@@ -490,10 +494,10 @@ export default function CreatorWorkspaceView({
 
   // Profile Form State
   const [profileForm, setProfileForm] = useState({
-    name: activeCreator.name || 'Maya Chen',
+    name: activeCreator.name || 'Maya Sharma',
     creativeIdentity: activeCreator.creativeIdentity || 'Cinematic AI Director & Visual Worldbuilder',
     bio: activeCreator.bio || 'Directing cinematic narrative commercials, evocative brand mythologies, and cinematic product worlds with 35mm grain.',
-    location: activeCreator.location || 'London / New York (GMT/EST)',
+    location: activeCreator.location || 'Mumbai / Bengaluru (IST)',
     availability: activeCreator.availability || 'Available for projects',
     avatar: activeCreator.avatar || ''
   });
@@ -502,10 +506,10 @@ export default function CreatorWorkspaceView({
 
   const handleOpenEditProfile = () => {
     setProfileForm({
-      name: activeCreator.name || 'Maya Chen',
+      name: activeCreator.name || 'Maya Sharma',
       creativeIdentity: activeCreator.creativeIdentity || 'Cinematic AI Director & Visual Worldbuilder',
       bio: activeCreator.bio || '',
-      location: activeCreator.location || 'London / New York',
+      location: activeCreator.location || 'Mumbai / Bengaluru (IST)',
       availability: activeCreator.availability || 'Available for projects',
       avatar: activeCreator.avatar || ''
     });
@@ -815,13 +819,20 @@ export default function CreatorWorkspaceView({
   const handleOpenApplyModal = (opp) => {
     setApplyModalOpp(opp);
     setApplyNoteText(`Hi ${opp.brandName || opp.brand}, I'm excited about your ${opp.title}. My visual style aligns directly with your deliverables.`);
-    setApplyPrice(opp.budget || '$5,000');
+    setApplyPrice(opp.budget ? String(opp.budget).replace(/\$/g, '₹') : '₹50,000');
     setApplyTimeline(opp.timeline || '2 Weeks');
     setApplySelectedProjects(
       (activeCreator.projects || []).slice(0, 2).map(p => p.id)
     );
+    const targetCampaignId = opp.campaignId || opp.id?.replace(/^opp-/, '');
+    const isShortlisted = Boolean(
+      (shortlists[targetCampaignId] || []).includes(activeCreator.id) ||
+      (shortlists[opp.id] || []).includes(activeCreator.id) ||
+      opp.isShortlisted
+    );
     try {
-      const evalResult = evaluateCreatorEligibility(opp, activeCreator);
+      const creatorForEval = { ...activeCreator, rate: activeCreator.rate || (opp.budget ? String(opp.budget).replace(/\$/g, '₹') : '₹50,000') };
+      const evalResult = evaluateCreatorEligibility(opp, creatorForEval, { isShortlisted });
       setPreBidResult(evalResult);
     } catch (err) {
       console.warn('[PreBidGate] Evaluation fallback:', err);
@@ -833,10 +844,18 @@ export default function CreatorWorkspaceView({
     if (e) e.preventDefault();
     if (!applyModalOpp) return;
 
+    const targetCampaignId = applyModalOpp.campaignId || applyModalOpp.id?.replace(/^opp-/, '');
+    const isShortlisted = Boolean(
+      (shortlists[targetCampaignId] || []).includes(activeCreator.id) ||
+      (shortlists[applyModalOpp.id] || []).includes(activeCreator.id) ||
+      applyModalOpp.isShortlisted
+    );
+
     let currentResult = preBidResult;
     if (!currentResult) {
       try {
-        currentResult = evaluateCreatorEligibility(applyModalOpp, activeCreator);
+        const creatorForEval = { ...activeCreator, rate: activeCreator.rate || applyPrice };
+        currentResult = evaluateCreatorEligibility(applyModalOpp, creatorForEval, { isShortlisted });
       } catch (err) {
         currentResult = { eligibility: ELIGIBILITY_STATUS.ELIGIBLE, requirements: [], reasons: [] };
       }
@@ -845,21 +864,24 @@ export default function CreatorWorkspaceView({
     const isHeld = forceHeld || currentResult.eligibility !== ELIGIBILITY_STATUS.ELIGIBLE;
 
     const applicationPayload = {
-      campaignId: applyModalOpp.id || applyModalOpp.campaignId,
+      campaign: applyModalOpp,
+      campaignId: targetCampaignId,
       campaignTitle: applyModalOpp.title,
       brandId: applyModalOpp.ownerBrandId || applyModalOpp.brandId,
       brandName: applyModalOpp.brandName || applyModalOpp.brand,
+      creator: activeCreator,
       creatorId: activeCreator.id,
       creatorName: activeCreator.name,
       creatorAvatar: activeCreator.avatar,
       creatorRole: activeCreator.role || activeCreator.creativeIdentity || 'AI Visual Creator',
       proposedPrice: applyPrice,
       bidAmount: parseFloat(String(applyPrice).replace(/[^0-9.]/g, '')) || 0,
-      currency: 'USD',
+      currency: applyModalOpp.currency || 'USD',
       proposalText: applyNoteText,
       deliveryTimeline: applyTimeline,
       portfolioEvidence: applySelectedProjects,
       eligibilityStatus: currentResult.eligibility,
+      isShortlisted,
       isHeld,
       heldReason: currentResult.eligibility === ELIGIBILITY_STATUS.INELIGIBLE
         ? (currentResult.reasons?.[0] || 'Mandatory campaign requirement mismatch')
@@ -1244,7 +1266,7 @@ export default function CreatorWorkspaceView({
 
                     <div className="overview-name-meta">
                       <div className="overview-name-badge">
-                        <h2 className="overview-creator-name">{activeCreator.name || 'Maya Chen'}</h2>
+                        <h2 className="overview-creator-name">{activeCreator.name || 'Maya Sharma'}</h2>
                         <span className="status-badge-verified">
                           <CheckCircle2 size={13} />
                           <span>Verified AI Creator</span>
@@ -3270,7 +3292,7 @@ export default function CreatorWorkspaceView({
                   type="text"
                   className="form-input"
                   required
-                  placeholder="e.g. Maya Chen"
+                  placeholder="e.g. Maya Sharma"
                   value={profileForm.name}
                   onChange={(e) => setProfileForm(prev => ({ ...prev, name: e.target.value }))}
                 />
@@ -3676,7 +3698,21 @@ export default function CreatorWorkspaceView({
 
             {/* PRE-BID ELIGIBILITY GATE EVALUATION BANNER */}
             <div>
-              {preBidResult?.eligibility === ELIGIBILITY_STATUS.ELIGIBLE && (
+              {preBidResult?.eligibility === ELIGIBILITY_STATUS.ELIGIBLE && preBidResult?.isShortlisted && (
+                <div className="prebid-banner eligible">
+                  <CheckCircle2 size={20} style={{ color: 'var(--accent-forest)', flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <span className="prebid-banner-title">
+                      Shortlisted by Brand
+                    </span>
+                    <p className="prebid-banner-desc">
+                      You were shortlisted for this campaign. Your proposal and rate will be presented directly to {applyModalOpp.brandName || applyModalOpp.brand || 'the brand'} for priority review.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {preBidResult?.eligibility === ELIGIBILITY_STATUS.ELIGIBLE && !preBidResult?.isShortlisted && (
                 <div className="prebid-banner eligible">
                   <CheckCircle2 size={20} style={{ color: 'var(--accent-forest)', flexShrink: 0, marginTop: '2px' }} />
                   <div>
@@ -3738,7 +3774,7 @@ export default function CreatorWorkspaceView({
                     className="form-input"
                     value={applyPrice}
                     onChange={(e) => setApplyPrice(e.target.value)}
-                    placeholder="$5,000"
+                    placeholder="₹50,000"
                     required
                   />
                   {applyModalOpp.isNegotiable === false && (

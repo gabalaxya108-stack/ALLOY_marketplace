@@ -75,7 +75,7 @@ export function extractCampaignDNA(campaign) {
     traits: detectedTraits.slice(0, 5),
     creativeDirection,
     industryFocus: detectedTraits.includes('Beauty & Skincare') ? 'Beauty' : 'Commercial',
-    budgetTier: campaign.budget || '$5,000 – $10,000',
+    budgetTier: campaign.budget ? String(campaign.budget).replace(/\$/g, '₹') : '₹50,000 – ₹1,00,000',
     timeline: campaign.timeline || '2–3 Weeks'
   };
 }
