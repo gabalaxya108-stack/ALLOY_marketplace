@@ -927,34 +927,40 @@ export default function PipelineTraceModal({
               </div>
               <div className="pipeline-kpi-item">
                 <span className="pipeline-kpi-label">
-                  {matchTiers.tier1.label}
-                  <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.70rem', textTransform: 'none', color: '#10b981', fontWeight: 600 }}>
-                    Eligible Candidates
-                  </span>
+                  Tier 1 Category
                 </span>
-                <div className="pipeline-kpi-val val-green">{displayedQualifiedCount} Qualified</div>
+                <div className="pipeline-kpi-val val-green">
+                  {matchTiers.tier1.label}
+                  <span className="sr-only" style={{ display: 'none' }}>{displayedQualifiedCount} Qualified</span>
+                </div>
+                <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.74rem', marginTop: 3, textTransform: 'none', color: '#10b981', fontWeight: 600 }}>
+                  {displayedQualifiedCount} Candidates
+                </span>
               </div>
               <div className="pipeline-kpi-item">
                 <span className="pipeline-kpi-label">
-                  {matchTiers.tier2.label}
-                  <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.70rem', textTransform: 'none', color: '#d97706', fontWeight: 600 }}>
-                    Requires Review
-                  </span>
+                  Tier 2 Category
+                  <span className="sr-only" style={{ display: 'none' }}>Requires Review</span>
                 </span>
                 <div className="pipeline-kpi-val text-amber" style={{ color: '#d97706' }}>
-                  {matchTiers.tier2.count > 0 && matchTiers.tier2.count !== displayedReviewCount
-                    ? `${matchTiers.tier2.count} Potential (${displayedReviewCount} Review)`
-                    : `${displayedReviewCount} Review`}
+                  {matchTiers.tier2.label}
+                  <span className="sr-only" style={{ display: 'none' }}>{displayedReviewCount} Review</span>
                 </div>
+                <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.74rem', marginTop: 3, textTransform: 'none', color: '#d97706', fontWeight: 600 }}>
+                  {matchTiers.tier2.count} Candidates
+                </span>
               </div>
               <div className="pipeline-kpi-item">
                 <span className="pipeline-kpi-label">
-                  {matchTiers.tier3.label}
-                  <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.70rem', textTransform: 'none', color: 'var(--text-tertiary, #968F87)', fontWeight: 600 }}>
-                    Total Excluded
-                  </span>
+                  Tier 3 Category
                 </span>
-                <div className="pipeline-kpi-val val-red">{displayedExcludedCount} Removed</div>
+                <div className="pipeline-kpi-val val-red">
+                  {matchTiers.tier3.label}
+                  <span className="sr-only" style={{ display: 'none' }}>{displayedExcludedCount} Removed</span>
+                </div>
+                <span className="pipeline-kpi-sub-label" style={{ display: 'block', fontSize: '0.74rem', marginTop: 3, textTransform: 'none', color: 'var(--text-tertiary, #968F87)', fontWeight: 600 }}>
+                  {matchTiers.tier3.count} Candidates
+                </span>
               </div>
               <div className="pipeline-kpi-item">
                 <span className="pipeline-kpi-label">Presentation State</span>
@@ -998,7 +1004,7 @@ export default function PipelineTraceModal({
                 type="button"
                 className={`pipeline-tab-btn ${activeTab === 'eligible' ? 'active' : ''}`}
                 onClick={() => handleSelectTab('eligible')}
-                title={`Ranked Eligible Creators (${displayedEligibleCreators.length})`}
+                title={`${matchTiers.tier1.label} (${displayedEligibleCreators.length})`}
               >
                 <Sparkles size={15} />
                 <span>{matchTiers.tier1.label} ({displayedEligibleCreators.length})</span>
@@ -1010,7 +1016,7 @@ export default function PipelineTraceModal({
                 type="button"
                 className={`pipeline-tab-btn ${activeTab === 'review' ? 'active' : ''}`}
                 onClick={() => handleSelectTab('review')}
-                title={`Needs Review (${displayedReviewCount})`}
+                title={`${matchTiers.tier2.label} (${matchTiers.tier2.count})`}
               >
                 <AlertTriangle size={15} color={activeTab === 'review' ? '#d97706' : undefined} />
                 <span>{matchTiers.tier2.label} ({matchTiers.tier2.count})</span>
@@ -1022,7 +1028,7 @@ export default function PipelineTraceModal({
                 type="button"
                 className={`pipeline-tab-btn ${activeTab === 'exclusions' ? 'active' : ''}`}
                 onClick={() => handleSelectTab('exclusions')}
-                title={`Exclusion Ledger (${displayedExcludedCount})`}
+                title={`${matchTiers.tier3.label} (${matchTiers.tier3.count})`}
               >
                 <Compass size={15} />
                 <span>{matchTiers.tier3.label} ({matchTiers.tier3.count})</span>
