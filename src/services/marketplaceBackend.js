@@ -3257,3 +3257,83 @@ export async function acceptCreatorApplication(applicationId, brandId, campaignS
   }
   return data;
 }
+
+// =========================================================================
+// 8. DYNAMIC CREATOR DNA BACKEND API CLIENT
+// =========================================================================
+
+/**
+ * Fetch dynamic Creator DNA traits derived from published portfolio works
+ */
+export async function fetchCreatorDna(creatorId) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch(`/api/creator-dna/${encodeURIComponent(creatorId)}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] /api/creator-dna network error, deferring:', err.message);
+  }
+
+  return { ok: false, status: 'unavailable', traits: [] };
+}
+
+/**
+ * Trigger backend Creator DNA analysis for an authenticated creator
+ */
+export async function triggerCreatorDnaAnalysis(creatorId, options = {}) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch('/api/creator-dna/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-creator-id': creatorId
+      },
+      body: JSON.stringify({ creatorId, ...options })
+    });
+
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] triggerCreatorDnaAnalysis network error:', err.message);
+  }
+
+  return { ok: false, error: 'Failed to complete Creator DNA analysis.' };
+}
+
+/**
+ * Refresh and re-analyze Creator DNA traits for an updated portfolio
+ */
+export async function refreshCreatorDna(creatorId, options = {}) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch('/api/creator-dna/refresh', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-creator-id': creatorId
+      },
+      body: JSON.stringify({ creatorId, forceRefresh: true, ...options })
+    });
+
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] refreshCreatorDna network error:', err.message);
+  }
+
+  return { ok: false, error: 'Failed to refresh Creator DNA.' };
+}
+

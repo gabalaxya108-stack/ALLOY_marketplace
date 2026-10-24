@@ -7522,6 +7522,36 @@ img, video {
   border-radius: var(--radius-pill);
 }
 
+.dna-refresh-icon-btn {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.dna-refresh-icon-btn:hover:not(:disabled) {
+  color: var(--accent-lavender-deep);
+  border-color: var(--accent-lavender-deep);
+  background: rgba(124, 58, 237, 0.06);
+}
+
+.dna-refresh-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
 .dna-desc {
   font-size: 0.84rem;
   color: var(--text-secondary);

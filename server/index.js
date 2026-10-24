@@ -11,6 +11,7 @@ import { createAdminMiddleware } from './adminMiddleware.js';
 import { createPaymentMiddleware } from './paymentMiddleware.js';
 import { createDbMiddleware } from './dbMiddleware.js';
 import { createApplicationMiddleware } from './applicationMiddleware.js';
+import { createCreatorDnaMiddleware } from './creatorDnaMiddleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,7 @@ const adminMiddleware = createAdminMiddleware();
 const paymentMiddleware = createPaymentMiddleware();
 const dbMiddleware = createDbMiddleware();
 const applicationMiddleware = createApplicationMiddleware();
+const creatorDnaMiddleware = createCreatorDnaMiddleware();
 
 // Simple static file server helper for production bundles in dist/
 function serveStatic(req, res, next) {
@@ -68,13 +70,15 @@ const server = http.createServer((req, res) => {
   // Chain middlewares: dbMiddleware -> applicationMiddleware -> groqMiddleware -> adminMiddleware -> paymentMiddleware -> serveStatic -> 404
   dbMiddleware(req, res, () => {
     applicationMiddleware(req, res, () => {
-      groqMiddleware(req, res, () => {
-        adminMiddleware(req, res, () => {
-          paymentMiddleware(req, res, () => {
-            serveStatic(req, res, () => {
-              res.statusCode = 404;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ ok: false, error: 'Endpoint not found' }));
+      creatorDnaMiddleware(req, res, () => {
+        groqMiddleware(req, res, () => {
+          adminMiddleware(req, res, () => {
+            paymentMiddleware(req, res, () => {
+              serveStatic(req, res, () => {
+                res.statusCode = 404;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: 'Endpoint not found' }));
+              });
             });
           });
         });
