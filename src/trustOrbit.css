@@ -1,0 +1,757 @@
+/* src/trustOrbit.css */
+/* ALLOY Trust Orbit — Concentric orbital styling & responsive verification UI */
+
+.alloy-trust-orbit-container {
+  width: 100%;
+  background: linear-gradient(180deg, #FAF8F5 0%, #F5F2EB 100%);
+  border: 1px solid rgba(197, 168, 128, 0.35);
+  border-radius: 24px;
+  padding: 36px 40px;
+  box-shadow: 0 10px 40px rgba(28, 25, 23, 0.05);
+  margin-bottom: 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+.alloy-trust-orbit-container::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  right: -100px;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(158, 116, 74, 0.08) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Header Strip */
+.trust-orbit-header-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+  position: relative;
+  z-index: 1;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.trust-orbit-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9E744A;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.trust-orbit-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #059669;
+  box-shadow: 0 0 8px rgba(5, 150, 105, 0.6);
+  display: inline-block;
+}
+
+.trust-orbit-heading {
+  font-size: clamp(1.8rem, 2.4vw, 2.4rem);
+  color: #191816;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+  font-weight: 400;
+}
+
+.trust-orbit-subtext {
+  font-size: 0.92rem;
+  color: #767069;
+  margin: 0;
+  max-width: 580px;
+  line-height: 1.55;
+}
+
+.trust-orbit-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 100px;
+  border: 1px solid rgba(197, 168, 128, 0.4);
+  background: #FFFFFF;
+  color: #191816;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.trust-orbit-refresh-btn:hover {
+  background: #FAF8F5;
+  border-color: #9E744A;
+  transform: translateY(-1px);
+}
+
+/* Main Orbit Stage Grid (Desktop 2-column) */
+.trust-orbit-stage-grid {
+  display: grid;
+  grid-template-columns: 500px 1fr;
+  gap: 36px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================================
+   ORBIT CANVAS & SATELLITE NODES
+   ============================================================ */
+.trust-orbit-visual-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.trust-orbit-canvas {
+  width: 480px;
+  height: 480px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trust-orbit-rings-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Restrained, slow orbital rotation on dash path */
+.orbit-rotating-dash {
+  transform-origin: center;
+  animation: orbitTrackSpin 60s linear infinite;
+}
+
+@keyframes orbitTrackSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Stable Central Emblem */
+.trust-orbit-center-emblem {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #FFFFFF 60%, #FAF8F5 100%);
+  border: 2px solid rgba(197, 168, 128, 0.45);
+  box-shadow: 0 8px 30px rgba(158, 116, 74, 0.12), inset 0 0 15px rgba(197, 168, 128, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  text-align: center;
+}
+
+.center-emblem-core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.center-shield-icon {
+  margin-bottom: 2px;
+}
+
+.center-emblem-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: #191816;
+  text-transform: uppercase;
+}
+
+.center-emblem-sub {
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  font-weight: 600;
+  color: #9E744A;
+  text-transform: uppercase;
+}
+
+/* Satellite Nodes */
+.trust-orbit-nodes-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.orbit-satellite-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  z-index: 10;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.orbit-satellite-node:focus-visible .node-icon-bubble {
+  box-shadow: 0 0 0 3px rgba(158, 116, 74, 0.4);
+}
+
+.orbit-satellite-node:hover {
+  transform: scale(1.08);
+}
+
+.node-icon-bubble {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 2px solid rgba(226, 219, 208, 0.9);
+  box-shadow: 0 6px 20px rgba(28, 25, 23, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.node-selected .node-icon-bubble {
+  border-width: 2.5px;
+  box-shadow: 0 8px 24px rgba(158, 116, 74, 0.22);
+  transform: translateY(-2px);
+}
+
+.node-status-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.node-label-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.node-pillar-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #191816;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.node-status-chip {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 100px;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+}
+
+/* Quick Tabs (Mobile / Keyboard Fallback) */
+.orbit-quick-tabs {
+  display: none;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.orbit-tab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 100px;
+  border: 1px solid rgba(226, 219, 208, 0.9);
+  background: #FFFFFF;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #767069;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.orbit-tab-pill.tab-pill-active {
+  background: #191816;
+  color: #FAF8F5;
+  border-color: #191816;
+}
+
+.tab-pill-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ============================================================
+   RIGHT: DETAIL INSPECTION PANEL
+   ============================================================ */
+.trust-orbit-detail-panel {
+  background: #FFFFFF;
+  border: 1px solid rgba(197, 168, 128, 0.3);
+  border-radius: 20px;
+  padding: 32px 36px;
+  box-shadow: 0 8px 30px rgba(28, 25, 23, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pillar-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pillar-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pillar-badge-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pillar-eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: #9E744A;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.pillar-title {
+  font-size: 1.55rem;
+  color: #191816;
+  margin: 0;
+  letter-spacing: -0.01em;
+  font-weight: 400;
+}
+
+.pillar-subtitle {
+  font-size: 0.82rem;
+  color: #767069;
+}
+
+.pillar-status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border: 1px solid;
+  letter-spacing: 0.02em;
+}
+
+.status-tag-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.pillar-description-text {
+  font-size: 0.88rem;
+  color: #55504A;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Evidence Block */
+.pillar-evidence-block {
+  background: #FAF8F5;
+  border: 1px solid rgba(226, 219, 208, 0.8);
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.evidence-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.flex-items-center {
+  display: flex;
+  align-items: center;
+}
+
+.gap-2 {
+  gap: 8px;
+}
+
+.evidence-section-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #191816;
+  letter-spacing: 0.02em;
+}
+
+.evidence-count-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #767069;
+  background: #FFFFFF;
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid rgba(226, 219, 208, 0.8);
+}
+
+.claims-list-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.claim-item-card {
+  background: #FFFFFF;
+  border: 1px solid rgba(226, 219, 208, 0.7);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.claim-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.claim-item-title {
+  font-size: 0.84rem;
+  color: #191816;
+  font-weight: 600;
+}
+
+.claim-mini-status {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.claim-metadata-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.76rem;
+  color: #767069;
+  margin-bottom: 6px;
+}
+
+.meta-key {
+  color: #9C968F;
+  margin-right: 4px;
+}
+
+.meta-val {
+  color: #191816;
+  font-weight: 500;
+}
+
+.private-notice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #059669;
+  font-size: 0.72rem;
+}
+
+.claim-reviewer-box {
+  background: rgba(250, 248, 245, 0.8);
+  border-left: 2px solid #9E744A;
+  padding: 6px 10px;
+  border-radius: 0 6px 6px 0;
+  margin-top: 6px;
+}
+
+.reviewer-box-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #9E744A;
+  display: block;
+}
+
+.reviewer-box-text {
+  font-size: 0.76rem;
+  color: #383531;
+  font-style: italic;
+  margin: 2px 0;
+}
+
+.reviewer-byline {
+  font-size: 0.68rem;
+  color: #767069;
+}
+
+.empty-evidence-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: #767069;
+  padding: 10px;
+}
+
+.empty-evidence-box p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* AI Advisory Intelligence Block */
+.pillar-ai-advisory-block {
+  background: #FAF8F5;
+  border: 1px solid rgba(197, 168, 128, 0.25);
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.ai-advisory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ai-section-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #191816;
+}
+
+.ai-risk-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 100px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ai-risk-pill.risk-low {
+  background: rgba(5, 150, 105, 0.12);
+  color: #059669;
+}
+
+.ai-risk-pill.risk-medium {
+  background: rgba(217, 119, 6, 0.12);
+  color: #D97706;
+}
+
+.ai-risk-pill.risk-high {
+  background: rgba(220, 38, 38, 0.12);
+  color: #DC2626;
+}
+
+.ai-findings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-findings-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-findings-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 0.78rem;
+  color: #383531;
+  line-height: 1.45;
+}
+
+.ai-findings-list li svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.ai-missing-box {
+  background: rgba(217, 119, 6, 0.06);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.76rem;
+}
+
+.ai-sub-label {
+  font-weight: 700;
+  color: #B45309;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.ai-missing-box ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #78350F;
+}
+
+.ai-advisory-summary {
+  font-size: 0.78rem;
+  color: #191816;
+  margin: 4px 0 0 0;
+  line-height: 1.45;
+}
+
+.ai-disclaimer-footnote {
+  font-size: 0.68rem;
+  color: #9C968F;
+  margin-top: 4px;
+  line-height: 1.4;
+  border-top: 1px dashed rgba(226, 219, 208, 0.7);
+  padding-top: 6px;
+}
+
+.ai-empty-state {
+  font-size: 0.8rem;
+  color: #767069;
+}
+
+.ai-empty-state p {
+  margin: 0;
+}
+
+/* Action Footer */
+.pillar-action-footer {
+  margin-top: 4px;
+}
+
+.trust-submit-action-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  font-size: 0.88rem;
+}
+
+/* ============================================================
+   RESPONSIVE BEHAVIOR (Mobile Connected-Node Sequence)
+   ============================================================ */
+@media (max-width: 960px) {
+  .trust-orbit-stage-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  .trust-orbit-canvas {
+    width: 360px;
+    height: 360px;
+  }
+
+  .node-icon-bubble {
+    width: 48px;
+    height: 48px;
+  }
+
+  .trust-orbit-center-emblem {
+    width: 110px;
+    height: 110px;
+  }
+
+  .center-emblem-label {
+    font-size: 0.6rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .alloy-trust-orbit-container {
+    padding: 24px 18px;
+    border-radius: 18px;
+  }
+
+  .trust-orbit-canvas {
+    display: none; /* Hide circular orbit on small mobile screens */
+  }
+
+  .orbit-quick-tabs {
+    display: flex; /* Display connected node pills */
+    width: 100%;
+    gap: 6px;
+  }
+
+  .orbit-tab-pill {
+    flex: 1;
+    min-width: 130px;
+    justify-content: center;
+    font-size: 0.74rem;
+    padding: 8px 10px;
+  }
+
+  .trust-orbit-detail-panel {
+    padding: 20px 18px;
+    border-radius: 16px;
+  }
+
+  .pillar-title {
+    font-size: 1.3rem;
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .orbit-rotating-dash {
+    animation: none !important;
+  }
+  .orbit-satellite-node {
+    transition: none !important;
+  }
+}

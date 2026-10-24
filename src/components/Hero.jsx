@@ -1,7 +1,7 @@
 // src/components/Hero.jsx
 // ALLOY — Redesigned Editorial Hero Section with Original Campaign Artwork
 // Incorporates the newly generated original Alloy campaign masterpiece:
-// - Left: Eyebrow pill, editorial serif headline, refined copy, dual CTAs, verified stats
+// - Left: Eyebrow pill, editorial serif headline, refined copy, dual CTAs, live database-backed stats
 // - Right: Prominent, high-resolution editorial campaign image with subtle depth
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -192,12 +192,13 @@ export default function Hero({
             )}
           </div>
 
-          {/* Verified Traction Stats Strip */}
-          <div className="hero-stats-strip" aria-label="Verified platform metrics">
-            <div className="stat-unit">
+          {/* Verified Traction Stats Strip (Live Super Admin Data) */}
+          <div className="hero-stats-strip" id="hero-live-metrics-strip" aria-label="Platform Statistics">
+            {/* Metric 1: Verified Creators */}
+            <div className="stat-unit" id="hero-metric-creators">
               <span className="stat-digits font-editorial">
                 {metrics.loading && metrics.verifiedCreators === null ? (
-                  <span className="stat-placeholder">—</span>
+                  <span className="stat-placeholder" aria-label="Loading verified creators count">—</span>
                 ) : (
                   (metrics.verifiedCreators ?? 0).toLocaleString()
                 )}
@@ -207,10 +208,11 @@ export default function Hero({
 
             <div className="stat-separator" />
 
-            <div className="stat-unit">
+            {/* Metric 2: Verified Brands */}
+            <div className="stat-unit" id="hero-metric-brands">
               <span className="stat-digits font-editorial">
                 {metrics.loading && metrics.verifiedBrands === null ? (
-                  <span className="stat-placeholder">—</span>
+                  <span className="stat-placeholder" aria-label="Loading verified brands count">—</span>
                 ) : (
                   (metrics.verifiedBrands ?? 0).toLocaleString()
                 )}
@@ -220,10 +222,11 @@ export default function Hero({
 
             <div className="stat-separator" />
 
-            <div className="stat-unit">
+            {/* Metric 3: Campaign Oversight */}
+            <div className="stat-unit" id="hero-metric-campaigns">
               <span className="stat-digits font-editorial">
                 {metrics.loading && metrics.campaignOversight === null ? (
-                  <span className="stat-placeholder">—</span>
+                  <span className="stat-placeholder" aria-label="Loading campaign oversight count">—</span>
                 ) : (
                   (metrics.campaignOversight ?? 0).toLocaleString()
                 )}
