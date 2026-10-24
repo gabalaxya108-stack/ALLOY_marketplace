@@ -21757,6 +21757,23 @@ img, video, canvas, svg {
 }
 
 /* 3. Responsive Header Bar Adaptations */
+@media (max-width: 1024px) {
+  .header-tour-btn {
+    display: none !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .desktop-nav {
+    display: none !important;
+  }
+
+  .mobile-menu-btn {
+    display: flex !important;
+    padding: 6px;
+  }
+}
+
 @media (max-width: 768px) {
   :root {
     --nav-height: 64px;
@@ -21778,11 +21795,17 @@ img, video, canvas, svg {
     display: none !important;
   }
 
-  .header-workspace-btn {
+  .header-user-pill {
+    padding: 3px 6px 3px 3px !important;
+  }
+
+  .header-workspace-btn,
+  #header-workspace-btn {
     display: none !important;
   }
 
-  .header-logout-btn {
+  .header-logout-btn,
+  #header-logout-btn {
     display: none !important;
   }
 
@@ -21803,6 +21826,19 @@ img, video, canvas, svg {
   .page-container-wide {
     padding-left: 16px !important;
     padding-right: 16px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  #header-get-started-btn {
+    padding: 6px 12px !important;
+    font-size: 0.78rem !important;
+  }
+}
+
+@media (max-width: 380px) {
+  #header-get-started-btn {
+    display: none !important;
   }
 }
 
@@ -21900,6 +21936,28 @@ img, video, canvas, svg {
     margin-bottom: 20px !important;
   }
 
+  /* AI Campaign Brief Filter Card Mobile Hardening */
+  .ai-campaign-filter-card {
+    padding: 16px 14px !important;
+    margin: 16px 0 20px !important;
+  }
+
+  .filter-auth-lock-banner {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    padding: 12px 14px !important;
+  }
+
+  .filter-auth-lock-banner button {
+    width: 100% !important;
+  }
+
+  #filter-by-brief-btn {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
   .discover-search-container {
     margin-bottom: 20px !important;
   }
@@ -21923,7 +21981,13 @@ img, video, canvas, svg {
   .horizontal-categories-scroll {
     width: 100% !important;
     padding-bottom: 6px !important;
-    -webkit-overflow-scrolling: touch;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  .horizontal-categories-scroll::-webkit-scrollbar {
+    display: none !important;
   }
 
   .filter-controls-group {
@@ -21938,6 +22002,36 @@ img, video, canvas, svg {
     justify-content: center !important;
     font-size: 0.8rem !important;
     padding: 8px 12px !important;
+  }
+
+  .search-understanding-bar {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+    padding: 12px 14px !important;
+  }
+
+  .search-understanding-left {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .search-understood-dot {
+    display: none !important;
+  }
+
+  .filter-popover-card {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: 10px !important;
+    box-sizing: border-box !important;
+  }
+
+  .filter-popover-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
   }
 
   .creator-masonry-gallery {
@@ -21962,6 +22056,55 @@ img, video, canvas, svg {
 
   .creator-card-body {
     padding: 16px !important;
+  }
+
+  /* Creator Profile View Mobile Enhancements */
+  .creator-profile-hero-card {
+    padding: 20px 16px !important;
+    border-radius: 16px !important;
+  }
+
+  .profile-hero-name {
+    font-size: clamp(2.2rem, 7.5vw, 3rem) !important;
+    line-height: 1.1 !important;
+  }
+
+  .profile-hero-identity {
+    font-size: 1.05rem !important;
+  }
+
+  .profile-hero-bio {
+    font-size: 0.94rem !important;
+  }
+
+  .profile-hero-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  .profile-hero-actions button,
+  .profile-hero-actions a {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    justify-content: center !important;
+  }
+
+  .btn-shortlist-stable {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .profile-cta-actions {
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+
+  .profile-cta-actions button {
+    width: 100% !important;
   }
 }
 
