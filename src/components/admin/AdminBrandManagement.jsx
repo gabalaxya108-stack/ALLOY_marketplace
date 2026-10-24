@@ -62,7 +62,7 @@ export default function AdminBrandManagement({
           </p>
         </div>
         <div className="alloy-admin-counter-pill">
-          <span>{filteredBrands.length} Brands Listed</span>
+          <span>{filteredBrands.length === brands.length ? `${brands.length} Brands Listed` : `${filteredBrands.length} of ${brands.length} Brands Listed`}</span>
         </div>
       </div>
 

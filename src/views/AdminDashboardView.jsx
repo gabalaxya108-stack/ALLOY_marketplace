@@ -379,6 +379,10 @@ export default function AdminDashboardView({ adminUser, onLogout }) {
                 <AdminOverview
                   metrics={metrics}
                   trustReports={trustReports}
+                  brands={brands}
+                  creators={creators}
+                  campaigns={campaigns}
+                  collaborations={collaborations}
                   onNavigateTab={setActiveTab}
                   onRunScan={handleRunTrustScan}
                 />

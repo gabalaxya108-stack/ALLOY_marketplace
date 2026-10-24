@@ -90,7 +90,7 @@ export default function AdminCollaborationTracking({
           </p>
         </div>
         <div className="alloy-admin-counter-pill">
-          <span>{filteredCollabs.length} Active Collaborations</span>
+          <span>{filteredCollabs.length === collaborations.length ? `${collaborations.length} Active Collaborations` : `${filteredCollabs.length} of ${collaborations.length} Active Collaborations`}</span>
         </div>
       </div>
 
