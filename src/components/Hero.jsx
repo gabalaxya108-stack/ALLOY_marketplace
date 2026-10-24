@@ -4,8 +4,10 @@
 // - Left: Eyebrow pill, editorial serif headline, refined copy, dual CTAs, verified stats
 // - Right: Prominent, high-resolution editorial campaign image with subtle depth
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowRight, Sparkles } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { subscribeToMarketplace } from '../data/marketplaceStore';
 
 export default function Hero({ 
   onFindCreator, 
@@ -15,6 +17,117 @@ export default function Hero({
   onStartJudgeTour
 }) {
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [metrics, setMetrics] = useState({
+    verifiedCreators: null,
+    verifiedBrands: null,
+    campaignOversight: null,
+    loading: true,
+    error: false
+  });
+
+  const isMountedRef = useRef(true);
+  const refreshTimeoutRef = useRef(null);
+
+  const fetchLiveMetrics = useCallback(async (isBackground = false) => {
+    try {
+      const res = await fetch('/api/public-metrics');
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+      const data = await res.json();
+      if (data && data.ok && isMountedRef.current) {
+        setMetrics(prev => ({
+          verifiedCreators: typeof data.verifiedCreators === 'number' ? data.verifiedCreators : (prev.verifiedCreators ?? 0),
+          verifiedBrands: typeof data.verifiedBrands === 'number' ? data.verifiedBrands : (prev.verifiedBrands ?? 0),
+          campaignOversight: typeof data.campaignOversight === 'number' ? data.campaignOversight : (prev.campaignOversight ?? 0),
+          loading: false,
+          error: false
+        }));
+        return;
+      }
+      throw new Error(data?.error || 'Invalid metrics response structure');
+    } catch (err) {
+      // Direct client-side Supabase read fallback if server middleware is unreachable
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          const [cRes, bRes, campRes] = await Promise.all([
+            supabase.from('creator_profiles').select('id', { count: 'exact', head: true }).neq('status', 'suspended').neq('status', 'Archived'),
+            supabase.from('brands').select('id', { count: 'exact', head: true }),
+            supabase.from('campaigns').select('id', { count: 'exact', head: true })
+          ]);
+          if (isMountedRef.current) {
+            setMetrics({
+              verifiedCreators: cRes.count ?? 0,
+              verifiedBrands: bRes.count ?? 0,
+              campaignOversight: campRes.count ?? 0,
+              loading: false,
+              error: false
+            });
+            return;
+          }
+        } catch {
+          // Fall through to error state handling
+        }
+      }
+
+      if (isMountedRef.current) {
+        // Retain last known metrics if available; flag error only if no numbers exist yet
+        setMetrics(prev => ({
+          ...prev,
+          loading: false,
+          error: prev.verifiedCreators === null
+        }));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    fetchLiveMetrics(false);
+
+    // Debounced refresher to avoid burst queries
+    const triggerDebouncedRefresh = () => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = setTimeout(() => {
+        fetchLiveMetrics(true);
+      }, 300);
+    };
+
+    // 1. Refresh when window regains focus
+    const handleFocus = () => fetchLiveMetrics(true);
+    window.addEventListener('focus', handleFocus);
+
+    // 2. Refresh on periodic interval (30s)
+    const intervalId = setInterval(() => fetchLiveMetrics(true), 30000);
+
+    // 3. Subscribe to local store cross-tab & within-session events
+    const unsubStore = subscribeToMarketplace(() => {
+      triggerDebouncedRefresh();
+    });
+
+    // 4. Subscribe to Supabase Realtime Postgres Changes
+    let realtimeChannel = null;
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        realtimeChannel = supabase.channel('alloy-hero-live-metrics')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'creator_profiles' }, () => triggerDebouncedRefresh())
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, () => triggerDebouncedRefresh())
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'campaigns' }, () => triggerDebouncedRefresh())
+          .subscribe();
+      } catch (subErr) {
+        console.warn('[Hero Realtime] Subscription notice:', subErr.message);
+      }
+    }
+
+    return () => {
+      isMountedRef.current = false;
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(intervalId);
+      if (typeof unsubStore === 'function') unsubStore();
+      if (realtimeChannel && supabase) {
+        supabase.removeChannel(realtimeChannel);
+      }
+    };
+  }, [fetchLiveMetrics]);
 
   return (
     <section className="alloy-editorial-hero" id="home">
@@ -80,24 +193,42 @@ export default function Hero({
           </div>
 
           {/* Verified Traction Stats Strip */}
-          <div className="hero-stats-strip">
+          <div className="hero-stats-strip" aria-label="Verified platform metrics">
             <div className="stat-unit">
-              <span className="stat-digits font-editorial">14<span className="stat-plus">+</span></span>
+              <span className="stat-digits font-editorial">
+                {metrics.loading && metrics.verifiedCreators === null ? (
+                  <span className="stat-placeholder">—</span>
+                ) : (
+                  (metrics.verifiedCreators ?? 0).toLocaleString()
+                )}
+              </span>
               <span className="stat-caption">VERIFIED CREATORS</span>
             </div>
 
             <div className="stat-separator" />
 
             <div className="stat-unit">
-              <span className="stat-digits font-editorial">48<span className="stat-plus">+</span></span>
-              <span className="stat-caption">PUBLISHED WORKS</span>
+              <span className="stat-digits font-editorial">
+                {metrics.loading && metrics.verifiedBrands === null ? (
+                  <span className="stat-placeholder">—</span>
+                ) : (
+                  (metrics.verifiedBrands ?? 0).toLocaleString()
+                )}
+              </span>
+              <span className="stat-caption">VERIFIED BRANDS</span>
             </div>
 
             <div className="stat-separator" />
 
             <div className="stat-unit">
-              <span className="stat-digits font-editorial">6<span className="stat-plus">+</span></span>
-              <span className="stat-caption">DISCIPLINES</span>
+              <span className="stat-digits font-editorial">
+                {metrics.loading && metrics.campaignOversight === null ? (
+                  <span className="stat-placeholder">—</span>
+                ) : (
+                  (metrics.campaignOversight ?? 0).toLocaleString()
+                )}
+              </span>
+              <span className="stat-caption">CAMPAIGN OVERSIGHT</span>
             </div>
           </div>
 

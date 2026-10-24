@@ -16861,6 +16861,13 @@ img, video {
   letter-spacing: -0.02em;
 }
 
+.hero-stats-strip .stat-placeholder {
+  color: #B5AFA6;
+  display: inline-block;
+  opacity: 0.6;
+}
+
+
 .hero-stats-strip .stat-plus {
   font-size: 1.3rem;
   color: #9E744A;
