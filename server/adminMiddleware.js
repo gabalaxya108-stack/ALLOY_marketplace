@@ -1431,7 +1431,6 @@ async function handleRegister(req, res, body) {
     } catch (entityErr) {
       console.warn('[handleRegister] Entity upsert notice:', entityErr.message);
     }
-    }
 
     // Log registration
     try {
