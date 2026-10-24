@@ -237,7 +237,13 @@ export default function LoginModal({
           if (onClose) onClose();
         }, 500);
       } catch (err) {
-        if (err.code === 'ACCOUNT_EXISTS' || err.message?.toLowerCase().includes('already exists')) {
+        if (
+          err.code === 'ACCOUNT_EXISTS' ||
+          err.code === 'user_already_exists' ||
+          err.message?.toLowerCase().includes('already exists') ||
+          err.message?.toLowerCase().includes('already registered') ||
+          err.message?.toLowerCase().includes('already been registered')
+        ) {
           setErrorCode('ACCOUNT_EXISTS');
           setErrorMsg('An account with this email already exists in our database. Please sign in or reset your password.');
         } else {
