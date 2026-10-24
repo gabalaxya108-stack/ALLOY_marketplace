@@ -277,10 +277,22 @@ export async function fetchOverviewMetrics() {
     }
   }
 
-  const baselineBrands = Math.max(brandCount, 4);
-  const baselineCreators = Math.max(creatorCount, 12);
-  const baselineCampaigns = Math.max(campaignCount, 3);
-  const baselineCollabs = Math.max(collabCount, 2);
+  // Parse actual campaign budgets dynamically from active campaign records
+  const parseBudgetValue = (b) => {
+    if (!b) return 0;
+    if (typeof b === 'number') return b;
+    const nums = String(b).replace(/,/g, '').match(/\d+/g);
+    if (!nums || nums.length === 0) return 0;
+    if (nums.length === 1) return parseInt(nums[0], 10);
+    return Math.round((parseInt(nums[0], 10) + parseInt(nums[1], 10)) / 2);
+  };
+
+  const calculatedEscrow = INITIAL_CAMPAIGNS.reduce((acc, c) => acc + parseBudgetValue(c.budget), 0);
+
+  const baselineBrands = brandCount > 0 ? brandCount : (DEMO_BRANDS?.length || 4);
+  const baselineCreators = creatorCount > 0 ? creatorCount : (CREATORS?.length || 43);
+  const baselineCampaigns = campaignCount > 0 ? campaignCount : (INITIAL_CAMPAIGNS?.length || 4);
+  const baselineCollabs = collabCount || 0;
 
   return {
     ok: true,
@@ -289,13 +301,13 @@ export async function fetchOverviewMetrics() {
       totalCreators: baselineCreators,
       totalCampaigns: baselineCampaigns,
       activeCollaborations: baselineCollabs,
-      completedCollaborations: 5,
-      newTrustReports: 1,
-      reportsAwaitingReview: 2,
+      completedCollaborations: 0,
+      newTrustReports: 0,
+      reportsAwaitingReview: 0,
       activeRestrictions: 0,
-      pendingInvitations: inviteCount || 3,
-      totalEscrowVolume: 18500,
-      platformRevenueEstimate: 1850
+      pendingInvitations: inviteCount || 0,
+      totalEscrowVolume: calculatedEscrow,
+      platformRevenueEstimate: Math.round(calculatedEscrow * 0.1)
     }
   };
 }

@@ -59,7 +59,7 @@ export default function AdminCampaignManagement({
           </p>
         </div>
         <div className="alloy-admin-counter-pill">
-          <span>{filteredCampaigns.length} Campaigns Active</span>
+          <span>{filteredCampaigns.length === campaigns.length ? `${campaigns.length} Campaigns Active` : `${filteredCampaigns.length} of ${campaigns.length} Campaigns Active`}</span>
         </div>
       </div>
 

@@ -280,7 +280,7 @@ async function handleOverview(req, res) {
     metrics.totalCampaigns = campaignCount || 0;
 
     // Active collaborations
-    const { count: activeCollabs } = await sc.from('collaborations').select('id', { count: 'exact', head: true }).in('status', ['in-progress', 'submitted', 'revision-requested']);
+    const { count: activeCollabs } = await sc.from('collaborations').select('id', { count: 'exact', head: true }).in('status', ['in-progress', 'submitted', 'revision-requested', 'active']);
     metrics.activeCollaborations = activeCollabs || 0;
 
     // Completed collaborations
@@ -304,6 +304,37 @@ async function handleOverview(req, res) {
     // Profiles count
     const { count: profileCount } = await sc.from('profiles').select('id', { count: 'exact', head: true });
     metrics.totalUsers = profileCount || 0;
+
+    // Compute actual escrow volume from live campaigns and funding records
+    let totalEscrow = 0;
+    try {
+      const { data: campaignRows } = await sc.from('campaigns').select('budget, escrow_amount');
+      if (Array.isArray(campaignRows) && campaignRows.length > 0) {
+        for (const row of campaignRows) {
+          const val = row.escrow_amount || row.budget;
+          if (typeof val === 'number') {
+            totalEscrow += val;
+          } else if (typeof val === 'string') {
+            const digits = val.replace(/,/g, '').match(/\d+/g);
+            if (digits && digits.length > 0) {
+              const num = digits.length > 1 ? Math.round((parseInt(digits[0], 10) + parseInt(digits[1], 10)) / 2) : parseInt(digits[0], 10);
+              totalEscrow += num;
+            }
+          }
+        }
+      }
+    } catch {}
+
+    try {
+      const { data: fundingRows } = await sc.from('campaign_funding').select('amount, total_funded_inr');
+      if (Array.isArray(fundingRows) && fundingRows.length > 0) {
+        const fundedSum = fundingRows.reduce((sum, f) => sum + (f.total_funded_inr || f.amount || 0), 0);
+        if (fundedSum > totalEscrow) totalEscrow = fundedSum;
+      }
+    } catch {}
+
+    metrics.totalEscrowVolume = totalEscrow;
+    metrics.platformRevenueEstimate = Math.round(totalEscrow * 0.1);
 
   } catch (err) {
     console.warn('[Admin API] Metrics query error:', err.message);

@@ -64,7 +64,7 @@ export default function AdminCreatorManagement({
           </p>
         </div>
         <div className="alloy-admin-counter-pill">
-          <span>{filteredCreators.length} Creators in Network</span>
+          <span>{filteredCreators.length === creators.length ? `${creators.length} Creators in Network` : `${filteredCreators.length} of ${creators.length} Creators in Network`}</span>
         </div>
       </div>
 
