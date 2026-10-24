@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { deduplicateMessages } from '../services/marketplaceBackend';
 import MessagesLoginWall from './MessagesLoginWall';
+import DirectMessagesEmptyState from './DirectMessagesEmptyState';
 
 export default function GlobalMessagingDrawer({
   isOpen,
@@ -36,7 +37,8 @@ export default function GlobalMessagingDrawer({
   onViewProfile,
   onViewProject,
   onOpenLogin,
-  onLoginSuccess
+  onLoginSuccess,
+  onExplore
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [messageInput, setMessageInput] = useState('');
@@ -347,19 +349,22 @@ export default function GlobalMessagingDrawer({
               {/* Conversations Stream */}
               <div className="drawer-conversations-stream">
                 {displayedConversations.length === 0 ? (
-                  <div className="drawer-empty-state">
-                    <div className="drawer-empty-icon-box">
-                      <MessageSquare size={28} />
+                  searchQuery ? (
+                    <div className="drawer-empty-state">
+                      <div className="drawer-empty-icon-box">
+                        <MessageSquare size={28} />
+                      </div>
+                      <h3 className="drawer-empty-title">No matching conversations</h3>
+                      <p className="drawer-empty-desc">
+                        Try searching with a different name or campaign keyword.
+                      </p>
                     </div>
-                    <h3 className="drawer-empty-title">
-                      {searchQuery ? 'No matching conversations' : 'No conversations yet'}
-                    </h3>
-                    <p className="drawer-empty-desc">
-                      {searchQuery
-                        ? 'Try searching with a different name or campaign keyword.'
-                        : 'Connect with creators through campaign briefs, invitations, or direct proposals to start chatting.'}
-                    </p>
-                  </div>
+                  ) : (
+                    <DirectMessagesEmptyState
+                      role={myRole}
+                      onExplore={onExplore ? () => { onClose(); onExplore(); } : undefined}
+                    />
+                  )
                 ) : (
                   displayedConversations.map((conn) => {
                     const isSelected = conn.id === activeConnectionId;
@@ -428,9 +433,11 @@ export default function GlobalMessagingDrawer({
                   const threadMessages = deduplicateMessages(activeConnection.messages || []);
                   if (threadMessages.length === 0) {
                     return (
-                      <div className="drawer-thread-empty">
-                        <p>No messages yet. Send a note to kick off concept alignment!</p>
-                      </div>
+                      <DirectMessagesEmptyState
+                        type="empty-thread"
+                        partnerName={otherPartyName}
+                        role={myRole}
+                      />
                     );
                   }
                   return threadMessages.map((msg, index) => {

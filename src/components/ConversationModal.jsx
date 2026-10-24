@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, Sparkles, CheckCircle2, ArrowUpRight } from 'lucide-react';
 import { deduplicateMessages } from '../services/marketplaceBackend';
+import DirectMessagesEmptyState from './DirectMessagesEmptyState';
 
 export default function ConversationModal({
   isOpen,
@@ -138,27 +139,35 @@ export default function ConversationModal({
 
         {/* Message Stream */}
         <div className="conversation-messages-stream">
-          {deduplicateMessages(connection.messages || []).map((msg) => {
-            const isMe = msg.sender === currentUserRole;
-            return (
-              <div 
-                key={msg.id} 
-                className={`message-bubble-row ${isMe ? 'my-message-row' : 'their-message-row'}`}
-              >
-                <div className={`message-bubble ${isMe ? 'my-bubble' : 'their-bubble'}`}>
-                  <div className="message-sender-label">
-                    {msg.senderName}
-                  </div>
-                  <div className="message-text">
-                    {msg.text}
-                  </div>
-                  <div className="message-timestamp">
-                    {msg.timestamp}
+          {deduplicateMessages(connection.messages || []).length === 0 ? (
+            <DirectMessagesEmptyState
+              type="empty-thread"
+              partnerName={otherPartyName}
+              role={currentUserRole}
+            />
+          ) : (
+            deduplicateMessages(connection.messages || []).map((msg) => {
+              const isMe = msg.sender === currentUserRole;
+              return (
+                <div 
+                  key={msg.id} 
+                  className={`message-bubble-row ${isMe ? 'my-message-row' : 'their-message-row'}`}
+                >
+                  <div className={`message-bubble ${isMe ? 'my-bubble' : 'their-bubble'}`}>
+                    <div className="message-sender-label">
+                      {msg.senderName}
+                    </div>
+                    <div className="message-text">
+                      {msg.text}
+                    </div>
+                    <div className="message-timestamp">
+                      {msg.timestamp}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
           <div ref={messagesEndRef} />
         </div>
 
