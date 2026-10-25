@@ -37,6 +37,7 @@ import LoginModal from './components/LoginModal';
 import RoleConflictModal from './components/RoleConflictModal';
 import MessagesLoginWall from './components/MessagesLoginWall';
 import JudgeDemoWalkthrough from './components/JudgeDemoWalkthrough';
+import AlloyAIAssistant from './components/AlloyAIAssistant';
 import { Sparkles } from 'lucide-react';
 
 import { CREATORS } from './data/creatorsData';
@@ -614,7 +615,7 @@ export default function App() {
     const filtered = (invitations || []).filter(inv =>
       inv.creatorId === myCreator.id ||
       inv.creator_id === myCreator.id ||
-      (myCreator.id === 'maya-chen' && (inv.creatorId === 'maya-chen' || inv.creatorName === 'Maya Chen'))
+      (myCreator.id === 'maya-chen' && (inv.creatorId === 'maya-chen' || inv.creatorName === 'Maya Sharma' || inv.creatorName === 'Maya Chen'))
     );
     return filtered.length > 0 ? filtered : (myCreator.id === 'maya-chen' ? invitations : filtered);
   }, [invitations, myCreator]);
@@ -625,7 +626,7 @@ export default function App() {
     const filtered = (projects || []).filter(p =>
       p.creatorId === myCreator.id ||
       p.creator_id === myCreator.id ||
-      (myCreator.id === 'maya-chen' && (p.creatorId === 'maya-chen' || p.creatorName === 'Maya Chen'))
+      (myCreator.id === 'maya-chen' && (p.creatorId === 'maya-chen' || p.creatorName === 'Maya Sharma' || p.creatorName === 'Maya Chen'))
     );
     return filtered.length > 0 ? filtered : (myCreator.id === 'maya-chen' ? projects : filtered);
   }, [projects, myCreator]);
@@ -2002,7 +2003,7 @@ export default function App() {
       brandName: invitation.brandName || invitation.brand,
       brandContact: "Creative Director",
       creatorId: invitation.creatorId,
-      creatorName: invitation.creatorName || "Maya Chen",
+      creatorName: invitation.creatorName || "Maya Sharma",
       creatorAvatar: invitation.creatorAvatar || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80",
       status: "in-progress",
       progressPercent: 30,
@@ -2077,7 +2078,7 @@ export default function App() {
 
       const response = await acceptCreatorApplication(applicationId, campaignId, currentBrand?.id);
 
-      const agreedRate = app?.counterOffer?.status === 'accepted' ? app.counterOffer.proposedRate : (app?.proposedPrice || camp?.budget || '$5,000');
+      const agreedRate = app?.counterOffer?.status === 'accepted' ? app.counterOffer.proposedRate : (app?.proposedPrice || camp?.budget || '₹50,000');
       const agreedTimeline = app?.counterOffer?.status === 'accepted' ? app.counterOffer.proposedTimeline : (app?.deliveryTimeline || camp?.timeline || '3 Weeks');
 
       const creatorId = app?.creatorId || 'creator-unknown';
@@ -2454,7 +2455,7 @@ export default function App() {
         brandName: targetBrand.name,
         brandAvatar: targetBrand.logo,
         status: 'active',
-        budget: '$8,000 - $14,000',
+        budget: '₹80,000 – ₹1,40,000',
         timeline: '3-4 Weeks Production',
         objective: `Commission and produce creative deliverables based on ${project.title}.`,
         aesthetic: suggestedAesthetic || project.creativeStyle || 'Cinematic & Editorial',
@@ -2861,6 +2862,7 @@ export default function App() {
             }}
             campaigns={marketplaceData.campaigns || []}
             brands={marketplaceData.brands || []}
+            shortlists={brandShortlists || marketplaceData.shortlists || {}}
           />
         )}
 
@@ -3022,6 +3024,7 @@ export default function App() {
                 onOpenLogin={() => setIsLoginOpen(true)}
                 campaigns={marketplaceData.campaigns || []}
                 brands={marketplaceData.brands || []}
+                shortlists={brandShortlists || marketplaceData.shortlists || {}}
               />
             ) : (
               <BrandWorkspaceView
@@ -3161,20 +3164,20 @@ export default function App() {
               profile: {
                 ...(user?.profile || {}),
                 role: 'brand',
-                display_name: user?.profile?.display_name || user?.user_metadata?.full_name || user?.display_name || (isLuminaDemo ? 'Lumina Botanica' : (user.email ? user.email.split('@')[0] : 'Brand Studio')),
+                display_name: user?.profile?.display_name || user?.user_metadata?.full_name || user?.display_name || (isLuminaDemo ? 'Veda Botanics' : (user.email ? user.email.split('@')[0] : 'Brand Studio')),
                 isDemoOnly: isLuminaDemo
               }
             } : {
               id: 'brand-demo-lumina',
               email: 'lumina.demo@alloy.market',
               role: 'brand',
-              display_name: 'Lumina Botanica',
+              display_name: 'Veda Botanics',
               isDemoOnly: true,
               profile: {
                 id: 'brand-demo-lumina',
                 email: 'lumina.demo@alloy.market',
                 role: 'brand',
-                display_name: 'Lumina Botanica',
+                display_name: 'Veda Botanics',
                 isDemoOnly: true
               }
             };
@@ -3189,14 +3192,18 @@ export default function App() {
               const emailKey = (brandUser.email || brandUser.id || 'custom').toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, '-');
               const customBrandId = `brand-${emailKey}`;
               const brandName = brandUser.profile?.display_name || brandUser.display_name || (brandUser.email ? brandUser.email.split('@')[0] : 'My Brand Studio');
+              const bDetails = user?.brand || user?.profileDetails || {};
 
               const brandRecord = {
                 id: customBrandId,
                 userId: brandUser.id,
                 name: brandName,
-                industry: 'Creative & Digital',
-                description: `${brandName} private studio workspace.`,
-                aesthetic: 'Modern & Editorial',
+                handle: bDetails.handle || `@${emailKey}`,
+                industry: bDetails.industry || 'Beverages & Drinks',
+                description: bDetails.description || `${brandName} private studio workspace.`,
+                website: bDetails.website || '',
+                logo: bDetails.logo || '',
+                aesthetic: bDetails.aesthetic || 'Modern & Editorial',
                 isDemo: false
               };
 
@@ -3231,20 +3238,20 @@ export default function App() {
               profile: {
                 ...(user?.profile || {}),
                 role: 'creator',
-                display_name: user?.profile?.display_name || user?.user_metadata?.full_name || user?.display_name || (isDemo ? 'Maya Chen' : (user.email ? user.email.split('@')[0] : 'Creator Studio')),
+                display_name: user?.profile?.display_name || user?.user_metadata?.full_name || user?.display_name || (isDemo ? 'Maya Sharma' : (user.email ? user.email.split('@')[0] : 'Creator Studio')),
                 isDemoOnly: isDemo
               }
             } : {
               id: 'maya-chen',
               email: 'maya.demo@alloy.market',
               role: 'creator',
-              display_name: 'Maya Chen',
+              display_name: 'Maya Sharma',
               isDemoOnly: true,
               profile: {
                 id: 'maya-chen',
                 email: 'maya.demo@alloy.market',
                 role: 'creator',
-                display_name: 'Maya Chen',
+                display_name: 'Maya Sharma',
                 isDemoOnly: true
               }
             };
@@ -3252,6 +3259,42 @@ export default function App() {
             localStorage.setItem('creasync_active_role', 'creator');
             updateActiveUser(creatorUser);
             handleToggleDemoMode(isDemo);
+
+            if (!isDemo && user) {
+              const cDetails = user.creator || user.profileDetails || {};
+              const customCreatorId = cDetails.id || `creator-${user.id.slice(0, 8)}`;
+              const creatorName = creatorUser.profile?.display_name || creatorUser.display_name || 'Creator Studio';
+              const creatorRecord = {
+                id: customCreatorId,
+                userId: user.id,
+                name: creatorName,
+                handle: cDetails.handle || `@${user.email ? user.email.split('@')[0] : 'creator'}`,
+                experience: cDetails.experience || '3+ years in AI visual arts',
+                specialty: cDetails.specialty || 'AI Cinematic Direction',
+                heroWork: cDetails.heroWork || cDetails.hero_work || 'Flagship Studio Showcase',
+                avatar: cDetails.avatar || creatorUser.profile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+                bio: cDetails.bio || `${creatorName} specializes in ${cDetails.specialty || 'AI visual direction'}.`,
+                creativeIdentity: cDetails.creativeIdentity || cDetails.specialty || 'AI Creative Director',
+                location: cDetails.location || 'London / Remote',
+                tools: Array.isArray(cDetails.tools) && cDetails.tools.length ? cDetails.tools : ['Midjourney', 'Runway Gen-3', 'Unreal Engine'],
+                styles: Array.isArray(cDetails.styles) && cDetails.styles.length ? cDetails.styles : ['Cinematic', 'Editorial', 'Hyperreal'],
+                isDemo: false
+              };
+
+              setMarketplaceData(prev => {
+                const existing = (prev.creators || []).find(c => c.id === customCreatorId);
+                if (!existing) {
+                  return {
+                    ...prev,
+                    creators: [creatorRecord, ...(prev.creators || [])],
+                    activeCreatorId: customCreatorId,
+                    isDemoMode: false
+                  };
+                }
+                return { ...prev, activeCreatorId: customCreatorId, isDemoMode: false };
+              });
+            }
+
             executePendingActionOrRoute(creatorUser, 'creator');
           }
         }}
@@ -3266,20 +3309,20 @@ export default function App() {
             profile: {
               ...(user?.profile || {}),
               role: 'brand',
-              display_name: user?.profile?.display_name || user?.user_metadata?.full_name || user?.display_name || (isLuminaDemo ? 'Lumina Botanica' : (user.email ? user.email.split('@')[0] : 'Brand Studio')),
+              display_name: user?.profile?.display_name || user?.user_metadata?.full_name || user?.display_name || (isLuminaDemo ? 'Veda Botanics' : (user.email ? user.email.split('@')[0] : 'Brand Studio')),
               isDemoOnly: isLuminaDemo
             }
           } : {
             id: 'brand-demo-lumina',
             email: 'lumina.demo@alloy.market',
             role: 'brand',
-            display_name: 'Lumina Botanica',
+            display_name: 'Veda Botanics',
             isDemoOnly: true,
             profile: {
               id: 'brand-demo-lumina',
               email: 'lumina.demo@alloy.market',
               role: 'brand',
-              display_name: 'Lumina Botanica',
+              display_name: 'Veda Botanics',
               isDemoOnly: true
             }
           };
@@ -3339,20 +3382,20 @@ export default function App() {
             profile: {
               ...(user?.profile || {}),
               role: 'creator',
-              display_name: user?.profile?.display_name || user?.user_metadata?.full_name || user?.display_name || (isDemo ? 'Maya Chen' : (user.email ? user.email.split('@')[0] : 'Creator Studio')),
+              display_name: user?.profile?.display_name || user?.user_metadata?.full_name || user?.display_name || (isDemo ? 'Maya Sharma' : (user.email ? user.email.split('@')[0] : 'Creator Studio')),
               isDemoOnly: isDemo
             }
           } : {
             id: 'maya-chen',
             email: 'maya.demo@alloy.market',
             role: 'creator',
-            display_name: 'Maya Chen',
+            display_name: 'Maya Sharma',
             isDemoOnly: true,
             profile: {
               id: 'maya-chen',
               email: 'maya.demo@alloy.market',
               role: 'creator',
-              display_name: 'Maya Chen',
+              display_name: 'Maya Sharma',
               isDemoOnly: true
             }
           };
@@ -3459,6 +3502,23 @@ export default function App() {
         />
       )}
 
+      {/* Alloy AI Abstract Sculptural Floating Assistant & Chat Panel */}
+      {currentView !== 'admin-login' && currentView !== 'admin-dashboard' && (
+        <AlloyAIAssistant
+          onNavigate={(view, extraId) => {
+            if (view === 'creator-profile' && extraId) {
+              handleOpenCreatorProfile(extraId);
+            } else {
+              navigateTo(view, extraId);
+            }
+          }}
+          onOpenCreatorProfile={handleOpenCreatorProfile}
+          currentUser={currentUser}
+          activeCampaign={activeCampaign}
+          marketplaceData={marketplaceData}
+        />
+      )}
+
       {selectedProject && (
         <ProjectModal
           project={selectedProject}
@@ -3535,13 +3595,13 @@ export default function App() {
               id: 'elena-rostova',
               email: 'elena.demo@alloy.market',
               role: 'creator',
-              display_name: 'Elena Rostova',
+              display_name: 'Ananya Roy',
               isDemoOnly: true,
               profile: {
                 id: 'elena-rostova',
                 email: 'elena.demo@alloy.market',
                 role: 'creator',
-                display_name: 'Elena Rostova',
+                display_name: 'Ananya Roy',
                 isDemoOnly: true
               }
             };

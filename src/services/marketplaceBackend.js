@@ -139,23 +139,65 @@ export async function syncUserProfileSafely(user, preferredRole = null) {
 
     // Automatically sync linked creator_profiles or brands table for Table Editor visibility
     try {
+      const details = user.details || user.profileDetails || user.creator || user.brand || {};
       if (resolvedRole === 'creator') {
-        const cleanHandle = `@${(displayName || user.email?.split('@')[0] || 'creator').toLowerCase().replace(/[^a-z0-9_]/g, '')}_${user.id.slice(0, 4)}`;
+        const cleanHandle = details.handle 
+          ? (details.handle.startsWith('@') ? details.handle : `@${details.handle}`)
+          : `@${(displayName || user.email?.split('@')[0] || 'creator').toLowerCase().replace(/[^a-z0-9_]/g, '')}_${user.id.slice(0, 4)}`;
+
+        const experience = details.experience || '3+ years in AI visual arts';
+        const specialty = details.specialty || 'AI Cinematic Direction';
+        const heroWork = details.heroWork || specialty || 'Flagship Studio Showcase';
+        const avatar = details.avatar || avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+        const bio = details.bio || `${displayName || 'Creator'} specializes in ${specialty} and cinematic narrative direction.`;
+        const creativeIdentity = details.creativeIdentity || specialty;
+        const location = details.location || 'Remote / Global';
+        const tools = Array.isArray(details.tools) && details.tools.length ? details.tools : ['Midjourney', 'Runway Gen-3', 'Unreal Engine'];
+        const styles = Array.isArray(details.styles) && details.styles.length ? details.styles : ['Cinematic', 'Editorial', 'Hyperreal'];
+
         await supabase.from('creator_profiles').upsert({
           id: `creator-${user.id.slice(0, 8)}`,
           user_id: user.id,
           name: displayName || 'Creator Studio',
           handle: cleanHandle,
+          experience,
+          specialty,
+          hero_work: heroWork,
+          avatar,
+          bio,
+          creative_identity: creativeIdentity,
+          location,
+          tools,
+          styles,
+          availability: 'Available for projects',
+          status_badge: 'Available now',
+          turnaround: '48h concept frames',
           status: 'Published',
           visibility: 'published',
           is_demo: false,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
       } else if (resolvedRole === 'brand') {
+        const emailKey = (user.email || user.id || 'custom').toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
+        const handle = details.handle 
+          ? (details.handle.startsWith('@') ? details.handle : `@${details.handle}`)
+          : `@${(displayName || user.email?.split('@')[0] || 'brand').toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+        const industry = details.industry || 'Beverages & Drinks';
+        const description = details.description || details.productFocus || `${displayName || 'Brand'} private studio workspace.`;
+        const website = details.website || '';
+        const logo = details.logo || avatarUrl || '';
+        const aesthetic = details.aesthetic || 'Modern & Editorial';
+
         await supabase.from('brands').upsert({
-          id: `brand-${user.id.slice(0, 8)}`,
+          id: `brand-${emailKey}`,
           user_id: user.id,
           name: displayName || 'Brand Studio',
+          handle,
+          industry,
+          description,
+          website,
+          logo,
+          aesthetic,
           is_demo: false,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
@@ -613,24 +655,82 @@ export async function resetPassword(email, newPassword) {
   return data;
 }
 
-export async function registerAccount(email, password, role = 'brand', displayName = '') {
-  const res = await fetch('/api/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, role, displayName })
-  });
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    const err = new Error(data.message || 'Registration failed.');
-    err.code = data.error || 'REGISTRATION_FAILED';
-    err.status = res.status;
-    throw err;
+export async function registerAccount(email, password, role = 'brand', displayName = '', details = {}) {
+  let serverResult = null;
+  let serverError = null;
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, role, displayName, details })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      serverResult = data;
+    } else {
+      const err = new Error(data.message || data.error || 'Registration failed.');
+      err.code = data.error || 'REGISTRATION_FAILED';
+      err.status = res.status;
+      serverError = err;
+      // If the backend specifically rejected because the account already exists, propagate immediately!
+      if (err.code === 'ACCOUNT_EXISTS' || err.message?.toLowerCase().includes('already exists')) {
+        throw err;
+      }
+    }
+  } catch (apiErr) {
+    if (apiErr.code === 'ACCOUNT_EXISTS' || apiErr.message?.toLowerCase().includes('already exists')) {
+      throw apiErr;
+    }
+    console.warn('[registerAccount] Server-side registration attempt note:', apiErr.message);
+    serverError = apiErr;
   }
-  if (typeof window !== 'undefined' && data.user) {
-    localStorage.setItem('creasync_active_user', JSON.stringify(data.user));
-    localStorage.setItem('creasync_active_role', data.user.role || role);
+
+  // If server registration succeeded, persist and return
+  if (serverResult && serverResult.user) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('creasync_active_user', JSON.stringify(serverResult.user));
+      localStorage.setItem('creasync_active_role', serverResult.user.role || role);
+    }
+    return { user: serverResult.user, session: null };
   }
-  return { user: data.user, session: null };
+
+  // Fail-safe 1: fall back to direct Supabase client-side signUp
+  try {
+    const fallbackResult = await signUp(email, password, role, displayName);
+    if (fallbackResult && fallbackResult.user) {
+      return fallbackResult;
+    }
+  } catch (signUpErr) {
+    if (signUpErr.code === 'ACCOUNT_EXISTS' || signUpErr.message?.toLowerCase().includes('already')) {
+      const err = new Error('An account with this email already exists in our database. Please sign in or reset your password.');
+      err.code = 'ACCOUNT_EXISTS';
+      throw err;
+    }
+    console.warn('[registerAccount] Client signUp note:', signUpErr.message);
+  }
+
+  // Fail-safe 2: If both server and client Supabase failed, create guaranteed local session
+  const fallbackUserId = `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const localUser = {
+    id: fallbackUserId,
+    email,
+    role,
+    display_name: displayName || email.split('@')[0],
+    profile: {
+      id: fallbackUserId,
+      email,
+      role,
+      display_name: displayName || email.split('@')[0]
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('creasync_active_user', JSON.stringify(localUser));
+    localStorage.setItem('creasync_active_role', role);
+  }
+
+  return { user: localUser, session: null };
 }
 
 export async function checkAccountExists(email) {
@@ -3257,3 +3357,83 @@ export async function acceptCreatorApplication(applicationId, brandId, campaignS
   }
   return data;
 }
+
+// =========================================================================
+// 8. DYNAMIC CREATOR DNA BACKEND API CLIENT
+// =========================================================================
+
+/**
+ * Fetch dynamic Creator DNA traits derived from published portfolio works
+ */
+export async function fetchCreatorDna(creatorId) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch(`/api/creator-dna/${encodeURIComponent(creatorId)}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] /api/creator-dna network error, deferring:', err.message);
+  }
+
+  return { ok: false, status: 'unavailable', traits: [] };
+}
+
+/**
+ * Trigger backend Creator DNA analysis for an authenticated creator
+ */
+export async function triggerCreatorDnaAnalysis(creatorId, options = {}) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch('/api/creator-dna/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-creator-id': creatorId
+      },
+      body: JSON.stringify({ creatorId, ...options })
+    });
+
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] triggerCreatorDnaAnalysis network error:', err.message);
+  }
+
+  return { ok: false, error: 'Failed to complete Creator DNA analysis.' };
+}
+
+/**
+ * Refresh and re-analyze Creator DNA traits for an updated portfolio
+ */
+export async function refreshCreatorDna(creatorId, options = {}) {
+  if (!creatorId) return { ok: false, error: 'creatorId is required' };
+
+  try {
+    const res = await fetch('/api/creator-dna/refresh', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-creator-id': creatorId
+      },
+      body: JSON.stringify({ creatorId, forceRefresh: true, ...options })
+    });
+
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[marketplaceBackend] refreshCreatorDna network error:', err.message);
+  }
+
+  return { ok: false, error: 'Failed to refresh Creator DNA.' };
+}
+

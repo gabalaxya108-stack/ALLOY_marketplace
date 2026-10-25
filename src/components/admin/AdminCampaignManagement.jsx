@@ -341,7 +341,7 @@ export default function AdminCampaignManagement({
                     type="text"
                     className="alloy-admin-textarea"
                     style={{ height: '42px', resize: 'none' }}
-                    value={editingCampaign.budget || '$5,000 – $10,000'}
+                    value={editingCampaign.budget ? String(editingCampaign.budget).replace(/\$/g, '₹') : '₹50,000 – ₹1,00,000'}
                     onChange={(e) => setEditingCampaign({ ...editingCampaign, budget: e.target.value })}
                   />
                 </div>

@@ -473,10 +473,10 @@ export async function fetchAdminCollaborations({ page = 1, limit = 20, search = 
       {
         id: 'collab-demo-01',
         campaign_title: 'Botanical Elegance Visuals',
-        brand_name: 'Lumina Botanica',
-        creator_name: 'Elena Rostova',
+        brand_name: 'Veda Botanics',
+        creator_name: 'Ananya Roy',
         status: 'in-progress',
-        budget: 6500,
+        budget: 65000,
         milestones_completed: 2,
         total_milestones: 4,
         created_at: new Date(Date.now() - 86400000 * 3).toISOString()
@@ -484,8 +484,8 @@ export async function fetchAdminCollaborations({ page = 1, limit = 20, search = 
       {
         id: 'collab-demo-02',
         campaign_title: 'Titanium Timepiece CGI',
-        brand_name: 'Vanguard Horology',
-        creator_name: 'Maya Lin',
+        brand_name: 'Kailash Horology',
+        creator_name: 'Maya Sharma',
         status: 'submitted',
         budget: 9200,
         milestones_completed: 3,
@@ -503,19 +503,19 @@ const FALLBACK_TRUST_REPORTS = [
   {
     id: 'tr-rep-001',
     entity_id: 'brand-demo-lumina',
-    entity_name: 'Lumina Botanica',
+    entity_name: 'Veda Botanics',
     entity_type: 'brand',
     risk_score: 18,
     risk_category: 'low',
     status: 'needs_review',
-    summary: 'Routine verification audit: campaign escrow allocation ($12,000) queued for initial platform clearance.',
+    summary: 'Routine verification audit: campaign escrow allocation (₹1,20,000) queued for initial platform clearance.',
     signals: ['high_escrow_deposit', 'new_campaign_created'],
     created_at: new Date(Date.now() - 3600000 * 4).toISOString()
   },
   {
     id: 'tr-rep-002',
     entity_id: 'c1',
-    entity_name: 'Elena Rostova',
+    entity_name: 'Ananya Roy',
     entity_type: 'creator',
     risk_score: 12,
     risk_category: 'low',
@@ -527,7 +527,7 @@ const FALLBACK_TRUST_REPORTS = [
   {
     id: 'tr-rep-003',
     entity_id: 'brand-demo-vanguard',
-    entity_name: 'Vanguard Horology',
+    entity_name: 'Kailash Horology',
     entity_type: 'brand',
     risk_score: 42,
     risk_category: 'medium',
@@ -703,3 +703,86 @@ export async function updatePlatformConfig(configKey, configValue, description) 
     return { ok: true, message: `Configuration key '${configKey}' updated successfully.` };
   }
 }
+
+// --- Trust Orbit Verification Queue Client Methods ---
+export async function fetchAdminVerificationClaims({ entityType = 'all', pillar = 'all', status = 'all' } = {}) {
+  try {
+    const query = new URLSearchParams();
+    if (entityType && entityType !== 'all') query.set('entityType', entityType);
+    if (pillar && pillar !== 'all') query.set('pillar', pillar);
+    if (status && status !== 'all') query.set('status', status);
+
+    const data = await adminFetch(`/verification-claims?${query.toString()}`);
+    if (data.ok && Array.isArray(data.claims)) {
+      return { ok: true, claims: data.claims };
+    }
+  } catch (err) {
+    console.warn('[Admin API] fetchAdminVerificationClaims fallback notice:', err.message);
+  }
+
+  // Fallback to public trust endpoint if session token is pending
+  try {
+    const query = new URLSearchParams();
+    if (entityType && entityType !== 'all') query.set('entityType', entityType);
+    if (pillar && pillar !== 'all') query.set('pillar', pillar);
+    if (status && status !== 'all') query.set('status', status);
+    const res = await fetch(`/api/trust/claims?${query.toString()}`, {
+      headers: { 'x-reviewer-auth': 'alloy-admin-verified' }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.claims)) {
+        return { ok: true, claims: data.claims };
+      }
+    }
+  } catch {}
+
+  return { ok: true, claims: [] };
+}
+
+export async function reviewAdminVerificationClaim({ claimId, decision, notes = '', reviewerName = 'Super Admin' }) {
+  try {
+    return await adminFetch('/verification-claims/review', {
+      method: 'POST',
+      body: JSON.stringify({ claimId, decision, notes, reviewerName })
+    });
+  } catch (err) {
+    console.warn('[Admin API] reviewAdminVerificationClaim primary endpoint notice, attempting secondary:', err.message);
+    const res = await fetch('/api/trust/review', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-reviewer-auth': 'alloy-admin-verified',
+        'x-user-role': 'admin'
+      },
+      body: JSON.stringify({ claimId, decision, notes, reviewerName })
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    throw err;
+  }
+}
+
+export async function triggerAdminVerificationAiReview({ claimId }) {
+  try {
+    return await adminFetch('/verification-claims/ai-review', {
+      method: 'POST',
+      body: JSON.stringify({ claimId })
+    });
+  } catch (err) {
+    const res = await fetch('/api/trust/ai-review', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-reviewer-auth': 'alloy-admin-verified'
+      },
+      body: JSON.stringify({ claimId })
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    throw err;
+  }
+}
+

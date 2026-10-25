@@ -13,24 +13,24 @@ export default function CreaMatchSection({ creators = [], onExploreDiscover, onE
     {
       id: 'lumina-skincare',
       label: 'Botanical Skincare Brief',
-      title: 'Lumina Botanica — Pure Hydration Campaign',
+      title: 'Veda Botanics — Pure Hydration Campaign',
       industry: 'Beauty & Skincare',
       creativeStyle: 'Clean, Minimal, Luminous, Botanical, Organic',
       contentFormats: ['4K Stills Suite', 'E-Commerce Hero Assets'],
       platforms: ['Instagram', 'Digital OOH'],
-      budget: '$5,000 – $10,000',
+      budget: '₹50,000 – ₹1,00,000',
       timeline: '2–3 Weeks',
       deliverables: '3x Hero Stills, 2x Vertical Loops'
     },
     {
       id: 'obsidian-audio',
       label: 'Industrial Audio Hardware Brief',
-      title: 'Obsidian Audio — Spatial Headphone Debut',
+      title: 'Dhvani Acoustics — Spatial Headphone Debut',
       industry: 'Consumer Tech & Hardware',
       creativeStyle: 'Cinematic, Moody, Macro, Industrial Precision',
       contentFormats: ['4K Stills Suite', '9:16 Kinetic Loops'],
       platforms: ['Instagram', 'YouTube'],
-      budget: '$8,000 – $12,000',
+      budget: '₹80,000 – ₹1,20,000',
       timeline: '3 Weeks',
       deliverables: '4K Exploded CGI Stills, 15s Kinetic Loop'
     }

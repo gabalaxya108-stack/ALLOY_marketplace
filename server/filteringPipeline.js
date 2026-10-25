@@ -81,7 +81,7 @@ export function normalizeCampaignBrief(campaign = {}) {
     specialization,
     tools: normalizeTokenArray(rawMandatory.tools ?? (hasMandatoryConfig ? [] : (rawRequirements.tools || brief.requiredTools))),
     formats,
-    styles: normalizeTokenArray(rawMandatory.styles ?? rawMandatory.creativeStyle ?? (hasMandatoryConfig ? [] : (rawRequirements.styles || brief.creativeStyle))),
+    styles: normalizeTokenArray(rawMandatory.styles ?? (hasMandatoryConfig ? [] : (rawRequirements.styles || brief.mandatoryStyles))),
     commercialLicensing: Boolean(rawMandatory.commercialLicensing ?? (hasMandatoryConfig ? false : (rawRequirements.commercialLicensing ?? brief.requiresCommercialLicense))),
     minProjects: typeof (rawMandatory.minProjects ?? (hasMandatoryConfig ? 0 : rawRequirements.minProjects)) === 'number'
       ? (rawMandatory.minProjects ?? (hasMandatoryConfig ? 0 : rawRequirements.minProjects))

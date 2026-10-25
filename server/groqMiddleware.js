@@ -9,7 +9,8 @@ import {
   generateCreatorDNA, 
   evaluateCreaMatchAndScore, 
   generateCreaSimConcepts,
-  interpretCampaignRequirements
+  interpretCampaignRequirements,
+  streamAlloyAiChat
 } from './groqService.js';
 import { executeFilteringPipeline } from './filteringPipeline.js';
 import { fetchSupabaseCreators, getSupabaseConfig } from './supabaseCreators.js';
@@ -67,6 +68,7 @@ import {
   getVerificationClaims, 
   submitVerificationClaim, 
   reviewVerificationClaim, 
+  runClaimAiReview,
   getVerificationAuditLog 
 } from './trustService.js';
 
@@ -287,11 +289,15 @@ export function createGroqMiddleware() {
           const brandId = queryParams.get('brandId');
           const entityId = queryParams.get('entityId');
           const entityType = queryParams.get('entityType');
+          const pillar = queryParams.get('pillar') || queryParams.get('claimType');
+          const status = queryParams.get('status');
           const claims = getVerificationClaims({
             creatorId,
             brandId,
             entityId,
             entityType,
+            pillar,
+            status,
             isAdmin: isAuthorizedReviewer,
             currentUserId: queryParams.get('userId')
           });
@@ -301,23 +307,34 @@ export function createGroqMiddleware() {
         // POST /api/trust/claims (Creator or Brand submitting verification claim)
         if (url === '/api/trust/claims' && req.method === 'POST') {
           const body = await parseJsonBody(req);
-          const newClaim = submitVerificationClaim(body, reqRole);
+          const newClaim = await submitVerificationClaim(body, reqRole);
           return sendJson(res, 201, { ok: true, claim: newClaim });
         }
 
-        // POST /api/trust/review (Authorized reviewer only!)
+        // POST /api/trust/review (Authorized Super Admin reviewer only!)
         if (url === '/api/trust/review' && req.method === 'POST') {
           const body = await parseJsonBody(req);
           const { claimId, decision, notes, reviewerName } = body;
           
-          const result = reviewVerificationClaim({
+          const result = await reviewVerificationClaim({
             claimId,
             decision,
             notes,
-            reviewerName: reviewerName || 'Authorized Platform Auditor',
+            reviewerName: reviewerName || 'Super Admin Platform Auditor',
             isAuthorized: isAuthorizedReviewer
           });
           return sendJson(res, 200, { ok: true, ...result });
+        }
+
+        // POST /api/trust/ai-review (Trigger or re-run AI advisory review on claim)
+        if (url === '/api/trust/ai-review' && req.method === 'POST') {
+          const body = await parseJsonBody(req);
+          const { claimId } = body;
+          if (!claimId) {
+            return sendJson(res, 400, { ok: false, error: 'claimId is required' });
+          }
+          const result = await runClaimAiReview({ claimId });
+          return sendJson(res, 200, result);
         }
 
         // GET /api/trust/audit (Audit trail log)
@@ -406,6 +423,76 @@ export function createGroqMiddleware() {
         }
         const conceptsData = await generateCreaSimConcepts(campaign, creator, creatorDNA);
         return sendJson(res, 200, { ok: true, source: 'groq', ...conceptsData });
+      }
+
+      // 6. Alloy AI Real-Time Streaming Chat (Groq Token Streaming)
+      if ((url === '/api/ai/chat/stream' || url === '/api/ai/chat') && req.method === 'POST') {
+        const messages = Array.isArray(body.messages) ? body.messages : [];
+        const role = body.role || req.headers['x-user-role'] || 'brand';
+        const context = body.context || {};
+
+        if (messages.length === 0) {
+          return sendJson(res, 400, { ok: false, error: 'Messages array is required.' });
+        }
+
+        // Establish Server-Sent Events headers
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no'
+        });
+
+        const abortController = new AbortController();
+        req.on('close', () => {
+          abortController.abort();
+        });
+
+        // Stage 1: Initial signal
+        res.write(`data: ${JSON.stringify({ type: 'stage', stage: 'understanding', status: 'Understanding your objective…' })}\n\n`);
+
+        let hasStartedReasoning = false;
+        let hasStartedContent = false;
+
+        try {
+          await streamAlloyAiChat({
+            messages,
+            role,
+            context,
+            signal: abortController.signal,
+            onReasoning: () => {
+              if (!hasStartedReasoning && !hasStartedContent) {
+                hasStartedReasoning = true;
+                res.write(`data: ${JSON.stringify({ type: 'stage', stage: 'processing', status: 'Building your roadmap…' })}\n\n`);
+              }
+            },
+            onChunk: (chunk) => {
+              if (!hasStartedContent) {
+                hasStartedContent = true;
+                res.write(`data: ${JSON.stringify({ type: 'stage', stage: 'generating', status: 'Streaming roadmap…' })}\n\n`);
+              }
+              res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunk })}\n\n`);
+            },
+            onDone: () => {
+              res.write(`data: ${JSON.stringify({ type: 'done', stage: 'completed' })}\n\n`);
+              res.write('data: [DONE]\n\n');
+              res.end();
+            },
+            onError: (streamErr) => {
+              console.error('[Groq Streaming Error]:', streamErr.message);
+              res.write(`data: ${JSON.stringify({ type: 'error', error: streamErr.message || 'Groq stream processing failed.' })}\n\n`);
+              res.write('data: [DONE]\n\n');
+              res.end();
+            }
+          });
+        } catch (callErr) {
+          console.error('[Groq Stream Launch Error]:', callErr.message);
+          res.write(`data: ${JSON.stringify({ type: 'error', error: callErr.message || 'Failed to start AI inference.' })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+        }
+
+        return;
       }
 
       // Route not found

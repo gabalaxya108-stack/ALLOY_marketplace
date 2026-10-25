@@ -54,6 +54,7 @@ import {
   reviewVerificationClaim,
   fetchVerificationAuditLog
 } from '../services/marketplaceBackend.js';
+import TrustOrbit from '../components/TrustOrbit.jsx';
 
 export default function TrustCenterView({
   creators = [],
@@ -177,7 +178,7 @@ export default function TrustCenterView({
   const [reviewActionForm, setReviewActionForm] = useState({
     decision: 'APPROVE', // 'APPROVE' | 'REJECT' | 'REQUEST_INFO'
     notes: '',
-    reviewerName: currentUser?.profile?.display_name || currentUser?.display_name || 'Elena Rostova (Lead Visual Auditor)'
+    reviewerName: currentUser?.profile?.display_name || currentUser?.display_name || 'Ananya Roy (Lead Visual Auditor)'
   });
 
   // =========================================================================
@@ -589,262 +590,16 @@ export default function TrustCenterView({
       {activeTab === 'overview' && (
         <div className="trust-overview-content">
           
-          {/* Section Heading */}
-          <div style={{ marginBottom: '20px' }}>
-            <span className="section-label" style={{ color: '#7C3AED' }}>Core Verification Framework</span>
-            <h2 className="font-editorial" style={{ fontSize: '1.8rem', margin: '4px 0 6px 0', color: 'var(--text-primary)' }}>
-              Four Pillars of Creator Authenticity
-            </h2>
-            <p style={{ margin: 0, fontSize: '0.94rem', color: 'var(--text-secondary)' }}>
-              Each claim is audited independently. We never issue composite "100% Trusted" scores or guarantee copyright ownership.
-            </p>
-          </div>
-
-          {/* 4 Cards Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '36px' }}>
-            
-            {/* PILLAR 1: Identity Verification */}
-            <div className="trust-pillar-card" style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(124, 58, 237, 0.1)', color: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <UserCheck size={20} />
-                  </div>
-                  <span style={{
-                    padding: '3px 9px',
-                    borderRadius: '100px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: trustData.email?.status === 'verified' ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].bg : STATUS_META[VERIFICATION_STATUSES.PENDING_REVIEW].bg,
-                    color: trustData.email?.status === 'verified' ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].color : STATUS_META[VERIFICATION_STATUSES.PENDING_REVIEW].color
-                  }}>
-                    {trustData.email?.status === 'verified' ? 'Email Verified' : 'Under Review'}
-                  </span>
-                </div>
-
-                <h3 className="font-editorial" style={{ margin: '0 0 6px 0', fontSize: '1.3rem', color: 'var(--text-primary)' }}>
-                  1. Identity Verification
-                </h3>
-
-                <p style={{ margin: '0 0 16px 0', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Cryptographic email verification via Supabase Auth and confidential legal personhood audits.
-                </p>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Email Channel:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>{trustData.email?.emailAddress || 'Verified Channel'}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Legal Personhood:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>{trustData.identity?.status === 'verified' ? 'Verified (Private)' : (trustData.identity?.status === 'pending_review' ? 'Compliance Queued' : 'Self-Declared')}</strong>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#059669', fontSize: '0.72rem', marginTop: '4px' }}>
-                    <Lock size={11} />
-                    <span>Sensitive documents strictly isolated from hiring brands.</span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setActiveModal('identity')}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                Submit Identity Evidence
-              </button>
-            </div>
-
-            {/* PILLAR 2: Portfolio Authenticity */}
-            <div className="trust-pillar-card" style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(217, 119, 6, 0.1)', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <FileCheck2 size={20} />
-                  </div>
-                  <span style={{
-                    padding: '3px 9px',
-                    borderRadius: '100px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: STATUS_META[VERIFICATION_STATUSES.VERIFIED].bg,
-                    color: STATUS_META[VERIFICATION_STATUSES.VERIFIED].color
-                  }}>
-                    {(trustData.portfolioEvidence || []).filter(p => p.status === 'verified' || p.status === 'reviewed').length} Audited Packs
-                  </span>
-                </div>
-
-                <h3 className="font-editorial" style={{ margin: '0 0 6px 0', fontSize: '1.3rem', color: 'var(--text-primary)' }}>
-                  2. Portfolio Authenticity
-                </h3>
-
-                <p style={{ margin: '0 0 16px 0', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Let creators reference original source files, ComfyUI generation node graphs, and master timelines.
-                </p>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Evidence Attached:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>{(trustData.portfolioEvidence || []).length} Project Packages</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Review Status:</span>
-                    <strong style={{ color: '#059669' }}>Seed Reproducibility Confirmed</strong>
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                    Uploading evidence enters Pending Review. Does not auto-verify.
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setActiveModal('portfolio')}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                Submit Portfolio Evidence
-              </button>
-            </div>
-
-            {/* PILLAR 3: AI Tools & Workflow */}
-            <div className="trust-pillar-card" style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Cpu size={20} />
-                  </div>
-                  <span style={{
-                    padding: '3px 9px',
-                    borderRadius: '100px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: STATUS_META[VERIFICATION_STATUSES.VERIFIED].bg,
-                    color: STATUS_META[VERIFICATION_STATUSES.VERIFIED].color
-                  }}>
-                    {(trustData.toolDeclarations || []).length} Tools Logged
-                  </span>
-                </div>
-
-                <h3 className="font-editorial" style={{ margin: '0 0 6px 0', fontSize: '1.3rem', color: 'var(--text-primary)' }}>
-                  3. AI Tools & Workflow
-                </h3>
-
-                <p style={{ margin: '0 0 16px 0', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Transparent breakdown between self-declared generative tools and audited model generation pipelines.
-                </p>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Claimed Models:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>Runway Gen-3, Midjourney v6, Flux.1</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Production Pipeline:</span>
-                    <strong style={{ color: '#059669' }}>Audited (7 Human Gates)</strong>
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                    Self-declared tools are strictly distinguished from audited claims.
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setActiveModal('tool')}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                Declare Tool & Evidence
-              </button>
-            </div>
-
-            {/* PILLAR 4: Commercial Usage Rights */}
-            <div className="trust-pillar-card" style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.1)', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <ShieldCheck size={20} />
-                  </div>
-                  <span style={{
-                    padding: '3px 9px',
-                    borderRadius: '100px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: STATUS_META[VERIFICATION_STATUSES.VERIFIED].bg,
-                    color: STATUS_META[VERIFICATION_STATUSES.VERIFIED].color
-                  }}>
-                    Scope Stated
-                  </span>
-                </div>
-
-                <h3 className="font-editorial" style={{ margin: '0 0 6px 0', fontSize: '1.3rem', color: 'var(--text-primary)' }}>
-                  4. Commercial Usage Rights
-                </h3>
-
-                <p style={{ margin: '0 0 16px 0', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Licensing declarations, commercial model subscription compliance, and category exclusivity scopes.
-                </p>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Buyout Scope:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>Full Commercial Buyout</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Exclusivity:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>12 Months Category</strong>
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                    Platform audits model commercial terms; does not provide copyright indemnity.
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setActiveModal('licensing')}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                Declare Commercial Rights
-              </button>
-            </div>
-
-          </div>
+          {/* ALLOY Trust Orbit (Interactive Animated Verification System) */}
+          <TrustOrbit
+            trustData={trustData}
+            claims={claimsList}
+            onOpenSubmissionModal={(modalType) => setActiveModal(modalType)}
+            currentUser={currentUser}
+            isBrand={false}
+            entityName={activeCreator?.name || 'Creator'}
+            onRefresh={loadTrustData}
+          />
 
           {/* Public Verification Badges Live Preview */}
           <div style={{
@@ -1090,7 +845,7 @@ export default function TrustCenterView({
                             setReviewActionForm({
                               decision: 'APPROVE',
                               notes: claim.reviewerNotes || '',
-                              reviewerName: currentUser?.profile?.display_name || 'Elena Rostova (Lead Visual Auditor)'
+                              reviewerName: currentUser?.profile?.display_name || 'Ananya Roy (Lead Visual Auditor)'
                             });
                             setActiveModal('review-action');
                           }}
@@ -1401,7 +1156,7 @@ export default function TrustCenterView({
                           setReviewActionForm({
                             decision: 'APPROVE',
                             notes: claim.reviewerNotes || '',
-                            reviewerName: currentUser?.profile?.display_name || 'Elena Rostova (Lead Visual Auditor)'
+                            reviewerName: currentUser?.profile?.display_name || 'Ananya Roy (Lead Visual Auditor)'
                           });
                           setActiveModal('review-action');
                         }}

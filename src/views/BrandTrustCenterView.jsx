@@ -54,6 +54,7 @@ import {
   reviewVerificationClaim,
   fetchVerificationAuditLog
 } from '../services/marketplaceBackend.js';
+import TrustOrbit from '../components/TrustOrbit.jsx';
 
 export default function BrandTrustCenterView({
   brand = null,
@@ -69,8 +70,8 @@ export default function BrandTrustCenterView({
   // Brand entity resolution
   const activeBrand = brand || {
     id: 'brand-demo-lumina',
-    name: 'Lumina Botanica',
-    website: 'https://luminabotanica.com',
+    name: 'Veda Botanics',
+    website: 'https://vedabotanics.in',
     industry: 'Beauty & Cosmetics',
     is_demo: true
   };
@@ -122,6 +123,9 @@ export default function BrandTrustCenterView({
       setIsLoadingClaims(false);
     }
   };
+
+  // Alias to ensure shared Trust Orbit and generic callbacks resolve cleanly
+  const loadTrustData = loadBrandTrustData;
 
   useEffect(() => {
     loadBrandTrustData();
@@ -188,7 +192,7 @@ export default function BrandTrustCenterView({
   const [reviewActionForm, setReviewActionForm] = useState({
     decision: 'APPROVE', // 'APPROVE' | 'REJECT' | 'REQUEST_INFO'
     notes: '',
-    reviewerName: currentUser?.profile?.display_name || currentUser?.display_name || 'Elena Rostova (Compliance Reviewer)'
+    reviewerName: currentUser?.profile?.display_name || currentUser?.display_name || 'Ananya Roy (Compliance Reviewer)'
   });
 
   // =========================================================================
@@ -532,283 +536,17 @@ export default function BrandTrustCenterView({
           ======================================================== */}
       {activeTab === 'overview' && (
         <div className="trust-overview-content">
-          
-          <div style={{ marginBottom: '20px' }}>
-            <span className="section-label" style={{ color: '#059669' }}>Factual Brand Framework</span>
-            <h2 className="font-editorial" style={{ fontSize: '1.8rem', margin: '4px 0 6px 0', color: 'var(--text-primary)' }}>
-              Four Pillars of Brand Reliability
-            </h2>
-            <p style={{ margin: 0, fontSize: '0.94rem', color: 'var(--text-secondary)' }}>
-              We evaluate factual business verification, brief clarity, escrow funding, and collaboration turnaround without fabricated composite scores.
-            </p>
-          </div>
+          {/* ALLOY Trust Orbit (Interactive Animated Verification System) */}
+          <TrustOrbit
+            trustData={trustData}
+            claims={claimsList}
+            onOpenSubmissionModal={(modalType) => setActiveModal(modalType === 'identity' ? 'entity' : modalType === 'commercial_rights' ? 'payment' : 'brief')}
+            currentUser={currentUser}
+            isBrand={true}
+            entityName={activeBrand?.name || 'Brand'}
+            onRefresh={loadBrandTrustData}
+          />
 
-          {/* 4 Cards Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '36px' }}>
-            
-            {/* PILLAR 1: Business Identity */}
-            <div className="trust-pillar-card" style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(5, 150, 105, 0.1)', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Building2 size={20} />
-                  </div>
-                  <span style={{
-                    padding: '3px 9px',
-                    borderRadius: '100px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: trustData.entity?.status === 'verified' || activeBrand.is_demo ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].bg : STATUS_META[VERIFICATION_STATUSES.SELF_DECLARED].bg,
-                    color: trustData.entity?.status === 'verified' || activeBrand.is_demo ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].color : STATUS_META[VERIFICATION_STATUSES.SELF_DECLARED].color
-                  }}>
-                    {trustData.entity?.status === 'verified' || activeBrand.is_demo ? 'Verified Entity' : 'Self-Declared'}
-                  </span>
-                </div>
-
-                <h3 className="font-editorial" style={{ margin: '0 0 6px 0', fontSize: '1.3rem', color: 'var(--text-primary)' }}>
-                  1. Business Identity
-                </h3>
-
-                <p style={{ margin: '0 0 16px 0', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Cryptographic corporate email challenge and verified legal business personhood review.
-                </p>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Corporate Domain:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>{activeBrand.website || 'Self-declared website'}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Legal Entity:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      {trustData.entity?.status === 'verified' || activeBrand.is_demo ? 'Verified Corporate Partner' : 'Pending Documentation'}
-                    </strong>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#059669', fontSize: '0.72rem', marginTop: '4px' }}>
-                    <Lock size={11} />
-                    <span>Incorporation & tax IDs strictly confidential and never shared with creators.</span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setActiveModal('entity')}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                Submit Entity Evidence
-              </button>
-            </div>
-
-            {/* PILLAR 2: Campaign Transparency */}
-            <div className="trust-pillar-card" style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <FileCheck2 size={20} />
-                  </div>
-                  <span style={{
-                    padding: '3px 9px',
-                    borderRadius: '100px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: transparencyMetrics.score >= 75 || activeBrand.is_demo ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].bg : STATUS_META[VERIFICATION_STATUSES.SELF_DECLARED].bg,
-                    color: transparencyMetrics.score >= 75 || activeBrand.is_demo ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].color : STATUS_META[VERIFICATION_STATUSES.SELF_DECLARED].color
-                  }}>
-                    {transparencyMetrics.score >= 75 || activeBrand.is_demo ? `${transparencyMetrics.score}% Transparent` : `${transparencyMetrics.score}% Incomplete`}
-                  </span>
-                </div>
-
-                <h3 className="font-editorial" style={{ margin: '0 0 6px 0', fontSize: '1.3rem', color: 'var(--text-primary)' }}>
-                  2. Campaign Transparency
-                </h3>
-
-                <p style={{ margin: '0 0 16px 0', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Structural completeness of campaign briefs, clear creative objectives, and explicit milestone deliverables.
-                </p>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Campaigns Evaluated:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>{campaigns.length} Active Briefs</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Transparency Index:</span>
-                    <strong style={{ color: transparencyMetrics.score >= 75 ? '#059669' : '#D97706' }}>
-                      {transparencyMetrics.score}% Complete
-                    </strong>
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                    {transparencyMetrics.items?.[0]?.missing?.length > 0 
-                      ? `Improvement: ${transparencyMetrics.items[0].missing[0]}` 
-                      : 'All required brief fields complete.'}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setActiveModal('brief')}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                Declare Brief Standards
-              </button>
-            </div>
-
-            {/* PILLAR 3: Payment Reliability */}
-            <div className="trust-pillar-card" style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(217, 119, 6, 0.1)', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <CreditCard size={20} />
-                  </div>
-                  <span style={{
-                    padding: '3px 9px',
-                    borderRadius: '100px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: paymentMetrics.hasVerifiedFunding || activeBrand.is_demo ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].bg : STATUS_META[VERIFICATION_STATUSES.SELF_DECLARED].bg,
-                    color: paymentMetrics.hasVerifiedFunding || activeBrand.is_demo ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].color : STATUS_META[VERIFICATION_STATUSES.SELF_DECLARED].color
-                  }}>
-                    {paymentMetrics.hasVerifiedFunding || activeBrand.is_demo ? 'Escrow Backed' : 'Awaiting Escrow'}
-                  </span>
-                </div>
-
-                <h3 className="font-editorial" style={{ margin: '0 0 6px 0', fontSize: '1.3rem', color: 'var(--text-primary)' }}>
-                  3. Payment Reliability
-                </h3>
-
-                <p style={{ margin: '0 0 16px 0', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Authoritative campaign escrow funding records, verified Razorpay payment transactions, and pre-allocated budgets.
-                </p>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Escrow Standing:</span>
-                    <strong style={{ color: paymentMetrics.hasVerifiedFunding ? '#059669' : 'var(--text-primary)' }}>
-                      {paymentMetrics.hasVerifiedFunding ? 'Active & Escrow Funded' : 'Pending Milestone Deposit'}
-                    </strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Verified Funding:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      {paymentMetrics.totalFundedRupees > 0 
-                        ? `₹${paymentMetrics.totalFundedRupees.toLocaleString()}` 
-                        : (activeBrand.is_demo ? '₹500,000 (Tier 1 Escrow)' : '₹0')}
-                    </strong>
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                    Backed by Razorpay verified checkout records and platform milestone escrow.
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setActiveModal('payment')}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                Declare Escrow Facility
-              </button>
-            </div>
-
-            {/* PILLAR 4: Collaboration Integrity */}
-            <div className="trust-pillar-card" style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(124, 58, 237, 0.1)', color: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <HeartHandshake size={20} />
-                  </div>
-                  <span style={{
-                    padding: '3px 9px',
-                    borderRadius: '100px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: collabMetrics.isVerifiedRecord ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].bg : STATUS_META[VERIFICATION_STATUSES.SELF_DECLARED].bg,
-                    color: collabMetrics.isVerifiedRecord ? STATUS_META[VERIFICATION_STATUSES.VERIFIED].color : STATUS_META[VERIFICATION_STATUSES.SELF_DECLARED].color
-                  }}>
-                    {collabMetrics.isVerifiedRecord ? 'Clean Record' : 'Initial Phase'}
-                  </span>
-                </div>
-
-                <h3 className="font-editorial" style={{ margin: '0 0 6px 0', fontSize: '1.3rem', color: 'var(--text-primary)' }}>
-                  4. Collaboration Integrity
-                </h3>
-
-                <p style={{ margin: '0 0 16px 0', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Milestone feedback turnaround speed, completed creator contracts, and zero payment disputes.
-                </p>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Completed Contracts:</span>
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      {collabMetrics.completedCount > 0 ? `${collabMetrics.completedCount} Deliverables Signed Off` : (activeBrand.is_demo ? '8 Completed Projects' : '0 Completed Yet')}
-                    </strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Review Turnaround:</span>
-                    <strong style={{ color: '#059669' }}>
-                      {collabMetrics.averageReviewTime}
-                    </strong>
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                    {collabMetrics.totalCount === 0 && !activeBrand.is_demo 
-                      ? 'Not enough collaboration data yet — updates as projects complete.' 
-                      : 'Zero unresolved revision freezes or escrow disputes.'}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => {
-                  if (onNavigateToTab) onNavigateToTab('collaborations');
-                  else showToast('Active projects can be managed in Collaborations tab.');
-                }}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                View Active Collaborations
-              </button>
-            </div>
-
-          </div>
 
           {/* Public Brand Verification Badges Preview */}
           <div style={{
@@ -1052,7 +790,7 @@ export default function BrandTrustCenterView({
                             setReviewActionForm({
                               decision: 'APPROVE',
                               notes: claim.reviewerNotes || '',
-                              reviewerName: currentUser?.profile?.display_name || 'Elena Rostova (Compliance Reviewer)'
+                              reviewerName: currentUser?.profile?.display_name || 'Ananya Roy (Compliance Reviewer)'
                             });
                             setActiveModal('review-action');
                           }}
@@ -1332,7 +1070,7 @@ export default function BrandTrustCenterView({
                             setReviewActionForm({
                               decision: 'APPROVE',
                               notes: claim.reviewerNotes || '',
-                              reviewerName: currentUser?.profile?.display_name || 'Elena Rostova (Compliance Reviewer)'
+                              reviewerName: currentUser?.profile?.display_name || 'Ananya Roy (Compliance Reviewer)'
                             });
                             setActiveModal('review-action');
                           }}
@@ -1380,7 +1118,7 @@ export default function BrandTrustCenterView({
                     className="form-input"
                     value={entityForm.legalName}
                     onChange={(e) => setEntityForm({ ...entityForm, legalName: e.target.value })}
-                    placeholder="e.g. Lumina Botanica Labs Ltd"
+                    placeholder="e.g. Veda Botanics Labs Ltd"
                     required
                   />
                 </div>

@@ -37,6 +37,14 @@ export let applicationsStore = [
   }
 ];
 
+export let shortlistsStore = {};
+export function addShortlist(campaignId, creatorId) {
+  if (!shortlistsStore[campaignId]) shortlistsStore[campaignId] = [];
+  if (!shortlistsStore[campaignId].includes(creatorId)) {
+    shortlistsStore[campaignId].push(creatorId);
+  }
+}
+
 // Per-campaign in-process promise locks to serialize concurrent slot checks
 const campaignLocks = new Map();
 
@@ -612,17 +620,59 @@ export function createApplicationMiddleware(options = {}) {
         }
 
         const body = await parseJsonBody(req);
-        const {
+        let {
           campaign,
+          campaignId,
           creator,
+          creatorId,
           proposedPrice,
           proposalText,
           deliveryTimeline,
           portfolioEvidence = []
         } = body;
 
-        if (!campaign || !campaign.id) {
+        const targetCampaignId = campaign?.campaignId || (campaign?.id ? String(campaign.id).replace(/^opp-/, '') : null) || (campaignId ? String(campaignId).replace(/^opp-/, '') : null) || body.campaign_id;
+        if (!targetCampaignId && (!campaign || !campaign.id)) {
           return sendJson(res, 400, { ok: false, code: 'INVALID_CAMPAIGN', error: 'Valid campaign object is required.' });
+        }
+        if (campaign) {
+          campaign.id = targetCampaignId;
+        }
+
+        if (!campaign || !campaign.title) {
+          if (dbClient) {
+            try {
+              const { data: dbCamp } = await dbClient.from('campaigns').select('*').eq('id', targetCampaignId).maybeSingle();
+              if (dbCamp) {
+                campaign = {
+                  ...dbCamp,
+                  id: dbCamp.id,
+                  title: dbCamp.title,
+                  ownerBrandId: dbCamp.brand_id || dbCamp.owner_brand_id,
+                  budget: dbCamp.budget,
+                  isNegotiable: dbCamp.is_negotiable ?? true,
+                  deadline: dbCamp.deadline,
+                  visibility: dbCamp.visibility,
+                  applicationStatus: dbCamp.application_status,
+                  isAcceptingApplications: dbCamp.is_accepting_applications
+                };
+              }
+            } catch (err) {}
+          }
+        }
+
+        if (!campaign || !campaign.id) {
+          if (targetCampaignId) {
+            campaign = {
+              id: targetCampaignId,
+              title: body.campaignTitle || 'Campaign',
+              visibility: 'published',
+              isAcceptingApplications: true,
+              applicationStatus: 'open'
+            };
+          } else {
+            return sendJson(res, 400, { ok: false, code: 'INVALID_CAMPAIGN', error: 'Valid campaign object is required.' });
+          }
         }
 
         // Reject conflicting creator identity supplied in request body
@@ -634,9 +684,13 @@ export function createApplicationMiddleware(options = {}) {
           });
         }
 
+        const defaultCreator = (!creator || Object.keys(creator).length <= 1) ? CREATORS.find(c => c.id === verifiedCreatorId) : null;
         const submittingCreator = {
+          ...(defaultCreator || {}),
           ...(creator || {}),
-          id: verifiedCreatorId
+          id: verifiedCreatorId,
+          rate: creator?.rate ?? proposedPrice ?? defaultCreator?.rate,
+          proposedPrice: proposedPrice ?? creator?.proposedPrice
         };
 
         // Rule A: Private campaign check
@@ -697,8 +751,25 @@ export function createApplicationMiddleware(options = {}) {
           });
         }
 
-        // Rule E: Pre-Bid Eligibility Gate
-        const eligibilityResult = evaluateCreatorEligibility(campaign, submittingCreator);
+        // Check if creator has been shortlisted for this campaign
+        let isShortlisted = Boolean(body.isShortlisted || campaign.isShortlisted || submittingCreator.isShortlisted);
+        if (!isShortlisted && dbClient) {
+          try {
+            const { data: slData } = await dbClient
+              .from('shortlists')
+              .select('id')
+              .eq('campaign_id', campaign.id)
+              .eq('creator_id', verifiedCreatorId)
+              .maybeSingle();
+            if (slData) isShortlisted = true;
+          } catch (e) {}
+        }
+        if (!isShortlisted && (shortlistsStore[campaign.id] || []).includes(verifiedCreatorId)) {
+          isShortlisted = true;
+        }
+
+        // Rule E: Pre-Bid Eligibility Gate (with shortlist context)
+        const eligibilityResult = evaluateCreatorEligibility(campaign, submittingCreator, { isShortlisted });
         const eligibilityStatus = eligibilityResult.eligibility;
 
         // Rule F: Budget Negotiability Check

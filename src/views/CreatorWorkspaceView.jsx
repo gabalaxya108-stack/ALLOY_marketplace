@@ -5,7 +5,7 @@ import {
   Clock, DollarSign, Calendar, Sparkles, Filter, Bookmark, BookmarkCheck,
   Edit3, Trash2, Upload, AlertCircle, FileText, UserCheck, ShieldCheck,
   ArrowUp, ArrowDown, Globe, Lock, Cpu, Play, Minimize2, Wrench, Compass, Layers,
-  Workflow, Video, Inbox
+  Workflow, Video, Inbox, RefreshCw
 } from 'lucide-react';
 import { generateCreatorDNA } from '../intelligence/creatorDNA';
 import { generateCreatorDNA as generateCreatorDNAWithGroq } from '../ai/groqClient';
@@ -21,7 +21,7 @@ import ProjectWorkflowEditor from '../components/ProjectWorkflowEditor';
 import { createInitialTrustVerification } from '../data/trustVerificationData';
 import MessagesLoginWall from '../components/MessagesLoginWall';
 import DirectMessagesEmptyState from '../components/DirectMessagesEmptyState';
-import { deduplicateMessages } from '../services/marketplaceBackend';
+import { deduplicateMessages, fetchCreatorDna, triggerCreatorDnaAnalysis, refreshCreatorDna } from '../services/marketplaceBackend';
 import { evaluateCreatorEligibility, ELIGIBILITY_STATUS, ELIGIBILITY_OUTCOMES } from '../intelligence/eligibilityEngine';
 import CreatorHomeFeed from '../components/CreatorHomeFeed';
 
@@ -35,11 +35,14 @@ function formatInvitationField(...values) {
 function formatBudgetDisplay(budget) {
   if (!budget) return 'In Discussion';
   if (typeof budget === 'number') {
-    return `$${budget.toLocaleString()}`;
+    return `₹${budget.toLocaleString('en-IN')}`;
   }
   const str = String(budget).trim();
-  if (!str.startsWith('$') && !isNaN(Number(str.replace(/,/g, '')))) {
-    return `$${Number(str.replace(/,/g, '')).toLocaleString()}`;
+  if (str.startsWith('$') || str.includes('$')) {
+    return str.replace(/\$/g, '₹');
+  }
+  if (!str.startsWith('₹') && !isNaN(Number(str.replace(/,/g, '')))) {
+    return `₹${Number(str.replace(/,/g, '')).toLocaleString('en-IN')}`;
   }
   return str;
 }
@@ -229,7 +232,8 @@ export default function CreatorWorkspaceView({
   onRespondCounterOffer,
   onReevaluateApplication,
   campaigns = [],
-  brands = []
+  brands = [],
+  shortlists = {}
 }) {
   const [activeCreator, setActiveCreator] = useState(creator || {});
   const [activeTab, setActiveTab] = useState(initialTab || 'home'); // 'home' | 'overview' | 'portfolio' | 'workflows' | 'opportunities' | 'invitations' | 'projects' | 'messages' | 'profile' | 'trust'
@@ -430,20 +434,20 @@ export default function CreatorWorkspaceView({
         creatorId: "maya-chen",
         campaignId: "camp-summer-skincare",
         campaignTitle: "Summer Skincare & Radiant Hydration Launch",
-        brandName: "Lumina Botanica",
+        brandName: "Veda Botanics",
         status: "connected",
         messages: [
           {
             id: "msg-1",
             sender: "brand",
-            senderName: "Lumina Botanica",
+            senderName: "Veda Botanics",
             text: "Hi Maya, we loved your cinematic product work. We'd love to explore this direction for our summer launch.",
             timestamp: "Yesterday, 3:45 PM"
           },
           {
             id: "msg-2",
             sender: "creator",
-            senderName: activeCreator.name || "Maya Chen",
+            senderName: activeCreator.name || "Maya Sharma",
             text: "Thanks! I'd love to work on it. I'm especially interested in the visual storytelling direction and warm Mediterranean sunlight.",
             timestamp: "Today, 10:15 AM"
           }
@@ -490,10 +494,10 @@ export default function CreatorWorkspaceView({
 
   // Profile Form State
   const [profileForm, setProfileForm] = useState({
-    name: activeCreator.name || 'Maya Chen',
+    name: activeCreator.name || 'Maya Sharma',
     creativeIdentity: activeCreator.creativeIdentity || 'Cinematic AI Director & Visual Worldbuilder',
     bio: activeCreator.bio || 'Directing cinematic narrative commercials, evocative brand mythologies, and cinematic product worlds with 35mm grain.',
-    location: activeCreator.location || 'London / New York (GMT/EST)',
+    location: activeCreator.location || 'Mumbai / Bengaluru (IST)',
     availability: activeCreator.availability || 'Available for projects',
     avatar: activeCreator.avatar || ''
   });
@@ -502,10 +506,10 @@ export default function CreatorWorkspaceView({
 
   const handleOpenEditProfile = () => {
     setProfileForm({
-      name: activeCreator.name || 'Maya Chen',
+      name: activeCreator.name || 'Maya Sharma',
       creativeIdentity: activeCreator.creativeIdentity || 'Cinematic AI Director & Visual Worldbuilder',
       bio: activeCreator.bio || '',
-      location: activeCreator.location || 'London / New York',
+      location: activeCreator.location || 'Mumbai / Bengaluru (IST)',
       availability: activeCreator.availability || 'Available for projects',
       avatar: activeCreator.avatar || ''
     });
@@ -513,6 +517,75 @@ export default function CreatorWorkspaceView({
   };
   const [customAiDNA, setCustomAiDNA] = useState(null);
   const [isDnaAnalyzing, setIsDnaAnalyzing] = useState(false);
+
+  // Dynamic Creator DNA backend state derived from published portfolio
+  const [dynamicDnaState, setDynamicDnaState] = useState({
+    status: 'idle', // 'idle' | 'loading' | 'completed' | 'insufficient_evidence' | 'failed'
+    traits: [],
+    analysis: null,
+    error: null,
+    lastRefreshedAt: null
+  });
+  const [isDnaRefreshing, setIsDnaRefreshing] = useState(false);
+
+  const loadDynamicCreatorDna = async (creatorId, forceRefresh = false, creatorOverride = null) => {
+    const targetId = creatorId || activeCreator?.id;
+    if (!targetId) return;
+    const targetCreator = creatorOverride || activeCreator;
+
+    if (forceRefresh) {
+      setIsDnaRefreshing(true);
+    } else {
+      setDynamicDnaState(prev => ({
+        ...prev,
+        status: prev.status === 'idle' ? 'loading' : prev.status
+      }));
+    }
+
+    try {
+      let result;
+      if (forceRefresh) {
+        result = await refreshCreatorDna(targetId, { creator: targetCreator });
+      } else {
+        result = await fetchCreatorDna(targetId);
+        if (!result.ok || (result.status !== 'completed' && result.status !== 'insufficient_evidence')) {
+          result = await triggerCreatorDnaAnalysis(targetId, { creator: targetCreator });
+        }
+      }
+
+      if (result && result.ok) {
+        setDynamicDnaState({
+          status: result.status || (result.traits && result.traits.length > 0 ? 'completed' : 'insufficient_evidence'),
+          traits: result.traits || [],
+          analysis: result.analysis || null,
+          error: null,
+          lastRefreshedAt: new Date().toISOString()
+        });
+      } else {
+        setDynamicDnaState(prev => ({
+          ...prev,
+          status: result?.status === 'insufficient_evidence' ? 'insufficient_evidence' : 'failed',
+          error: result?.error || 'Analysis service temporarily unavailable',
+          traits: []
+        }));
+      }
+    } catch (err) {
+      console.error('[CreatorWorkspace] Error loading Creator DNA:', err);
+      setDynamicDnaState(prev => ({
+        ...prev,
+        status: 'failed',
+        error: err.message || 'Failed to load portfolio DNA traits'
+      }));
+    } finally {
+      setIsDnaRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeCreator?.id) {
+      loadDynamicCreatorDna(activeCreator.id, false, activeCreator);
+    }
+  }, [activeCreator?.id]);
 
   // Creator DNA attributes calculation (live Groq or deterministic fallback)
   const creatorDNA = customAiDNA || generateCreatorDNA(activeCreator);
@@ -742,6 +815,7 @@ export default function CreatorWorkspaceView({
     if (onUpdateCreator) {
       onUpdateCreator(updatedCreator);
     }
+    loadDynamicCreatorDna(activeCreator?.id, true, updatedCreator);
 
     setIsAddProjectModalOpen(false);
   };
@@ -752,18 +826,20 @@ export default function CreatorWorkspaceView({
     }
     const updatedList = projectsList.filter(p => p.id !== projId);
     setProjectsList(updatedList);
+    const allPortfolioImages = updatedList.map(p => p.image).filter(Boolean);
+    const allPortfolioVideos = updatedList.map(p => p.video).filter(Boolean);
+    const allPortfolioMedia = updatedList.flatMap(p => p.media || []);
+    const updatedCreator = {
+      ...activeCreator,
+      projects: updatedList,
+      portfolioMedia: allPortfolioMedia,
+      portfolioImages: allPortfolioImages,
+      portfolioVideos: allPortfolioVideos
+    };
     if (onUpdateCreator) {
-      const allPortfolioImages = updatedList.map(p => p.image).filter(Boolean);
-      const allPortfolioVideos = updatedList.map(p => p.video).filter(Boolean);
-      const allPortfolioMedia = updatedList.flatMap(p => p.media || []);
-      onUpdateCreator({
-        ...activeCreator,
-        projects: updatedList,
-        portfolioMedia: allPortfolioMedia,
-        portfolioImages: allPortfolioImages,
-        portfolioVideos: allPortfolioVideos
-      });
+      onUpdateCreator(updatedCreator);
     }
+    loadDynamicCreatorDna(activeCreator?.id, true, updatedCreator);
   };
 
   const handleToggleVisibility = (projId) => {
@@ -775,9 +851,11 @@ export default function CreatorWorkspaceView({
       return p;
     });
     setProjectsList(updatedList);
+    const updatedCreator = { ...activeCreator, projects: updatedList };
     if (onUpdateCreator) {
-      onUpdateCreator({ ...activeCreator, projects: updatedList });
+      onUpdateCreator(updatedCreator);
     }
+    loadDynamicCreatorDna(activeCreator?.id, true, updatedCreator);
   };
 
   const handleToggleFeatured = (projId) => {
@@ -815,13 +893,20 @@ export default function CreatorWorkspaceView({
   const handleOpenApplyModal = (opp) => {
     setApplyModalOpp(opp);
     setApplyNoteText(`Hi ${opp.brandName || opp.brand}, I'm excited about your ${opp.title}. My visual style aligns directly with your deliverables.`);
-    setApplyPrice(opp.budget || '$5,000');
+    setApplyPrice(opp.budget ? String(opp.budget).replace(/\$/g, '₹') : '₹50,000');
     setApplyTimeline(opp.timeline || '2 Weeks');
     setApplySelectedProjects(
       (activeCreator.projects || []).slice(0, 2).map(p => p.id)
     );
+    const targetCampaignId = opp.campaignId || opp.id?.replace(/^opp-/, '');
+    const isShortlisted = Boolean(
+      (shortlists[targetCampaignId] || []).includes(activeCreator.id) ||
+      (shortlists[opp.id] || []).includes(activeCreator.id) ||
+      opp.isShortlisted
+    );
     try {
-      const evalResult = evaluateCreatorEligibility(opp, activeCreator);
+      const creatorForEval = { ...activeCreator, rate: activeCreator.rate || (opp.budget ? String(opp.budget).replace(/\$/g, '₹') : '₹50,000') };
+      const evalResult = evaluateCreatorEligibility(opp, creatorForEval, { isShortlisted });
       setPreBidResult(evalResult);
     } catch (err) {
       console.warn('[PreBidGate] Evaluation fallback:', err);
@@ -833,10 +918,18 @@ export default function CreatorWorkspaceView({
     if (e) e.preventDefault();
     if (!applyModalOpp) return;
 
+    const targetCampaignId = applyModalOpp.campaignId || applyModalOpp.id?.replace(/^opp-/, '');
+    const isShortlisted = Boolean(
+      (shortlists[targetCampaignId] || []).includes(activeCreator.id) ||
+      (shortlists[applyModalOpp.id] || []).includes(activeCreator.id) ||
+      applyModalOpp.isShortlisted
+    );
+
     let currentResult = preBidResult;
     if (!currentResult) {
       try {
-        currentResult = evaluateCreatorEligibility(applyModalOpp, activeCreator);
+        const creatorForEval = { ...activeCreator, rate: activeCreator.rate || applyPrice };
+        currentResult = evaluateCreatorEligibility(applyModalOpp, creatorForEval, { isShortlisted });
       } catch (err) {
         currentResult = { eligibility: ELIGIBILITY_STATUS.ELIGIBLE, requirements: [], reasons: [] };
       }
@@ -845,21 +938,24 @@ export default function CreatorWorkspaceView({
     const isHeld = forceHeld || currentResult.eligibility !== ELIGIBILITY_STATUS.ELIGIBLE;
 
     const applicationPayload = {
-      campaignId: applyModalOpp.id || applyModalOpp.campaignId,
+      campaign: applyModalOpp,
+      campaignId: targetCampaignId,
       campaignTitle: applyModalOpp.title,
       brandId: applyModalOpp.ownerBrandId || applyModalOpp.brandId,
       brandName: applyModalOpp.brandName || applyModalOpp.brand,
+      creator: activeCreator,
       creatorId: activeCreator.id,
       creatorName: activeCreator.name,
       creatorAvatar: activeCreator.avatar,
       creatorRole: activeCreator.role || activeCreator.creativeIdentity || 'AI Visual Creator',
       proposedPrice: applyPrice,
       bidAmount: parseFloat(String(applyPrice).replace(/[^0-9.]/g, '')) || 0,
-      currency: 'USD',
+      currency: applyModalOpp.currency || 'USD',
       proposalText: applyNoteText,
       deliveryTimeline: applyTimeline,
       portfolioEvidence: applySelectedProjects,
       eligibilityStatus: currentResult.eligibility,
+      isShortlisted,
       isHeld,
       heldReason: currentResult.eligibility === ELIGIBILITY_STATUS.INELIGIBLE
         ? (currentResult.reasons?.[0] || 'Mandatory campaign requirement mismatch')
@@ -1244,7 +1340,7 @@ export default function CreatorWorkspaceView({
 
                     <div className="overview-name-meta">
                       <div className="overview-name-badge">
-                        <h2 className="overview-creator-name">{activeCreator.name || 'Maya Chen'}</h2>
+                        <h2 className="overview-creator-name">{activeCreator.name || 'Maya Sharma'}</h2>
                         <span className="status-badge-verified">
                           <CheckCircle2 size={13} />
                           <span>Verified AI Creator</span>
@@ -1291,61 +1387,139 @@ export default function CreatorWorkspaceView({
                 </div>
               </div>
 
-              {/* Creator DNA Preview Card */}
+              {/* Creator DNA Preview Card — Dynamic Portfolio-Derived Traits */}
               <div className="studio-card overview-dna-card">
                 <div className="dna-card-header">
                   <div className="dna-header-title">
                     <Dna size={16} className="text-lavender" />
                     <h3>Creator DNA Summary</h3>
                   </div>
-                  <span className="dna-verified-pill">Portfolio-Derived</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="dna-refresh-icon-btn"
+                      onClick={() => loadDynamicCreatorDna(activeCreator?.id, true)}
+                      disabled={isDnaRefreshing || dynamicDnaState.status === 'loading'}
+                      title="Re-analyze portfolio and refresh Creator DNA traits"
+                      aria-label="Refresh Creator DNA"
+                    >
+                      <RefreshCw size={13} className={isDnaRefreshing ? 'spin-icon' : ''} />
+                    </button>
+                    {dynamicDnaState.status === 'completed' && dynamicDnaState.traits.length > 0 ? (
+                      <span className="dna-verified-pill" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#059669' }}>
+                        Portfolio-Derived ({dynamicDnaState.analysis?.eligibleAssetCount || projectsList.filter(p => p.visibility !== 'private').length} Works)
+                      </span>
+                    ) : dynamicDnaState.status === 'insufficient_evidence' ? (
+                      <span className="dna-verified-pill" style={{ background: 'rgba(234, 179, 8, 0.12)', color: '#B45309' }}>
+                        Min. 2 Works Required
+                      </span>
+                    ) : (
+                      <span className="dna-verified-pill">Portfolio-Derived</span>
+                    )}
+                  </div>
                 </div>
 
                 <p className="dna-desc">
                   Nuanced visual attributes extracted from your published commercial works and aesthetic prompt signatures.
                 </p>
 
-                <div className="dna-attributes-list">
-                  <div className="dna-attribute-item">
-                    <div className="dna-attr-label">
-                      <span>Cinematic Anamorphic Lighting</span>
-                      <span className="dna-attr-val">96%</span>
+                {/* State 1: Loading State */}
+                {dynamicDnaState.status === 'loading' && dynamicDnaState.traits.length === 0 && (
+                  <div className="dna-loading-state" style={{ padding: '24px 12px', textAlign: 'center' }}>
+                    <div className="dna-loading-spinner-wrap" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                      <Dna size={26} className="text-lavender spin-icon" />
                     </div>
-                    <div className="dna-attr-bar">
-                      <div className="dna-attr-fill" style={{ width: '96%', background: 'var(--accent-lavender-deep)' }} />
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>Analyzing Portfolio Works...</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      Extracting lighting, optics, textures, and storytelling patterns from your published projects.
                     </div>
                   </div>
+                )}
 
-                  <div className="dna-attribute-item">
-                    <div className="dna-attr-label">
-                      <span>Story-Driven Narrative Atmosphere</span>
-                      <span className="dna-attr-val">94%</span>
+                {/* State 2: Insufficient Evidence State (Empty State) */}
+                {dynamicDnaState.status === 'insufficient_evidence' && (
+                  <div className="dna-empty-state" style={{ padding: '20px 16px', background: 'rgba(0,0,0,0.02)', borderRadius: '12px', border: '1px dashed var(--border-subtle)', textAlign: 'center' }}>
+                    <div style={{ display: 'inline-flex', padding: '10px', borderRadius: '50%', background: 'rgba(124, 58, 237, 0.08)', marginBottom: '10px' }}>
+                      <Sparkles size={20} style={{ color: 'var(--accent-lavender-deep)' }} />
                     </div>
-                    <div className="dna-attr-bar">
-                      <div className="dna-attr-fill" style={{ width: '94%', background: 'var(--accent-peach-deep)' }} />
-                    </div>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)' }}>Building your Creator DNA</h4>
+                    <p style={{ margin: '0 auto 14px auto', fontSize: '0.80rem', color: 'var(--text-secondary)', maxWidth: '340px', lineHeight: 1.45 }}>
+                      At least 2 published portfolio works are required to establish recurring visual craft patterns. Add your commercial projects to generate your verified DNA.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setIsAddProjectModalOpen(true)}
+                      style={{ fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Plus size={13} />
+                      <span>Add Portfolio Project</span>
+                    </button>
                   </div>
+                )}
 
-                  <div className="dna-attribute-item">
-                    <div className="dna-attr-label">
-                      <span>35mm Film Grain & Organic Caustics</span>
-                      <span className="dna-attr-val">92%</span>
+                {/* State 3: Analysis Failure / Error */}
+                {dynamicDnaState.status === 'failed' && (
+                  <div className="dna-error-state" style={{ padding: '16px', background: 'rgba(239, 68, 68, 0.06)', borderRadius: '10px', border: '1px solid rgba(239, 68, 68, 0.2)', fontSize: '0.82rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#DC2626', fontWeight: 600, marginBottom: '6px' }}>
+                      <AlertCircle size={15} />
+                      <span>DNA Analysis Unavailable</span>
                     </div>
-                    <div className="dna-attr-bar">
-                      <div className="dna-attr-fill" style={{ width: '92%', background: 'var(--accent-mint-deep)' }} />
-                    </div>
+                    <p style={{ margin: '0 0 10px 0', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                      {dynamicDnaState.error || 'Unable to analyze portfolio assets at this time.'}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => loadDynamicCreatorDna(activeCreator?.id, true)}
+                      style={{ fontSize: '0.75rem' }}
+                    >
+                      Retry Analysis
+                    </button>
                   </div>
+                )}
 
-                  <div className="dna-attribute-item">
-                    <div className="dna-attr-label">
-                      <span>High-Fashion Macro Physics</span>
-                      <span className="dna-attr-val">88%</span>
-                    </div>
-                    <div className="dna-attr-bar">
-                      <div className="dna-attr-fill" style={{ width: '88%', background: '#64748B' }} />
+                {/* State 4: Completed Traits List */}
+                {dynamicDnaState.traits.length > 0 && dynamicDnaState.status !== 'insufficient_evidence' && (
+                  <div className="dna-attributes-list">
+                    {dynamicDnaState.traits.map((trait) => (
+                      <div className="dna-attribute-item" key={trait.traitKey}>
+                        <div className="dna-attr-label">
+                          <span title={`${trait.category} • Supported by ${trait.supportingAssetCount} work${trait.supportingAssetCount === 1 ? '' : 's'}`}>
+                            {trait.displayLabel}
+                          </span>
+                          <span className="dna-attr-val" title={`Prevalence across eligible works: ${trait.prevalenceScore}%`}>
+                            {trait.prevalenceScore}%
+                          </span>
+                        </div>
+                        <div className="dna-attr-bar">
+                          <div
+                            className="dna-attr-fill"
+                            style={{
+                              width: `${Math.min(100, Math.max(10, trait.prevalenceScore))}%`,
+                              background: trait.colorAccent || 'var(--accent-lavender-deep)',
+                              transition: 'width 0.6s cubic-bezier(0.16, 1, 0.3, 1)'
+                            }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.70rem', color: 'var(--text-tertiary)', marginTop: '1px' }}>
+                          <span>{trait.category}</span>
+                          <span>
+                            {trait.supportingAssetCount} work{trait.supportingAssetCount === 1 ? '' : 's'} ({Math.round(trait.evidenceConfidence * 100)}% conf.)
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Transparency & Recency Details */}
+                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.70rem', color: 'var(--text-tertiary)' }}>
+                      <span>Deterministic visual prevalence</span>
+                      {dynamicDnaState.lastRefreshedAt && (
+                        <span>Analyzed v{dynamicDnaState.analysis?.analysisVersion || '2.0'}</span>
+                      )}
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -3270,7 +3444,7 @@ export default function CreatorWorkspaceView({
                   type="text"
                   className="form-input"
                   required
-                  placeholder="e.g. Maya Chen"
+                  placeholder="e.g. Maya Sharma"
                   value={profileForm.name}
                   onChange={(e) => setProfileForm(prev => ({ ...prev, name: e.target.value }))}
                 />
@@ -3676,7 +3850,21 @@ export default function CreatorWorkspaceView({
 
             {/* PRE-BID ELIGIBILITY GATE EVALUATION BANNER */}
             <div>
-              {preBidResult?.eligibility === ELIGIBILITY_STATUS.ELIGIBLE && (
+              {preBidResult?.eligibility === ELIGIBILITY_STATUS.ELIGIBLE && preBidResult?.isShortlisted && (
+                <div className="prebid-banner eligible">
+                  <CheckCircle2 size={20} style={{ color: 'var(--accent-forest)', flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <span className="prebid-banner-title">
+                      Shortlisted by Brand
+                    </span>
+                    <p className="prebid-banner-desc">
+                      You were shortlisted for this campaign. Your proposal and rate will be presented directly to {applyModalOpp.brandName || applyModalOpp.brand || 'the brand'} for priority review.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {preBidResult?.eligibility === ELIGIBILITY_STATUS.ELIGIBLE && !preBidResult?.isShortlisted && (
                 <div className="prebid-banner eligible">
                   <CheckCircle2 size={20} style={{ color: 'var(--accent-forest)', flexShrink: 0, marginTop: '2px' }} />
                   <div>
@@ -3738,7 +3926,7 @@ export default function CreatorWorkspaceView({
                     className="form-input"
                     value={applyPrice}
                     onChange={(e) => setApplyPrice(e.target.value)}
-                    placeholder="$5,000"
+                    placeholder="₹50,000"
                     required
                   />
                   {applyModalOpp.isNegotiable === false && (

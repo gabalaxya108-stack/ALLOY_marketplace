@@ -452,11 +452,25 @@ export function hasExplicitVerticalEvidence(creator) {
   if (!creator) return false;
 
   // 1. Portfolio project-level aspect, format, or project-specific capabilities
-  const projects = Array.isArray(creator.projects) ? creator.projects : [];
+  const projects = Array.isArray(creator.projects) && creator.projects.length > 0
+    ? creator.projects
+    : (Array.isArray(creator.portfolio_projects) && creator.portfolio_projects.length > 0
+      ? creator.portfolio_projects
+      : (Array.isArray(creator.portfolio) ? creator.portfolio : []));
+
   const hasProjectAspect = projects.some(p => {
-    return isVerticalFormatToken(p.aspect) ||
+    const aspect = (p.aspect || '').toLowerCase();
+    const fmt = (p.format || '').toLowerCase();
+    const isAspectMatch = isVerticalFormatToken(p.aspect) ||
            isVerticalFormatToken(p.format) ||
-           (Array.isArray(p.capabilities) && p.capabilities.some(isVerticalFormatToken));
+           aspect.includes('9:16') || aspect.includes('portrait') || aspect.includes('vertical') ||
+           fmt.includes('9:16') || fmt.includes('portrait') || fmt.includes('vertical');
+    const isCapMatch = Array.isArray(p.capabilities) && p.capabilities.some(isVerticalFormatToken);
+    const isMediaMatch = Array.isArray(p.media) && p.media.some(m => {
+      const mAspect = (m.aspect || '').toLowerCase();
+      return isVerticalFormatToken(m.aspect) || mAspect.includes('9:16') || mAspect.includes('portrait');
+    });
+    return isAspectMatch || isCapMatch || isMediaMatch;
   });
   if (hasProjectAspect) return true;
 
@@ -489,12 +503,30 @@ export function evaluateFormatsRequirement(requiredFormats, creator) {
   const creatorSpecialty = normalizeToken(creator?.specialty);
   const projectFormats = projects.map(p => normalizeToken(p.format || p.aspect || p.category));
 
+  const hasUploadedVideo = Boolean(
+    creator?.videoPreview ||
+    (Array.isArray(creator?.portfolioVideos) && creator.portfolioVideos.length > 0) ||
+    (Array.isArray(creator?.portfolio_videos) && creator.portfolio_videos.length > 0) ||
+    projects.some(p => Boolean(p.video) || (p.media || []).some(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || ''))) ||
+    (Array.isArray(creator?.portfolio_media) && creator.portfolio_media.some(m => m.mediaType === 'video' || m.mimeType?.startsWith('video/') || /\.(mp4|webm|mov)(\?.*)?$/i.test(m.url || '')))
+  );
+
+  const hasUploadedStill = Boolean(
+    creator?.heroWork ||
+    (Array.isArray(creator?.portfolioImages) && creator.portfolioImages.length > 0) ||
+    (Array.isArray(creator?.portfolio_images) && creator.portfolio_images.length > 0) ||
+    projects.some(p => Boolean(p.image) || (p.media || []).some(m => m.mediaType === 'image' || m.mimeType?.startsWith('image/'))) ||
+    (Array.isArray(creator?.portfolio_media) && creator.portfolio_media.some(m => m.mediaType === 'image' || m.mimeType?.startsWith('image/')))
+  );
+
   const hasSpecialty = creatorSpecialty && creatorSpecialty !== 'unspecified' && creatorSpecialty !== 'unknown';
   const hasFormatEvidence = Boolean(
     hasSpecialty ||
     creatorTags.length > 0 ||
     creatorCaps.length > 0 ||
-    projectFormats.length > 0
+    projectFormats.length > 0 ||
+    hasUploadedVideo ||
+    hasUploadedStill
   );
 
   if (!creator || !hasFormatEvidence) {
@@ -525,12 +557,14 @@ export function evaluateFormatsRequirement(requiredFormats, creator) {
         continue;
       }
     } else if (reqFormat.includes('video') || reqFormat.includes('motion') || reqFormat.includes('loop') || reqFormat.includes('reel') || reqFormat.includes('film') || reqFormat.includes('cinema')) {
-      isSupported = creatorTags.some(t => t.includes('video') || t.includes('motion') || t.includes('film') || t.includes('cinema')) ||
+      isSupported = hasUploadedVideo ||
+                    creatorTags.some(t => t.includes('video') || t.includes('motion') || t.includes('film') || t.includes('cinema')) ||
                     (hasSpecialty && (creatorSpecialty.includes('video') || creatorSpecialty.includes('motion') || creatorSpecialty.includes('film') || creatorSpecialty.includes('cinema'))) ||
                     creatorCaps.some(c => c.includes('video') || c.includes('motion') || c.includes('film') || c.includes('cinema')) ||
                     projectFormats.some(f => f.includes('video') || f.includes('motion') || f.includes('film') || f.includes('cinema'));
     } else if (reqFormat.includes('still') || reqFormat.includes('photo') || reqFormat.includes('key art')) {
-      isSupported = creatorTags.some(t => t.includes('photo') || t.includes('product')) ||
+      isSupported = hasUploadedStill ||
+                    creatorTags.some(t => t.includes('photo') || t.includes('product')) ||
                     (hasSpecialty && (creatorSpecialty.includes('photo') || creatorSpecialty.includes('product'))) ||
                     creatorCaps.some(c => c.includes('photo') || c.includes('still')) ||
                     projectFormats.some(f => f.includes('photo') || f.includes('still') || f.includes('portrait') || f.includes('landscape'));
@@ -977,8 +1011,9 @@ export function evaluateBudgetRequirement(budgetRequirement, creator, campaign =
     : (campaign?.currency || null);
   const creatorCurrency = creator?.currency || null;
 
-  // Resolve creator rate from creator record (rate, startingRate, minimumRate, dayRate, pricing)
+  // Resolve creator rate from creator record (rate, proposedPrice, startingRate, minimumRate, dayRate, pricing)
   const rawRate = creator?.rate ??
+                  creator?.proposedPrice ??
                   creator?.startingRate ??
                   creator?.minimumRate ??
                   creator?.dayRate ??
@@ -1139,22 +1174,54 @@ export function evaluateBudgetRequirement(budgetRequirement, creator, campaign =
  *
  * @param {Object} campaign - Campaign brief or requirement specification
  * @param {Object} creator - Creator candidate profile
+ * @param {Object} [options] - Optional evaluation options (e.g. isShortlisted, shortlists map)
  * @returns {Object} Structured eligibility result
  */
-export function evaluateCreatorEligibility(campaign = {}, creator = {}) {
+export function evaluateCreatorEligibility(campaign = {}, creator = {}, options = {}) {
   const brief = campaign || {};
   const cand = creator || {};
+
+  // Check if creator has been explicitly shortlisted or invited for this campaign by the brand
+  const targetCampaignId = brief.id || brief.campaignId;
+  const isShortlisted = Boolean(
+    options?.isShortlisted ||
+    options?.shortlisted ||
+    brief.isShortlisted ||
+    cand.isShortlisted ||
+    (targetCampaignId && Array.isArray(options?.shortlists?.[targetCampaignId]) && options.shortlists[targetCampaignId].includes(cand.id)) ||
+    (Array.isArray(brief.shortlistedCreatorIds) && brief.shortlistedCreatorIds.includes(cand.id))
+  );
+
+  if (isShortlisted) {
+    return {
+      eligibility: ELIGIBILITY_STATUS.ELIGIBLE,
+      isShortlisted: true,
+      creatorId: cand.id || 'unidentified-creator',
+      creatorName: cand.name || 'Anonymous Creator',
+      campaignId: targetCampaignId || 'unspecified-campaign',
+      requiresNegotiation: false,
+      requirements: [],
+      reasons: ['Creator was evaluated and shortlisted for this campaign by the brand.'],
+      summary: {
+        totalEvaluated: 0,
+        passed: 0,
+        failed: 0,
+        unknown: 0
+      }
+    };
+  }
+
   const hasMandatoryConfig = Boolean(brief.requirements && 'mandatory' in brief.requirements);
   const rawMandatory = brief.requirements?.mandatory || {};
 
   // Extract explicit mandatory constraints from brief
   const mandatorySpecs = {
-    skills: rawMandatory.skills ?? rawMandatory.capabilities ?? brief.requiredSkills ?? brief.mandatorySkills,
+    skills: rawMandatory.skills ?? rawMandatory.capabilities ?? (hasMandatoryConfig ? undefined : (brief.requiredSkills ?? brief.mandatorySkills)),
     specialization: rawMandatory.specialization ?? (hasMandatoryConfig ? undefined : brief.desiredCreatorSpecialties) ?? brief.mandatorySpecialization,
-    tools: rawMandatory.tools ?? brief.requiredTools ?? brief.mandatoryTools,
-    formats: rawMandatory.formats ?? rawMandatory.contentFormats ?? (hasMandatoryConfig ? undefined : brief.contentFormats) ?? brief.mandatoryFormats,
-    styles: rawMandatory.styles ?? rawMandatory.creativeStyle ?? (hasMandatoryConfig ? undefined : brief.creativeStyle) ?? brief.mandatoryStyles,
-    industries: rawMandatory.industries ?? rawMandatory.industry ?? (hasMandatoryConfig ? undefined : brief.industry) ?? brief.mandatoryIndustries,
+    tools: rawMandatory.tools ?? (hasMandatoryConfig ? undefined : (brief.requiredTools ?? brief.mandatoryTools)),
+    formats: rawMandatory.formats ?? rawMandatory.contentFormats ?? (hasMandatoryConfig ? undefined : (brief.contentFormats || brief.deliverables)) ?? brief.mandatoryFormats,
+    styles: rawMandatory.styles ?? (hasMandatoryConfig ? undefined : (brief.creativeStyle || brief.mandatoryStyles || brief.requirements?.styles)),
+    industries: rawMandatory.industries ?? (hasMandatoryConfig ? undefined : (brief.mandatoryIndustries || brief.requirements?.industries)),
     availability: rawMandatory.availability ?? brief.requiredAvailability ?? brief.availabilityCondition,
     commercialLicensing: rawMandatory.commercialLicensing ?? brief.requiresCommercialLicense ?? brief.requiresCommercialLicensing,
     minProjects: rawMandatory.minProjects ?? (hasMandatoryConfig ? undefined : brief.minProjects),

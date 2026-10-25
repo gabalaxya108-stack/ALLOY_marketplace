@@ -92,19 +92,19 @@ export default function WorkspaceEntryCards({ onEnterCreatorStudio, onEnterBrand
                   </div>
                   <div className="mock-body">
                     <div className="mock-brief-header">
-                      <span className="mock-campaign-tag">Lumina Botanica</span>
+                      <span className="mock-campaign-tag">Veda Botanics</span>
                       <h4 className="mock-brief-title font-editorial">Pure Hydration Launch</h4>
-                      <span className="mock-budget-pill">$5,000 – $10,000</span>
+                      <span className="mock-budget-pill">₹50,000 – ₹1,00,000</span>
                     </div>
 
                     <div className="mock-match-card">
                       <img 
                         src="https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=300&q=80" 
-                        alt="Zora Vance"
+                        alt="Zoya Merchant"
                         className="mock-creator-thumb"
                       />
                       <div className="mock-match-info">
-                        <span className="mock-match-name">Zora Vance</span>
+                        <span className="mock-match-name">Zoya Merchant</span>
                         <span className="mock-match-spec">Macro Beauty & Cosmetics</span>
                         <div className="mock-score-pill">
                           <Sparkles size={11} />
@@ -140,11 +140,11 @@ export default function WorkspaceEntryCards({ onEnterCreatorStudio, onEnterBrand
                     <div className="mock-atelier-header">
                       <img 
                         src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80" 
-                        alt="Maya Chen"
+                        alt="Maya Sharma"
                         className="mock-atelier-avatar"
                       />
                       <div>
-                        <h4 className="mock-atelier-name font-editorial">Maya Chen</h4>
+                        <h4 className="mock-atelier-name font-editorial">Maya Sharma</h4>
                         <span className="mock-atelier-role">Cinematic AI Director</span>
                       </div>
                       <span className="mock-dna-pill">
@@ -168,7 +168,7 @@ export default function WorkspaceEntryCards({ onEnterCreatorStudio, onEnterBrand
 
                     <div className="mock-opportunity-pill">
                       <span className="opp-dot" />
-                      <span>New Invitation: Aether Nomad Campaign ($8K – $12K)</span>
+                      <span>New Invitation: Aether Nomad Campaign (₹80K – ₹1.2L)</span>
                     </div>
                   </div>
                 </div>

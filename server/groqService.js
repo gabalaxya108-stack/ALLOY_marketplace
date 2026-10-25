@@ -22,7 +22,7 @@ export function getGroqModel() {
 /**
  * Low-level server-side caller to Groq Chat Completion API
  */
-async function callGroqChat({ messages, temperature = 0.2, jsonMode = true, maxTokens = 2048 }) {
+export async function callGroqChat({ messages, temperature = 0.2, jsonMode = true, maxTokens = 2048 }) {
   if (!isGroqConfigured()) {
     throw new Error('GROQ_CONFIG_MISSING: GROQ_API_KEY environment variable is not configured.');
   }
@@ -560,3 +560,219 @@ Critical Rules:
     clarifyingQuestions: list(parsed.clarifyingQuestions || parsed.questions)
   };
 }
+
+// =========================================================================
+// 5. FEATURE: ALLOY AI REAL-TIME STREAMING CHAT
+// True Groq-powered token streaming with role adaptation & grounded context
+// =========================================================================
+export function buildAlloySystemPrompt({ role = 'brand', context = {} }) {
+  const roleDirective = role === 'creator'
+    ? `You are guiding a CREATOR on Alloy.
+Primary Roadmaps you orchestrate:
+1. Setting up verified creator profile, bio, and handles.
+2. Completing portfolio with authenticated format evidence (9:16 vertical video, 3D spatial renders, 4K stills).
+3. Discovering open published campaigns and filtering by creative fit.
+4. Understanding campaign eligibility classifications (Eligible, Ineligible reasons, and Needs Review format guidance).
+5. Reviewing CreaMatch composite scores (Style Fit, Tool Proficiency, Reliability).
+6. Preparing, pricing, and submitting competitive bids with clear deliverable timelines.
+7. Milestone escrow, revision protocols, copyright licensing terms, and payout tracking.`
+    : `You are guiding a BRAND PARTNER or CREATIVE DIRECTOR on Alloy.
+Primary Roadmaps you orchestrate:
+1. Defining campaign objectives, creative direction, and technical specs.
+2. Structuring briefs with mandatory vs optional parameters for Stage 1 normalization.
+3. Discovering creators through the 7-stage autonomous filtering pipeline.
+4. Comparing candidates using verified portfolio evidence and CreaMatch scores.
+5. Simulating concept execution with CreaSim before contract commitment.
+6. Evaluating creator trust, portfolio provenance, and dispute protection via Trust Orbit.
+7. Finalizing milestone contracts and funding safe Razorpay escrow.
+8. Managing deliverable review and milestone approval workflows.`;
+
+  const contextStr = context && Object.keys(context).length > 0
+    ? `\nCURRENT ACTIVE WORKSPACE CONTEXT:\n${JSON.stringify(context, null, 2)}\n`
+    : '';
+
+  return `You are ALLOY AI, the intelligent roadmap guide, strategist, and execution concierge of ALLOY (AI Creator Marketplace).
+Your responsibility is to turn users' goals into clear, practical, sequential, and achievable action plans.
+
+${roleDirective}
+${contextStr}
+CORE MARKETPLACE ARCHITECTURE YOU GOVERN:
+1. THE 7-STAGE FILTERING PIPELINE:
+   - Stage 1: Brief Ingestion & Normalization (extracts explicit hard constraints vs optional aesthetic preferences).
+   - Stage 2: Format & Tool Evidence (verifies past commercial deliverable evidence like 9:16 vertical video or 3D spatial renders).
+   - Stage 3: Specialization Alignment (validates primary creative disciplines before secondary crafts).
+   - Stage 4: Budget Boundary & Leeway Analysis (enforces non-negotiable budget bounds while identifying negotiable rate leeway).
+   - Stage 5: Slot Capacity & Quota Protection (guards against oversubscribed campaigns).
+   - Stage 6: Shortlist Protection (creators shortlisted by a brand are protected from contradictory downstream hold rejections).
+   - Stage 7: CreaMatch Scoring (composite score calculated from Style Fit, Tool Proficiency, and Historical Reliability).
+
+2. ELIGIBILITY OUTCOMES:
+   - ELIGIBLE: Creator satisfies all mandatory requirements and is within negotiable budget bounds.
+   - INELIGIBLE: Confirmed failure on an explicit mandatory requirement (with clear, transparent explanation).
+   - NEEDS REVIEW (REQUIRES_REVIEW): Unrecorded format evidence history or currency mismatch that needs manual brand review rather than arbitrary rejection.
+
+3. CREASIM & CREATIVE SIMULATION:
+   - Pre-production concept narrative generation simulating how a creator's DNA will execute a brand's brief before contract commitment.
+
+4. TRUST ORBIT & VERIFICATION:
+   - Cryptographic portfolio provenance to prevent stolen or fabricated portfolio claims.
+   - Milestone escrow with Razorpay integration — funds held safely and released only upon deliverable approval.
+   - Multi-tenant data isolation and copyright licensing clarity.
+
+RESPONSE ARCHITECTURE & PHILOSOPHY:
+Every response must help the user understand:
+1. Where they are currently.
+2. What they need to achieve.
+3. What steps they should follow.
+4. What they need to do at each step.
+5. What outcome they should expect.
+6. What action they should take next.
+
+ADAPTIVE FORMATTING RULES:
+- ALWAYS GIVE ANSWERS IN STEPS. Never output large unbroken text paragraphs or essays.
+- IF A ROADMAP IS REQUIRED (for campaigns, bidding, portfolio verification, multi-phase goals, or troubleshooting):
+  -> Provide the full structured **ACTION ROADMAP** (Goal, Starting Point, Roadmap steps, Dependencies, Next Action).
+- IF A ROADMAP IS NOT REQUIRED (for simple questions, facts, definitions, quick how-to, or explanations):
+  -> DO NOT write text paragraphs. Answer directly in **concise numbered steps** (1, 2, 3...) with clear, simple takeaways.
+
+STANDARD ROADMAP SPECIFICATION (When creating a roadmap):
+### Goal: [Clear heading describing what the user wants to achieve]
+
+#### Starting Point
+[1-2 sentences explaining current situation, available information, and any important missing details]
+
+#### Roadmap
+1. **[Step Title]**
+   - **What to do:** [1-2 sentences describing the specific task]
+   - **Why it matters:** [Why this step is critical for success in Alloy's pipeline/matching]
+   - **Action checklist:**
+     - [ ] [Concrete micro-action]
+     - [ ] [Concrete micro-action]
+   - **Expected outcome:** [Measurable outcome or deliverable]
+   - **Alloy Feature:** [Relevant feature: Brand Workspace, Brief Builder, Discover Creators, Creator Profile, Trust Center, or Escrow]
+   - **Status:** Not started
+
+2. **[Step Title]**
+   ... (repeat for remaining sequential steps)
+
+#### Dependencies
+[Briefly explain which steps depend on earlier steps]
+
+#### Next Action
+[Exactly ONE clear, concrete action the user can take immediately to begin]
+
+COMMUNICATION PRINCIPLES:
+- Use simple, everyday layman language. Keep answers crisp, clear, and easy to understand.
+- Avoid heavy technical jargon, buzzwords, or dense walls of text.
+- Be direct and concise: explain steps and concepts in simple plain English.
+- Avoid vague motivational advice. Give practical, easy-to-follow actions.
+- Never invent non-existent platform functionality, false creator scores, fake transaction IDs, or fabricated platform metrics.
+- Never claim an action was completed when recommending it.
+- Reference real platform creators (Maya Sharma, Julian Vance, Ananya Roy, Zephyr Studio) or active campaigns (Veda Botanics, Midnight Amber, Solstice Audio) when relevant.`;
+}
+
+export async function streamAlloyAiChat({
+  messages = [],
+  role = 'brand',
+  context = {},
+  signal,
+  onChunk,
+  onReasoning,
+  onDone,
+  onError
+}) {
+  if (!isGroqConfigured()) {
+    throw new Error('GROQ_CONFIG_MISSING: GROQ_API_KEY environment variable is not configured.');
+  }
+
+  const apiKey = process.env.GROQ_API_KEY.trim();
+  const model = getGroqModel();
+  const systemPrompt = buildAlloySystemPrompt({ role, context });
+
+  const formattedMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages.slice(-10).map(m => ({
+      role: m.sender === 'user' ? 'user' : 'assistant',
+      content: m.text || m.content || ''
+    }))
+  ];
+
+  const body = {
+    model,
+    messages: formattedMessages,
+    temperature: 0.5,
+    max_tokens: 2048,
+    stream: true
+  };
+
+  const response = await fetch(GROQ_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body),
+    signal
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    let errorMessage = `Groq API responded with status ${response.status}`;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (parsed.error?.message) errorMessage = parsed.error.message;
+    } catch {}
+    const err = new Error(errorMessage);
+    err.status = response.status;
+    err.code = response.status === 429 ? 'RATE_LIMIT' : 'GROQ_API_ERROR';
+    throw err;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const dataStr = trimmed.slice(5).trim();
+
+        if (dataStr === '[DONE]') {
+          if (onDone) onDone();
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta) {
+            if (delta.reasoning && onReasoning) {
+              onReasoning(delta.reasoning);
+            }
+            if (delta.content && onChunk) {
+              onChunk(delta.content);
+            }
+          }
+        } catch {
+          // Continue parsing buffer
+        }
+      }
+    }
+
+    if (onDone) onDone();
+  } catch (streamErr) {
+    if (signal?.aborted) return;
+    if (onError) onError(streamErr);
+    else throw streamErr;
+  }
+}
+

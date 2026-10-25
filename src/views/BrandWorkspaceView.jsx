@@ -34,11 +34,14 @@ import { deduplicateMessages } from '../services/marketplaceBackend';
 function formatBudgetDisplay(budget) {
   if (!budget) return 'In Discussion';
   if (typeof budget === 'number') {
-    return `$${budget.toLocaleString()}`;
+    return `₹${budget.toLocaleString('en-IN')}`;
   }
   const str = String(budget).trim();
-  if (!str.startsWith('$') && !isNaN(Number(str.replace(/,/g, '')))) {
-    return `$${Number(str.replace(/,/g, '')).toLocaleString()}`;
+  if (str.startsWith('$') || str.includes('$')) {
+    return str.replace(/\$/g, '₹');
+  }
+  if (!str.startsWith('₹') && !isNaN(Number(str.replace(/,/g, '')))) {
+    return `₹${Number(str.replace(/,/g, '')).toLocaleString('en-IN')}`;
   }
   return str;
 }
@@ -107,12 +110,12 @@ function BrandCreatorAvatarWithFallback({ avatarUrl, name, size = 52, className 
 export default function BrandWorkspaceView({
   currentBrand = {
     id: "brand-demo-lumina",
-    name: "Lumina Botanica",
-    handle: "@luminabotanica",
+    name: "Veda Botanics",
+    handle: "@vedabotanics",
     logo: "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=200&q=80",
     coverImage: "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=1200&q=85",
     industry: "Beauty & Skincare",
-    website: "https://luminabotanica.co",
+    website: "https://vedabotanics.in",
     description: "Pioneering organic cold-pressed botanicals for modern minimalist skincare rituals.",
     aesthetic: "Warm, Luminous & Organic",
     brandColors: ["#EB6E4B", "#FDF7ED", "#2E3A2F"],
@@ -231,7 +234,7 @@ export default function BrandWorkspaceView({
     toneOfVoice: 'Authentic & Premium',
     deliverables: '3x 4K Master Stills, 2x 9:16 Vertical Loops',
     platforms: 'Instagram, TikTok',
-    budget: '$5,000 – $10,000',
+    budget: '₹50,000 – ₹1,00,000',
     timeline: '3 Weeks',
     deadline: 'Nov 30, 2026',
     targetAudience: 'Aesthetic-conscious consumers',
@@ -483,7 +486,7 @@ export default function BrandWorkspaceView({
       toneOfVoice: 'Authentic & Premium',
       deliverables: '3x 4K Master Stills, 2x 9:16 Vertical Loops',
       platforms: currentBrand?.preferredPlatforms?.join(', ') || 'Instagram, TikTok',
-      budget: '$5,000 – $10,000',
+      budget: '₹50,000 – ₹1,00,000',
       timeline: '3 Weeks',
       deadline: 'Nov 30, 2026',
       targetAudience: 'Aesthetic-conscious consumers',
@@ -632,7 +635,7 @@ export default function BrandWorkspaceView({
       creatorName: creator.name,
       creatorAvatar: creator.avatar,
       title: inspectedCampaign.title,
-      budget: inspectedCampaign.budget || '$7,500',
+      budget: inspectedCampaign.budget ? String(inspectedCampaign.budget).replace(/\$/g, '₹') : '₹75,000',
       timeline: inspectedCampaign.timeline || inspectedCampaign.deadline || '3 Weeks',
       deliverables: Array.isArray(inspectedCampaign.deliverables) ? inspectedCampaign.deliverables.join(' • ') : inspectedCampaign.deliverables,
       summary: messageText || `Direct invitation from ${currentBrand?.name} to collaborate on ${inspectedCampaign.title}.`
@@ -996,7 +999,7 @@ export default function BrandWorkspaceView({
                     <div className="first-choice-box" onClick={() => onToggleDemoMode && onToggleDemoMode(true)}>
                       <div className="choice-icon"><Film size={20} /></div>
                       <h3>Explore Demo Experience</h3>
-                      <p>Tour Lumina Botanica and Vanguard Horology sample briefs and collaborations.</p>
+                      <p>Tour Veda Botanics and Kailash Horology sample briefs and collaborations.</p>
                       <span className="btn btn-secondary btn-sm">View Demo</span>
                     </div>
                   ) : (
@@ -3113,7 +3116,7 @@ export default function BrandWorkspaceView({
                                       className="form-input"
                                       value={counterOfferForm.proposedRate}
                                       onChange={(e) => setCounterOfferForm(prev => ({ ...prev, proposedRate: e.target.value }))}
-                                      placeholder="$4,500"
+                                      placeholder="₹45,000"
                                       required
                                     />
                                   </div>
@@ -3343,7 +3346,7 @@ export default function BrandWorkspaceView({
                   type="text"
                   value={campaignFormData.budget}
                   onChange={(e) => setCampaignFormData({ ...campaignFormData, budget: e.target.value })}
-                  placeholder="e.g. $5,000 – $10,000"
+                  placeholder="e.g. ₹50,000 – ₹1,00,000"
                 />
               </div>
 

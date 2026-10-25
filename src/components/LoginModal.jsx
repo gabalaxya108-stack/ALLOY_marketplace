@@ -51,13 +51,13 @@ export default function LoginModal({
       email: 'lumina.demo@alloy.market',
       password: 'AlloyDemo2026!',
       role: 'brand',
-      displayName: 'Lumina Botanica'
+      displayName: 'Veda Botanics'
     },
     creator: {
       email: 'maya.demo@alloy.market',
       password: 'AlloyDemo2026!',
       role: 'creator',
-      displayName: 'Maya Chen'
+      displayName: 'Maya Sharma'
     }
   };
 
@@ -188,13 +188,13 @@ export default function LoginModal({
       id: `user-${role}-${Date.now()}`,
       email: role === 'brand' ? 'lumina.demo@alloy.market' : 'maya.demo@alloy.market',
       role,
-      display_name: role === 'brand' ? 'Lumina Botanica' : 'Maya Chen',
+      display_name: role === 'brand' ? 'Veda Botanics' : 'Maya Sharma',
       isDemoOnly: true,
       profile: {
         id: `user-${role}-${Date.now()}`,
         email: role === 'brand' ? 'lumina.demo@alloy.market' : 'maya.demo@alloy.market',
         role,
-        display_name: role === 'brand' ? 'Lumina Botanica' : 'Maya Chen',
+        display_name: role === 'brand' ? 'Veda Botanics' : 'Maya Sharma',
         isDemoOnly: true
       }
     };
@@ -237,7 +237,13 @@ export default function LoginModal({
           if (onClose) onClose();
         }, 500);
       } catch (err) {
-        if (err.code === 'ACCOUNT_EXISTS' || err.message?.toLowerCase().includes('already exists')) {
+        if (
+          err.code === 'ACCOUNT_EXISTS' ||
+          err.code === 'user_already_exists' ||
+          err.message?.toLowerCase().includes('already exists') ||
+          err.message?.toLowerCase().includes('already registered') ||
+          err.message?.toLowerCase().includes('already been registered')
+        ) {
           setErrorCode('ACCOUNT_EXISTS');
           setErrorMsg('An account with this email already exists in our database. Please sign in or reset your password.');
         } else {
@@ -666,7 +672,7 @@ export default function LoginModal({
                   id="auth-name"
                   type="text"
                   className="auth-text-input"
-                  placeholder="Full Name / Studio Name"
+                  placeholder={selectedRole === 'creator' ? "e.g. Ananya Roy / Veda Studio" : "e.g. Veda Botanics"}
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
@@ -768,10 +774,10 @@ export default function LoginModal({
                 className={`demo-pill-btn brand-demo ${selectedRole === 'brand' && email === DEMO_CREDENTIALS.brand.email ? 'is-active-demo' : ''}`}
                 id="demo-login-brand-btn"
                 onClick={() => handleAutofillDemo('brand')}
-                title="Autofill Lumina Botanica credentials"
+                title="Autofill Veda Botanics credentials"
               >
                 <Briefcase size={12} />
-                <span>Lumina Botanica</span>
+                <span>Veda Botanics</span>
               </button>
 
               <button
@@ -779,10 +785,10 @@ export default function LoginModal({
                 className={`demo-pill-btn creator-demo ${selectedRole === 'creator' && email === DEMO_CREDENTIALS.creator.email ? 'is-active-demo' : ''}`}
                 id="demo-login-creator-btn"
                 onClick={() => handleAutofillDemo('creator')}
-                title="Autofill Maya Chen credentials"
+                title="Autofill Maya Sharma credentials"
               >
                 <Palette size={12} />
-                <span>Maya Chen</span>
+                <span>Maya Sharma</span>
               </button>
             </div>
           </div>

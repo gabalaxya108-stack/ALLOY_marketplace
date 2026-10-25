@@ -203,7 +203,7 @@ export default function DifferentiatorSection({ onExploreDiscover, onEnterBrandS
                 {currentDiff.id === 'creator-dna' && (
                   <div className="mockup-dna-container">
                     <div className="mockup-header-row">
-                      <div className="mockup-title">Creator DNA Profile • Elena Rostova</div>
+                      <div className="mockup-title">Creator DNA Profile • Ananya Roy</div>
                       <span className="dna-score-pill">Verified DNA</span>
                     </div>
                     <div className="dna-bars-group">
@@ -324,11 +324,11 @@ export default function DifferentiatorSection({ onExploreDiscover, onEnterBrandS
                     </div>
                     <div className="collab-chat-preview">
                       <div className="chat-bubble chat-brand">
-                        <span className="chat-sender">Lumina Creative Director</span>
+                        <span className="chat-sender">Veda Creative Director</span>
                         <p>“The droplet refraction in render #3 is stunning. Can we warm the ambient background light slightly?”</p>
                       </div>
                       <div className="chat-bubble chat-creator">
-                        <span className="chat-sender">Elena Rostova</span>
+                        <span className="chat-sender">Ananya Roy</span>
                         <p>“Updated! Added warm 3200K rim lighting. Uploading high-res revision v2.1 now.”</p>
                       </div>
                     </div>
